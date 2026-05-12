@@ -154,6 +154,118 @@ check_github_auth() {
   fi
 }
 
+ollama_server_responds() {
+  curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1
+}
+
+ollama_has_model() {
+  local model="$1"
+
+  ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fx "$model" >/dev/null 2>&1
+}
+
+pull_ollama_model() {
+  local model="$1"
+  local required="$2"
+
+  if ollama_has_model "$model"; then
+    info "Found Ollama model: $model"
+    return
+  fi
+
+  info "Pulling Ollama model: $model"
+  if ollama pull "$model"; then
+    info "Pulled Ollama model: $model"
+    return
+  fi
+
+  if [[ "$required" == "required" ]]; then
+    fail_soft "Could not pull required Ollama model: $model"
+  else
+    warn "Could not pull optional Ollama model: $model"
+  fi
+}
+
+create_ollama_alias() {
+  local alias_name="$1"
+  local modelfile="$2"
+  local required="$3"
+
+  if [[ ! -f "$modelfile" ]]; then
+    if [[ "$required" == "required" ]]; then
+      fail_soft "Missing Modelfile for $alias_name: $modelfile"
+    else
+      warn "Missing Modelfile for optional alias $alias_name: $modelfile"
+    fi
+    return
+  fi
+
+  info "Creating Ollama model alias: $alias_name"
+  if ollama create "$alias_name" -f "$modelfile"; then
+    info "Created Ollama model alias: $alias_name"
+    return
+  fi
+
+  if [[ "$required" == "required" ]]; then
+    fail_soft "Could not create required Ollama model alias: $alias_name"
+  else
+    warn "Could not create optional Ollama model alias: $alias_name"
+  fi
+}
+
+print_model_fallback_status() {
+  local selected_model=""
+  local alias_name
+
+  info ""
+  info "Ollama model fallback status:"
+  for alias_name in qwen-32b-pro qwen-14b-pro qwen-7b-pro; do
+    if ollama_has_model "$alias_name"; then
+      info "- $alias_name available"
+      if [[ -z "$selected_model" ]]; then
+        selected_model="$alias_name"
+      fi
+    else
+      info "- $alias_name unavailable"
+    fi
+  done
+
+  if [[ -n "$selected_model" ]]; then
+    info "Selected fallback model: $selected_model"
+  else
+    fail_soft "No HOCA Ollama model aliases are available."
+  fi
+}
+
+setup_ollama_models() {
+  info "Checking Ollama runtime..."
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    fail_soft "Ollama is missing. Install it with: brew install ollama"
+    return
+  fi
+
+  info "Found ollama: $(command -v ollama)"
+
+  if ! ollama_server_responds; then
+    fail_soft "Ollama server is not responding at http://127.0.0.1:11434/api/tags"
+    info "Start Ollama manually with: ollama serve"
+    return
+  fi
+
+  info "Ollama server responded at http://127.0.0.1:11434/api/tags"
+
+  pull_ollama_model qwen2.5-coder:32b optional
+  pull_ollama_model qwen2.5-coder:14b required
+  pull_ollama_model qwen2.5-coder:7b required
+
+  create_ollama_alias qwen-32b-pro "$REPO_ROOT/models/Modelfile" optional
+  create_ollama_alias qwen-14b-pro "$REPO_ROOT/models/Modelfile.14b" required
+  create_ollama_alias qwen-7b-pro "$REPO_ROOT/models/Modelfile.7b" required
+
+  print_model_fallback_status
+}
+
 main() {
   info "Installing HOCA dependencies..."
   info ""
@@ -183,6 +295,9 @@ main() {
   install_python_dependencies
   install_aider
   install_openhands
+
+  info ""
+  setup_ollama_models
 
   info ""
   check_github_auth
