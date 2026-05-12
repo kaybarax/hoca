@@ -14,5 +14,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 
+[tool.setuptools]
+packages = ["hoca"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
