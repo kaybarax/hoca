@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.kubeconfig
+.npmrc
+.pypirc
+
+# Local runtime and logs
+.hoca-runtime/
+logs/
+*.log
+
+# OpenHands local runtime
+.openhands/conversations/
+.openhands/settings.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# macOS
+.DS_Store
