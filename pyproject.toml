@@ -3,13 +3,20 @@ name = "hoca"
 version = "0.1.0"
 description = "Local-first autonomous engineering workflow using Hermes, OpenHands, Aider, Ollama, and GitHub CLI."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "click>=8.1.0",
+  "python-dotenv>=1.0.0",
+  "flask>=3.0.0",
+]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",
   "ruff>=0.6.0",
 ]
+
+[project.scripts]
+hoca = "hoca.cli:main"
 
 [tool.ruff]
 line-length = 100
