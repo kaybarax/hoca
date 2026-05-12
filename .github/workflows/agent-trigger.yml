@@ -1,0 +1,12 @@
+name: HOCA Agent Trigger
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "HOCA agent trigger skeleton"

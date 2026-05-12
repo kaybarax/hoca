@@ -1,0 +1,3 @@
+auto_merge: false
+default_model: qwen2.5-coder:14b
+review_required: true
