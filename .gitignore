@@ -14,10 +14,14 @@ id_ed25519
 
 # Local runtime and logs
 .hoca-runtime/
+.aider*
 logs/
 *.log
 
 # OpenHands local runtime
+.openhands/*
+!.openhands/
+!.openhands/setup.sh
 .openhands/conversations/
 .openhands/settings.json
 
@@ -32,3 +36,15 @@ venv/
 
 # macOS
 .DS_Store
+
+# Node and build artifacts
+node_modules/
+dist/
+build/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Editors
+.idea/
+.vscode/
