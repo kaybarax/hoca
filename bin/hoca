@@ -2,4 +2,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHONPATH="$REPO_ROOT" python3 -m hoca.cli "$@"
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+else
+  echo "python3 is required."
+  exit 1
+fi
+
+PYTHONPATH="$REPO_ROOT" "$PYTHON_BIN" -m hoca.cli "$@"
