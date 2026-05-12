@@ -58,6 +58,14 @@ def test_stage_command_requires_explicit_paths() -> None:
         build_stage_command([])
 
 
+def test_stage_command_rejects_secret_like_paths() -> None:
+    with pytest.raises(PolicyError, match="secret-like"):
+        build_stage_command(["README.md", ".env"])
+
+    with pytest.raises(PolicyError, match="secret-like"):
+        build_stage_command([".github/secrets/prod"])
+
+
 def test_unsafe_git_commands_are_rejected() -> None:
     reject_unsafe_git_command(build_commit_command("safe message"))
 
@@ -66,3 +74,6 @@ def test_unsafe_git_commands_are_rejected() -> None:
 
     with pytest.raises(PolicyError, match="git commit -am"):
         reject_unsafe_git_command(["git", "commit", "-am", "message"])
+
+    with pytest.raises(PolicyError, match="secret-like"):
+        reject_unsafe_git_command(["git", "add", "--", ".npmrc"])

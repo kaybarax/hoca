@@ -78,6 +78,9 @@ def build_stage_command(paths: list[str]) -> list[str]:
     forbidden = {".", "-A", "--all", ":/"}
     if any(path in forbidden for path in paths):
         raise PolicyError("Blind staging is forbidden; pass explicit relevant paths.")
+    secret_paths = [path for path in paths if is_secret_like_path(path)]
+    if secret_paths:
+        raise PolicyError(f"Refusing to stage secret-like files: {', '.join(secret_paths)}")
     return ["git", "add", "--", *paths]
 
 
@@ -92,6 +95,8 @@ def reject_unsafe_git_command(command: list[str]) -> None:
         arg in {".", "-A", "--all", ":/"} for arg in command[2:]
     ):
         raise PolicyError("Never use git add . or equivalent blind staging.")
+    if command[:2] == ["git", "add"] and any(is_secret_like_path(arg) for arg in command[2:]):
+        raise PolicyError("Never stage secret-like files.")
     if command[:2] == ["git", "commit"] and any(
         arg == "-am" or arg.startswith("-am") for arg in command[2:]
     ):

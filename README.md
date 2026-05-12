@@ -44,12 +44,24 @@ HOCA's default behavior is intentionally conservative:
 - Runs stop before commit until selective staging is fully implemented.
 - Blind staging commands such as `git add .`, `git add -A`, and `git add --all`
   are forbidden.
+- Explicit staging also refuses secret-like files such as `.env`, private keys,
+  kubeconfigs, package registry credentials, Docker credentials, browser
+  cookies, and local credential stores.
 - `git commit -am` is forbidden.
 - High-risk changes are never auto-merged.
 
 These defaults are encoded in `hoca.config` and `hoca.git_utils` so later CLI and
 script work can call the same policy checks instead of reimplementing safety
 rules in separate places.
+
+## Secrets Policy
+
+HOCA must never commit local credentials. Keep real secrets in local environment
+or credential-store tooling outside of committed project files. The safety policy
+rejects secret-like paths before staging, including `.env` files, private key
+formats, `.github/secrets`, kubeconfigs, `.npmrc`, `.pypirc`, Docker registry
+credentials, browser cookies, and local credential stores such as `.ssh`,
+`.aws`, `.azure`, `.gnupg`, and macOS Keychains.
 
 ## Core Workflow Model
 
