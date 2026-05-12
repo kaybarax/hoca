@@ -34,3 +34,28 @@ def test_run_passes_task_text_as_one_argument(
 
     assert result.exit_code == 0
     assert calls == [("run-hoca-task.sh", [str(project_path), "Task with spaces"])]
+
+
+def test_doctor_reports_wrapper_failures(monkeypatch) -> None:
+    class FailedReport:
+        ok = False
+        failures = (object(), object())
+
+    monkeypatch.setattr("hoca.cli.run_doctor", lambda: FailedReport())
+
+    result = CliRunner().invoke(main, ["doctor"])
+
+    assert result.exit_code != 0
+    assert "Doctor found 2 critical failure(s)." in result.output
+
+
+def test_doctor_reports_missing_script(monkeypatch) -> None:
+    def fake_run_doctor():
+        raise FileNotFoundError("Missing doctor script")
+
+    monkeypatch.setattr("hoca.cli.run_doctor", fake_run_doctor)
+
+    result = CliRunner().invoke(main, ["doctor"])
+
+    assert result.exit_code != 0
+    assert "Missing doctor script" in result.output

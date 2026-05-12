@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from hoca.doctor import run_doctor
 from hoca.paths import repo_root
 
 
@@ -40,7 +41,12 @@ def main() -> None:
 @main.command()
 def doctor() -> None:
     """Check local HOCA dependencies and configuration."""
-    run_script("hoca-doctor.sh", [])
+    try:
+        report = run_doctor()
+    except FileNotFoundError as error:
+        raise click.ClickException(str(error)) from error
+    if not report.ok:
+        raise click.ClickException(f"Doctor found {len(report.failures)} critical failure(s).")
 
 
 @main.command("init-project")
