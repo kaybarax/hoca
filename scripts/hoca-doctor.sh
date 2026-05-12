@@ -36,6 +36,51 @@ check_command() {
   fi
 }
 
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+env_file_value() {
+  local name="$1"
+
+  if [ ! -f ".env" ]; then
+    return 1
+  fi
+
+  awk -F= -v name="$name" '
+    $0 ~ /^[[:space:]]*#/ { next }
+    $0 !~ /^[A-Za-z_][A-Za-z0-9_]*=/ { next }
+    $1 == name {
+      value = substr($0, length($1) + 2)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^"|"$/, "", value)
+      gsub(/^'\''|'\''$/, "", value)
+      print value
+      found = 1
+      exit
+    }
+    END { if (!found) exit 1 }
+  ' ".env"
+}
+
+config_value() {
+  local name="$1"
+  local value="${!name:-}"
+
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+  else
+    env_file_value "$name" || true
+  fi
+}
+
 detect_ram_gb() {
   case "$(uname -s)" in
     Darwin)
@@ -187,18 +232,60 @@ fi
 
 section "Environment"
 if [ -f ".env" ]; then
-  ok ".env exists."
+  if [ -r ".env" ]; then
+    ok ".env exists and is readable."
+    if grep -nEv '^([[:space:]]*#|[[:space:]]*$|[A-Za-z_][A-Za-z0-9_]*=.*)$' ".env" >/dev/null; then
+      warn ".env contains lines that are not simple KEY=value assignments."
+    else
+      ok ".env uses simple KEY=value syntax."
+    fi
+  else
+    fail ".env exists but is not readable."
+  fi
 else
   warn ".env not found. Copy .env.example to .env if using webhook or notifications."
 fi
 
 for var in LLM_MODEL LLM_BASE_URL LLM_API_KEY; do
-  if [ -n "${!var:-}" ]; then
+  if [ -n "$(config_value "$var")" ]; then
     ok "$var is set."
   else
     warn "$var is not set. Wrapper defaults may be used."
   fi
 done
+
+WEBHOOK_ENABLED="$(config_value HOCA_WEBHOOK_ENABLED)"
+WEBHOOK_URL="$(config_value HOCA_WEBHOOK_URL)"
+WEBHOOK_SECRET="$(config_value HOCA_WEBHOOK_SECRET)"
+if is_truthy "$WEBHOOK_ENABLED" || [ -n "$WEBHOOK_URL" ]; then
+  ok "Webhook mode appears enabled."
+  if [ -n "$WEBHOOK_SECRET" ]; then
+    ok "HOCA_WEBHOOK_SECRET is set."
+  else
+    fail "Webhook mode is enabled but HOCA_WEBHOOK_SECRET is not set."
+  fi
+else
+  warn "Webhook mode is not enabled; skipping HOCA_WEBHOOK_SECRET requirement."
+fi
+
+TELEGRAM_ENABLED="$(config_value HOCA_NOTIFY_TELEGRAM)"
+TELEGRAM_BOT_TOKEN="$(config_value TELEGRAM_BOT_TOKEN)"
+TELEGRAM_CHAT_ID="$(config_value TELEGRAM_CHAT_ID)"
+if is_truthy "$TELEGRAM_ENABLED" || [ -n "$TELEGRAM_BOT_TOKEN" ] || [ -n "$TELEGRAM_CHAT_ID" ]; then
+  ok "Telegram notifications appear enabled."
+  if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+    ok "TELEGRAM_BOT_TOKEN is set."
+  else
+    fail "Telegram notifications are enabled but TELEGRAM_BOT_TOKEN is not set."
+  fi
+  if [ -n "$TELEGRAM_CHAT_ID" ]; then
+    ok "TELEGRAM_CHAT_ID is set."
+  else
+    fail "Telegram notifications are enabled but TELEGRAM_CHAT_ID is not set."
+  fi
+else
+  warn "Telegram notifications are not enabled; skipping Telegram variable requirements."
+fi
 
 section "Summary"
 if [ "$FAILED" -eq 0 ]; then
