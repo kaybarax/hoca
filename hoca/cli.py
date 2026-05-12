@@ -22,6 +22,16 @@ def run_script(script_name: str, args: list[str]) -> None:
         )
 
 
+def require_target_repo(project_path: Path) -> Path:
+    if not project_path.exists():
+        raise click.ClickException(f"Target repository does not exist: {project_path}")
+    if not project_path.is_dir():
+        raise click.ClickException(f"Target repository is not a directory: {project_path}")
+    if not (project_path / ".git").exists():
+        raise click.ClickException(f"Target path is not a Git repository: {project_path}")
+    return project_path
+
+
 @click.group()
 def main() -> None:
     """HOCA local autonomous engineering toolkit."""
@@ -37,6 +47,7 @@ def doctor() -> None:
 @click.argument("project_path", type=click.Path(path_type=Path))
 def init_project(project_path: Path) -> None:
     """Install HOCA project-level templates into a target repository."""
+    project_path = require_target_repo(project_path)
     run_script("init-project.sh", [str(project_path)])
 
 
@@ -47,6 +58,7 @@ def init_project(project_path: Path) -> None:
 @click.option("--notify-telegram", is_flag=True, default=False)
 def run(project_path: Path, task: str, auto_merge: bool, notify_telegram: bool) -> None:
     """Run a HOCA task against a target repository."""
+    project_path = require_target_repo(project_path)
     args = [str(project_path), task]
     if auto_merge:
         args.append("--auto-merge")
@@ -69,6 +81,7 @@ def issue(
     notify_telegram: bool,
 ) -> None:
     """Run a HOCA task for a GitHub issue."""
+    project_path = require_target_repo(project_path)
     task = f"Fix GitHub issue #{issue_id}: {issue_title}"
     args = [str(project_path), task, "--issue-id", issue_id]
     if auto_merge:
