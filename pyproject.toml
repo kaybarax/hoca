@@ -1,0 +1,18 @@
+[project]
+name = "hoca"
+version = "0.1.0"
+description = "Local-first autonomous engineering workflow using Hermes, OpenHands, Aider, Ollama, and GitHub CLI."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

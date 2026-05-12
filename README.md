@@ -29,6 +29,28 @@ HOCA must prioritize:
 These priorities are non-negotiable defaults for the project. Later workflow,
 script, and CLI implementations should make the safe path the normal path.
 
+## Required Default Behavior
+
+HOCA's default behavior is intentionally conservative:
+
+- `auto_merge` is disabled.
+- Pull requests are required for normal completion.
+- Direct pushes to `main` and `master` are forbidden.
+- Each run requires a clean working tree before it starts.
+- Runs stop when unrelated human changes are present.
+- Runs stop when secret-like files are modified or created.
+- Runs stop when tests fail.
+- Runs stop unless Aider returns explicit approval.
+- Runs stop before commit until selective staging is fully implemented.
+- Blind staging commands such as `git add .`, `git add -A`, and `git add --all`
+  are forbidden.
+- `git commit -am` is forbidden.
+- High-risk changes are never auto-merged.
+
+These defaults are encoded in `hoca.config` and `hoca.git_utils` so later CLI and
+script work can call the same policy checks instead of reimplementing safety
+rules in separate places.
+
 ## Core Workflow Model
 
 HOCA uses a bounded engineering workflow that turns a human request or GitHub
