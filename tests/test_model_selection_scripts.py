@@ -28,13 +28,54 @@ def make_fake_ollama(tmp_path: Path, models: list[str]) -> Path:
     return fake_bin
 
 
-def run_script(script_name: str, fake_bin: Path, extra_env: dict[str, str] | None = None):
+def make_fake_openhands(fake_bin: Path) -> None:
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "echo 'OpenHands fake run complete.'\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+
+
+def make_fake_aider(fake_bin: Path) -> None:
+    aider = fake_bin / "aider"
+    aider.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "echo 'Review complete.'\n"
+        "echo 'LGTM'\n",
+        encoding="utf-8",
+    )
+    aider.chmod(aider.stat().st_mode | stat.S_IXUSR)
+
+
+def init_repo(path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True)
+    (path / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "README.md"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
+
+
+def run_script(
+    script_name: str,
+    fake_bin: Path,
+    extra_env: dict[str, str] | None = None,
+    args: list[str] | None = None,
+):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
-        [str(REPO_ROOT / "scripts" / script_name)],
+        [str(REPO_ROOT / "scripts" / script_name), *(args or [])],
         check=False,
         capture_output=True,
         text=True,
@@ -71,17 +112,35 @@ def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> 
 
 def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_openhands(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
 
-    result = run_script("run-openhands-task.sh", fake_bin)
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
 
-    assert result.returncode == 0
-    assert "Selected model: ollama/qwen-14b-pro" in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "MODEL=ollama/qwen-14b-pro" in result.stdout
 
 
 def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_aider(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
 
-    result = run_script("review-with-aider.sh", fake_bin)
+    result = run_script(
+        "review-with-aider.sh",
+        fake_bin,
+        args=[str(project), "Review project", str(run_dir)],
+    )
 
-    assert result.returncode == 0
-    assert "Selected model: ollama_chat/qwen-32b-pro" in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "Running Aider review with model: ollama_chat/qwen-32b-pro" in result.stdout

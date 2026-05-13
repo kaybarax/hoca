@@ -35,10 +35,22 @@ Resolve `project_path` to an absolute path and verify it is a Git repository:
 cd "$project_path"
 git rev-parse --is-inside-work-tree
 git rev-parse --show-toplevel
+git branch --show-current
 git status --short
 ```
 
-If `stop_on_dirty_tree=true` and `git status --short` is not empty before the run, stop and report that the run is blocked by existing changes. Do not mix human edits with agent edits.
+Print the repository root and current branch in the run log before continuing.
+Treat an empty branch name as a detached HEAD state and stop unless the engineer
+explicitly requested detached-HEAD work.
+
+Inspect `git status --short` before creating a branch, invoking OpenHands, or
+making project changes. If `stop_on_dirty_tree=true` and the status output is not
+empty, stop and report that the run is blocked by existing human changes. Do not
+mix unrelated human edits with agent edits.
+
+Continue only when the working tree is clean or when every existing change is
+explicitly expected for this run, named in the task, and accepted by the
+engineer. Record the expected files and reason in the run log before proceeding.
 
 ### 2. Read Project Instructions
 

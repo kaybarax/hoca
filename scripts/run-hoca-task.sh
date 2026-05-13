@@ -39,9 +39,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$PROJECT_PATH"
 
+echo "Validating target repository..."
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Not a Git repository: $PROJECT_PATH"
   exit 1
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CURRENT_BRANCH="$(git branch --show-current)"
+PRE_RUN_STATUS="$(git status --short)"
+
+echo "Repository root: $REPO_ROOT"
+if [ -n "$CURRENT_BRANCH" ]; then
+  echo "Current branch: $CURRENT_BRANCH"
+else
+  echo "Current branch: (detached HEAD)"
+  echo "Stopping because HOCA requires a named branch before task execution."
+  exit 1
+fi
+
+echo "Working tree status before run:"
+if [ -n "$PRE_RUN_STATUS" ]; then
+  printf '%s\n' "$PRE_RUN_STATUS"
+  echo "Stopping to avoid mixing unrelated human changes with agent changes."
+  exit 1
+else
+  echo "  clean"
 fi
 
 mkdir -p .hoca-runtime/runs .hoca-runtime/logs
@@ -113,11 +136,20 @@ cat > "$RUN_DIR/status.json" <<EOF
   "issue_id": "$ISSUE_ID",
   "auto_merge": "$AUTO_MERGE",
   "notify_telegram": "$NOTIFY_TELEGRAM",
+  "repo_root": $(printf '%s' "$REPO_ROOT" | jq -Rs .),
+  "starting_branch": $(printf '%s' "$CURRENT_BRANCH" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
 
 echo "HOCA run started: $RUN_ID"
+
+{
+  echo "Repository root: $REPO_ROOT"
+  echo "Current branch: $CURRENT_BRANCH"
+  echo "Working tree status before run:"
+  echo "clean"
+} > "$RUN_DIR/workspace-validation.txt"
 
 "$SCRIPT_DIR/init-project.sh" "$PROJECT_PATH" 2>/dev/null || true
 
