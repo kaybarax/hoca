@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.config import DEFAULT_POLICY, PolicyError, SafetyPolicy
 from hoca.security import is_secret_like_path
+from hoca.subprocess_utils import run_command
 
 
 MAIN_BRANCHES = {"main", "master"}
@@ -30,18 +30,67 @@ def parse_status_porcelain(output: str) -> list[GitChange]:
     return changes
 
 
-def read_git_changes(repo_path: Path) -> list[GitChange]:
-    result = subprocess.run(
-        ["git", "status", "--short"],
-        cwd=repo_path,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
+def is_git_repo(path: Path) -> bool:
+    result = run_command(["git", "rev-parse", "--git-dir"], cwd=path)
+    return result.ok
+
+
+def repo_root(path: Path) -> Path:
+    result = run_command(["git", "rev-parse", "--show-toplevel"], cwd=path)
+    if not result.ok:
+        raise PolicyError("Not inside a Git repository.")
+    return Path(result.stdout.strip())
+
+
+def current_branch(path: Path) -> str:
+    result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
+    if not result.ok:
+        raise PolicyError("Unable to determine current branch.")
+    return result.stdout.strip()
+
+
+def working_tree_status(path: Path) -> list[GitChange]:
+    result = run_command(["git", "status", "--short"], cwd=path)
+    if not result.ok:
         raise PolicyError(result.stderr.strip() or "Unable to read git status.")
     return parse_status_porcelain(result.stdout)
+
+
+def is_working_tree_clean(path: Path) -> bool:
+    return len(working_tree_status(path)) == 0
+
+
+def changed_files(path: Path) -> list[str]:
+    result = run_command(["git", "diff", "--name-only"], cwd=path)
+    if not result.ok:
+        raise PolicyError("Unable to list changed files.")
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def staged_files(path: Path) -> list[str]:
+    result = run_command(["git", "diff", "--cached", "--name-only"], cwd=path)
+    if not result.ok:
+        raise PolicyError("Unable to list staged files.")
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def has_merge_conflicts(path: Path) -> bool:
+    result = run_command(["git", "diff", "--name-only", "--diff-filter=U"], cwd=path)
+    if not result.ok:
+        return False
+    return bool(result.stdout.strip())
+
+
+def create_branch(path: Path, branch_name: str) -> None:
+    if not branch_name or not branch_name.strip():
+        raise PolicyError("Branch name must not be empty.")
+    result = run_command(["git", "checkout", "-b", branch_name], cwd=path)
+    if not result.ok:
+        raise PolicyError(result.stderr.strip() or f"Unable to create branch: {branch_name}")
+
+
+def read_git_changes(repo_path: Path) -> list[GitChange]:
+    return working_tree_status(repo_path)
 
 
 def assert_clean_working_tree(
