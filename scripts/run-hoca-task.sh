@@ -181,6 +181,38 @@ fi
 
 update_status "committed" "commit_complete"
 
+MERGE_POLICY_FILE="$RUN_DIR/merge-policy.txt"
+{
+  echo "HOCA merge policy (milestone 18.1, default no-merge)"
+  echo ""
+  echo "- This run does not invoke gh pr merge. Pull requests stay open for human review."
+  echo "- Remote branches are not deleted by HOCA. Delete a branch only after a successful merge."
+  echo "- The --auto-merge flag is recorded in status.json only; guarded auto-merge is milestone 18.2."
+  echo ""
+  echo "Next step: open a pull request (when tests and review are complete):"
+  echo "  $SCRIPT_DIR/create-pr.sh \"$PROJECT_PATH\" <task-one-line> \"$RUN_DIR_ABS\""
+  if [ -n "$ISSUE_ID" ]; then
+    echo "  (add --issue-id \"$ISSUE_ID\" if the PR should reference the issue)"
+  fi
+} > "$MERGE_POLICY_FILE"
+
+if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
+  jq \
+    --arg mp "no_auto_merge_default" \
+    --arg bd "only_after_successful_merge" \
+    '.merge_policy = $mp | .merge_performed = false | .branch_delete_policy = $bd' \
+    "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
+  mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+fi
+
+echo ""
+echo "------------------------------------------------------------------"
+echo "Merge policy: no automatic merge (default). See: $MERGE_POLICY_FILE"
+if [ "$AUTO_MERGE" = "true" ]; then
+  echo "Note: --auto-merge was passed; HOCA still does not run gh pr merge until milestone 18.2."
+fi
+echo "------------------------------------------------------------------"
+
 if [ "$NOTIFY_TELEGRAM" = "true" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
 fi

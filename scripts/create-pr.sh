@@ -260,4 +260,24 @@ fi
 
 printf '%s\n' "$PR_URL" > "$RUN_DIR/pr-url.txt"
 echo "PR URL saved to $RUN_DIR/pr-url.txt"
+
+ENGINEER_NOTIFY="$RUN_DIR/engineer-followup.txt"
+{
+  echo "Human engineer follow-up (HOCA merge policy 18.1)"
+  echo ""
+  echo "A pull request was created and is left open for your review."
+  echo "HOCA does not merge pull requests automatically in the default configuration."
+  echo "HOCA does not delete the remote branch from this step; remove it only after a successful merge if desired."
+  echo ""
+  echo "Pull request: $PR_URL"
+} > "$ENGINEER_NOTIFY"
+
+echo "" >&2
+echo "================================================================" >&2
+echo "  Human engineer: pull request is open for review." >&2
+echo "  Auto-merge: off (default). This PR will not be merged by HOCA." >&2
+echo "  Remote branch: retained (no automatic delete on open or failed merge)." >&2
+echo "  Written: $ENGINEER_NOTIFY" >&2
+echo "================================================================" >&2
+
 echo "$PR_URL"
