@@ -169,8 +169,20 @@ echo "Running automatic safe staging from reviewed intended file list..."
 git diff --cached > "$RUN_DIR/staged-diff.patch"
 update_status "staged" "safe_staging_complete"
 
+RUN_DIR_ABS="$(cd "$RUN_DIR" && pwd)"
+COMMIT_EXTRA=()
+if [ -n "$ISSUE_ID" ]; then
+  COMMIT_EXTRA=(--issue-id "$ISSUE_ID")
+fi
+if ! "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR_ABS" "${COMMIT_EXTRA[@]}"; then
+  update_status "blocked" "commit_failed"
+  exit 1
+fi
+
+update_status "committed" "commit_complete"
+
 if [ "$NOTIFY_TELEGRAM" = "true" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
 fi
 
-echo "HOCA run completed through safe staging. Staged files are recorded in $RUN_DIR/staged-files.txt"
+echo "HOCA run completed through commit. Hash recorded in $RUN_DIR/commit-hash.txt"

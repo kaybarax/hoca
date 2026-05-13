@@ -41,7 +41,7 @@ HOCA's default behavior is intentionally conservative:
 - Runs stop when secret-like files are modified or created.
 - Runs stop when tests fail.
 - Runs stop unless Aider returns explicit approval.
-- Runs stop before commit until selective staging is fully implemented.
+- The task runner commits only after safe staging succeeds, using exactly one `git commit` against the staged index (never blind `git commit -am`).
 - Blind staging commands such as `git add .`, `git add -A`, and `git add --all`
   are forbidden.
 - Explicit staging also refuses secret-like files such as `.env`, private keys,
