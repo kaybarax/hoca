@@ -132,6 +132,40 @@ def test_safe_stage_requires_generated_file_justification(tmp_path: Path) -> Non
     assert staged_files(tmp_path) == []
 
 
+def test_safe_stage_refuses_when_index_already_staged(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "README.md"], cwd=tmp_path, check=True)
+
+    result = run_safe_stage(tmp_path, "Update README", run_dir)
+
+    assert result.returncode != 0
+    assert "already has staged changes" in result.stderr
+    assert staged_files(tmp_path) == ["README.md"]
+
+
+def test_safe_stage_rejects_intended_hoca_runtime_path(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    runtime_file = tmp_path / ".hoca-runtime" / "bad.txt"
+    runtime_file.parent.mkdir(parents=True)
+    runtime_file.write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "--", ".hoca-runtime/bad.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "track runtime"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    runtime_file.write_text("y\n", encoding="utf-8")
+
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text(".hoca-runtime/bad.txt\n", encoding="utf-8")
+
+    result = run_safe_stage(tmp_path, "Update hoca runtime file", run_dir)
+
+    assert result.returncode != 0
+    assert "Refusing intended path" in result.stderr
+
+
 def test_safe_stage_stages_reviewed_accounted_files(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"

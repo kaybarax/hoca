@@ -70,6 +70,42 @@ def test_commit_creates_commit_and_records_hash(tmp_path: Path) -> None:
     assert (run_dir / "commit-hash.txt").read_text(encoding="utf-8").strip() == head
 
 
+def test_commit_refuses_forbidden_secret_like_staged_path(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    (tmp_path / ".env").write_text("X=1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "--", ".env"], cwd=tmp_path, check=True)
+    (run_dir / "staged-files.txt").write_text(".env\nREADME.md\n", encoding="utf-8")
+
+    result = run_commit(tmp_path, "Update README", run_dir)
+
+    assert result.returncode != 0
+    assert "secret-like" in result.stderr
+
+
+def test_commit_refuses_when_intended_normalized_mismatch(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    (run_dir / "intended-files.normalized.txt").write_text(
+        "README.md\nother.txt\n", encoding="utf-8"
+    )
+
+    result = run_commit(tmp_path, "Update README", run_dir)
+
+    assert result.returncode != 0
+    assert "intended-files.normalized.txt" in result.stderr
+
+
 def test_commit_includes_issue_id_in_subject(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"

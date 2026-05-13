@@ -83,6 +83,31 @@ if [ -s "$UNEXPECTED_LIST" ]; then
   exit 1
 fi
 
+while IFS= read -r path || [ -n "$path" ]; do
+  [ -z "$path" ] && continue
+  case "$path" in
+    .hoca-runtime/*|.hoca-runtime|.git/*|.git)
+      echo "Refusing intended path (runtime or git metadata): $path" >&2
+      exit 1
+      ;;
+  esac
+done < "$NORMALIZED_LIST"
+
+echo "=== Pre-stage: git status --short ==="
+git status --short | tee "$RUN_DIR/pre-stage-git-status-short.txt"
+
+PRE_INDEX_NAMES="$RUN_DIR/pre-stage-git-index-paths.txt"
+git diff --cached --name-only | sort -u > "$PRE_INDEX_NAMES"
+if [ -s "$PRE_INDEX_NAMES" ]; then
+  echo "Refusing safe staging: Git index already has staged changes. Reset the index before continuing." >&2
+  cat "$PRE_INDEX_NAMES" >&2
+  exit 1
+fi
+
+echo "=== Pre-stage: git diff (unstaged changes to tracked files) ==="
+git diff > "$RUN_DIR/pre-stage-git-diff.txt"
+git diff --stat
+
 JUSTIFICATION_FILE="$RUN_DIR/staging-justification.txt"
 TASK_TOKENS_FILE="$RUN_DIR/task-tokens.txt"
 
@@ -218,6 +243,47 @@ fi
 "$SCRIPT_DIR/stage-safe-files.sh" "$REPO_ROOT" "$NORMALIZED_LIST" > "$RUN_DIR/staged-diff.patch"
 
 git diff --cached --check
+
+echo "=== Post-stage: git diff --cached (also saved as staged-diff.patch) ==="
+git diff --cached > "$RUN_DIR/post-stage-git-diff-cached.txt"
+
+POST_STAGE_NAMES="$RUN_DIR/post-stage-git-diff-cached-names.txt"
+git diff --cached --name-only | sort -u > "$POST_STAGE_NAMES"
+if ! diff -q "$NORMALIZED_LIST" "$POST_STAGE_NAMES" >/dev/null; then
+  echo "Staged files must exactly match the intended file list (sorted, unique)." >&2
+  echo "Intended:" >&2
+  cat "$NORMALIZED_LIST" >&2
+  echo "Staged:" >&2
+  cat "$POST_STAGE_NAMES" >&2
+  exit 1
+fi
+
+assert_staged_path_safe() {
+  local path="$1"
+  case "$path" in
+    .hoca-runtime/*|.hoca-runtime)
+      echo "Forbidden staged path (.hoca-runtime): $path" >&2
+      return 1
+      ;;
+  esac
+  local base
+  base="$(basename "$path")"
+  local lower
+  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
+      echo "Forbidden staged path (secret-like name): $path" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+while IFS= read -r path || [ -n "$path" ]; do
+  [ -z "$path" ] && continue
+  assert_staged_path_safe "$path" || exit 1
+done < "$POST_STAGE_NAMES"
+
 git diff --cached --name-only > "$RUN_DIR/staged-files.txt"
 
 if [ ! -s "$RUN_DIR/staged-files.txt" ]; then

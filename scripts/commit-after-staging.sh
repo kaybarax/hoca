@@ -51,6 +51,48 @@ if ! git diff --cached --check; then
   exit 1
 fi
 
+echo "=== Pre-commit: git status --short ==="
+git status --short | tee "$RUN_DIR/pre-commit-git-status-short.txt"
+
+echo "=== Pre-commit: git diff --cached ==="
+git diff --cached > "$RUN_DIR/pre-commit-git-diff-cached.txt"
+git diff --cached --stat
+
+assert_cached_path_safe() {
+  local path="$1"
+  case "$path" in
+    .hoca-runtime/*|.hoca-runtime)
+      echo "Refusing commit: forbidden staged path (.hoca-runtime): $path" >&2
+      return 1
+      ;;
+  esac
+  local base lower
+  base="$(basename "$path")"
+  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
+      echo "Refusing commit: forbidden staged path (secret-like name): $path" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+while IFS= read -r path || [ -n "$path" ]; do
+  [ -z "$path" ] && continue
+  assert_cached_path_safe "$path" || exit 1
+done < "$CACHED_SORTED"
+
+INTENDED_NORM="$RUN_DIR/intended-files.normalized.txt"
+if [ -f "$INTENDED_NORM" ]; then
+  INTENDED_SORTED="$RUN_DIR/.intended-for-commit-check.txt"
+  sort -u "$INTENDED_NORM" > "$INTENDED_SORTED"
+  if ! diff -q "$INTENDED_SORTED" "$CACHED_SORTED" >/dev/null; then
+    echo "Staged index does not match intended-files.normalized.txt from safe staging." >&2
+    exit 1
+  fi
+fi
+
 TASK_ONELINE="$(printf '%s' "$TASK" | tr '\n\r' '  ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{2,\}/ /g')"
 if [ -z "$TASK_ONELINE" ]; then
   echo "Task text is empty; cannot build commit message." >&2
