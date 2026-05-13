@@ -12,11 +12,18 @@ from hoca.run_state import (
     _held_locks,
     acquire_lock,
     create_run_id,
+    ensure_gitignore,
     ensure_run_dir,
+    ensure_runtime_dirs,
+    is_duplicate_issue_run,
+    mark_blocked,
+    mark_failed,
     now_epoch,
+    now_iso,
     read_json,
     release_lock,
     write_json,
+    write_status,
 )
 
 
@@ -158,3 +165,126 @@ def test_stale_lock_not_blindly_removed(tmp_path: Path) -> None:
     assert ok is False
     content = json.loads(lock.read_text(encoding="utf-8"))
     assert content["run_id"] == "old-run"
+
+
+# --- ensure_runtime_dirs ---
+
+
+def test_ensure_runtime_dirs_creates_structure(tmp_path: Path) -> None:
+    runtime = ensure_runtime_dirs(tmp_path)
+    assert runtime == tmp_path / RUN_STATE_DIRNAME
+    assert (runtime / "runs").is_dir()
+    assert (runtime / "logs").is_dir()
+
+
+def test_ensure_runtime_dirs_idempotent(tmp_path: Path) -> None:
+    r1 = ensure_runtime_dirs(tmp_path)
+    r2 = ensure_runtime_dirs(tmp_path)
+    assert r1 == r2
+    assert (r1 / "runs").is_dir()
+    assert (r1 / "logs").is_dir()
+
+
+# --- ensure_gitignore ---
+
+
+def test_ensure_gitignore_creates_rule(tmp_path: Path) -> None:
+    added = ensure_gitignore(tmp_path)
+    assert added is True
+    content = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".hoca-runtime/" in content
+
+
+def test_ensure_gitignore_appends_to_existing(tmp_path: Path) -> None:
+    gi = tmp_path / ".gitignore"
+    gi.write_text("node_modules/\n", encoding="utf-8")
+    ensure_gitignore(tmp_path)
+    content = gi.read_text(encoding="utf-8")
+    assert "node_modules/" in content
+    assert ".hoca-runtime/" in content
+
+
+def test_ensure_gitignore_no_duplicate(tmp_path: Path) -> None:
+    gi = tmp_path / ".gitignore"
+    gi.write_text(".hoca-runtime/\n", encoding="utf-8")
+    added = ensure_gitignore(tmp_path)
+    assert added is False
+    lines = gi.read_text(encoding="utf-8").splitlines()
+    assert lines.count(".hoca-runtime/") == 1
+
+
+# --- now_iso ---
+
+
+def test_now_iso_format() -> None:
+    ts = now_iso()
+    assert ts.endswith("Z")
+    assert "T" in ts
+    assert len(ts) == 20
+
+
+# --- write_status ---
+
+
+def test_write_status_creates_file(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    path = write_status(run_dir, "started", run_id="run-1", task="fix bug")
+    assert path == run_dir / "status.json"
+    data = read_json(path)
+    assert data["status"] == "started"
+    assert data["run_id"] == "run-1"
+    assert data["task"] == "fix bug"
+
+
+def test_write_status_updates_existing(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-2"
+    run_dir.mkdir()
+    write_status(run_dir, "started", run_id="run-2")
+    write_status(run_dir, "running")
+    data = read_json(run_dir / "status.json")
+    assert data["status"] == "running"
+    assert data["run_id"] == "run-2"
+
+
+# --- mark_failed ---
+
+
+def test_mark_failed_writes_reason(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-fail"
+    run_dir.mkdir()
+    write_status(run_dir, "started", run_id="run-fail")
+    mark_failed(run_dir, "tests_failed")
+    data = read_json(run_dir / "status.json")
+    assert data["status"] == "failed"
+    assert data["reason"] == "tests_failed"
+    assert "failed_at" in data
+
+
+# --- mark_blocked ---
+
+
+def test_mark_blocked_writes_reason(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-block"
+    run_dir.mkdir()
+    write_status(run_dir, "started", run_id="run-block")
+    mark_blocked(run_dir, "dirty_working_tree")
+    data = read_json(run_dir / "status.json")
+    assert data["status"] == "blocked"
+    assert data["reason"] == "dirty_working_tree"
+    assert "blocked_at" in data
+
+
+# --- is_duplicate_issue_run ---
+
+
+def test_is_duplicate_issue_run_false(tmp_path: Path) -> None:
+    ensure_runtime_dirs(tmp_path)
+    assert is_duplicate_issue_run(tmp_path, "42") is False
+
+
+def test_is_duplicate_issue_run_true(tmp_path: Path) -> None:
+    ensure_runtime_dirs(tmp_path)
+    lock = tmp_path / RUN_STATE_DIRNAME / "runs" / "issue-42.lock"
+    lock.write_text(json.dumps({"run_id": "issue-42"}))
+    assert is_duplicate_issue_run(tmp_path, "42") is True
