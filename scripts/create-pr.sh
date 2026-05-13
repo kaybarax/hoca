@@ -264,6 +264,11 @@ set -e
 printf '%s\n' "$GH_OUT" | tee "$RUN_DIR/gh-pr-create.log"
 if [ "$GH_EC" -ne 0 ]; then
   echo "gh pr create failed (exit $GH_EC)." >&2
+  if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
+    jq --arg reason "pr_creation_failed" '.status = "failed" | .reason = $reason' \
+      "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
+    mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+  fi
   exit 1
 fi
 

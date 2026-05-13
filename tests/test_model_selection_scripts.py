@@ -28,6 +28,17 @@ def make_fake_ollama(tmp_path: Path, models: list[str]) -> Path:
     return fake_bin
 
 
+def make_fake_curl(fake_bin: Path, *, succeeds: bool = True) -> None:
+    curl = fake_bin / "curl"
+    curl.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"exit {0 if succeeds else 7}\n",
+        encoding="utf-8",
+    )
+    curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
+
+
 def make_fake_openhands(fake_bin: Path) -> None:
     openhands = fake_bin / "openhands"
     openhands.write_text(
@@ -85,6 +96,7 @@ def run_script(
 
 def test_select_model_prefers_configured_ollama_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "custom-coder"])
+    make_fake_curl(fake_bin)
 
     result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "custom-coder"})
 
@@ -94,6 +106,7 @@ def test_select_model_prefers_configured_ollama_model(tmp_path: Path) -> None:
 
 def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
+    make_fake_curl(fake_bin)
 
     result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "missing-model"})
 
@@ -103,6 +116,7 @@ def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
 
 def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["unrelated-model"])
+    make_fake_curl(fake_bin)
 
     result = run_script("select-model.sh", fake_bin)
 
@@ -110,8 +124,19 @@ def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> 
     assert "No HOCA-compatible Ollama model found" in result.stderr
 
 
+def test_select_model_errors_when_ollama_server_is_unreachable(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
+    make_fake_curl(fake_bin, succeeds=False)
+
+    result = run_script("select-model.sh", fake_bin)
+
+    assert result.returncode == 1
+    assert "Start it with: ollama serve" in result.stderr
+
+
 def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
     make_fake_openhands(fake_bin)
     project = tmp_path / "project"
     run_dir = tmp_path / "run"
@@ -130,6 +155,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
 
 def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
     make_fake_aider(fake_bin)
     project = tmp_path / "project"
     run_dir = tmp_path / "run"

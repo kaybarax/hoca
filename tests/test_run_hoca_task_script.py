@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import os
+import stat
 from pathlib import Path
 
 
@@ -27,6 +29,84 @@ def run_hoca_task(repo: Path, task: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def make_fake_preflight_bin(
+    tmp_path: Path,
+    *,
+    openhands_body: str | None = None,
+    aider_body: str | None = None,
+    pytest_body: str | None = None,
+) -> Path:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir(parents=True)
+
+    write_executable(fake_bin / "gh", "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(fake_bin / "node", "#!/usr/bin/env bash\necho v20.0.0\n")
+    write_executable(fake_bin / "docker", "#!/usr/bin/env bash\n[[ \"${1:-}\" == info ]] && exit 0\nexit 0\n")
+    write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(fake_bin / "ollama", "#!/usr/bin/env bash\ncat <<'EOF'\nNAME ID SIZE MODIFIED\nqwen-7b-pro abc 1GB now\nEOF\n")
+
+    openhands = openhands_body or "echo 'OpenHands fake run complete.'\n"
+    write_executable(
+        fake_bin / "openhands",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        f"{openhands}",
+    )
+
+    aider = aider_body or "echo 'Review complete.'\necho 'LGTM'\n"
+    write_executable(
+        fake_bin / "aider",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--version" ]]; then echo "aider 1.0"; exit 0; fi\n'
+        f"{aider}",
+    )
+
+    if pytest_body is not None:
+        write_executable(fake_bin / "pytest", "#!/usr/bin/env bash\nset -euo pipefail\n" + pytest_body)
+
+    return fake_bin
+
+
+def run_hoca_task_with_env(
+    repo: Path,
+    task: str,
+    env: dict[str, str],
+    *extra_args: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(SCRIPT), str(repo), task, *extra_args],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+
+
+def latest_status(repo: Path, run_id: str | None = None) -> str:
+    runs = repo / ".hoca-runtime" / "runs"
+    if run_id is None:
+        run_dirs = sorted(p for p in runs.iterdir() if p.is_dir())
+        status_path = run_dirs[-1] / "status.json"
+    else:
+        status_path = runs / run_id / "status.json"
+    return status_path.read_text(encoding="utf-8")
+
+
+def fake_tools_root(repo: Path, name: str = "tools") -> Path:
+    return repo.parent / f"{repo.name}-{name}"
+
+
 def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: Path) -> None:
     init_repo(tmp_path)
     (tmp_path / "README.md").write_text("human edit\n", encoding="utf-8")
@@ -40,3 +120,118 @@ def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: 
     assert "Working tree status before run:" in result.stdout
     assert "README.md" in result.stdout
     assert "Stopping to avoid mixing unrelated human changes" in result.stdout
+
+
+def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    (fake_bin / "docker").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "HOCA doctor failed" in result.stderr
+    assert '"reason": "doctor_failed"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="echo 'boom' >&2\nexit 42\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "OpenHands failed with exit code" in result.stderr
+    assert '"reason": "openhands_failed"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_stops_immediately_on_secret_changed_by_openhands(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="echo 'TOKEN=value' > .env\necho 'created secret-like file'\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Secret-like changed file detected" in result.stderr
+    assert '"reason": "secret_detected"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        pytest_body="echo 'tests failed'\nexit 3\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Tests failed. Stopping before review or commit" in result.stderr
+    assert '"reason": "tests_failed"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        aider_body="echo 'aider crashed' >&2\nexit 5\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    failed = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert failed.returncode != 0
+    assert "Aider failed with exit code 5" in failed.stderr
+    assert '"reason": "aider_failed"' in latest_status(tmp_path)
+
+    repo2 = tmp_path / "repo2"
+    repo2.mkdir()
+    init_repo(repo2)
+    fake_bin2 = make_fake_preflight_bin(
+        fake_tools_root(repo2, "tools2"),
+        aider_body="echo 'Needs fixes.'\nexit 0\n",
+    )
+    env2 = os.environ.copy()
+    env2["PATH"] = f"{fake_bin2}{os.pathsep}{env2['PATH']}"
+
+    rejected = run_hoca_task_with_env(repo2, "Update README", env2)
+
+    assert rejected.returncode != 0
+    assert "Aider did not return LGTM" in rejected.stderr
+    assert '"reason": "aider_not_lgtm"' in latest_status(repo2)
+
+
+def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    lock_dir = tmp_path / ".hoca-runtime" / "runs"
+    lock_dir.mkdir(parents=True)
+    (lock_dir / "issue-42.lock").write_text("{}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [str(SCRIPT), str(tmp_path), "Fix issue", "--issue-id", "42"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 0
+    assert "Another HOCA run appears to be active" in result.stdout
