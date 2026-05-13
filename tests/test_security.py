@@ -2,9 +2,14 @@ import hashlib
 import hmac
 import time
 
+from pathlib import Path
+
 from hoca.security import (
     is_allowed_repo,
+    is_path_inside_repo,
     is_secret_like_path,
+    reject_path_traversal,
+    validate_staging_file_list,
     verify_hmac_signature,
     verify_timestamp,
 )
@@ -96,3 +101,113 @@ def test_allowed_repo_matches() -> None:
 
 def test_allowed_repo_rejects() -> None:
     assert not is_allowed_repo("bad/repo", "owner/repo,other/repo")
+
+
+# --- reject_path_traversal ---
+
+
+def test_reject_path_traversal_clean_path() -> None:
+    assert reject_path_traversal("src/main.py") is None
+    assert reject_path_traversal("README.md") is None
+
+
+def test_reject_path_traversal_dotdot() -> None:
+    assert reject_path_traversal("../etc/passwd") is not None
+    assert reject_path_traversal("src/../../secret") is not None
+
+
+def test_reject_path_traversal_absolute() -> None:
+    assert reject_path_traversal("/etc/passwd") is not None
+    assert reject_path_traversal("/tmp/file.txt") is not None
+
+
+# --- is_path_inside_repo ---
+
+
+def test_is_path_inside_repo_normal(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").touch()
+    assert is_path_inside_repo(tmp_path, "src/app.py")
+
+
+def test_is_path_inside_repo_traversal_escape(tmp_path: Path) -> None:
+    assert not is_path_inside_repo(tmp_path, "../../etc/passwd")
+
+
+def test_is_path_inside_repo_at_root(tmp_path: Path) -> None:
+    (tmp_path / "setup.py").touch()
+    assert is_path_inside_repo(tmp_path, "setup.py")
+
+
+# --- validate_staging_file_list ---
+
+
+def test_validate_staging_accepts_normal_files(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").touch()
+    (tmp_path / "README.md").touch()
+    errors = validate_staging_file_list(tmp_path, ["src/main.py", "README.md"])
+    assert errors == []
+
+
+def test_validate_staging_rejects_env(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, [".env"])
+    assert len(errors) == 1
+    assert "secret-like" in errors[0]
+
+
+def test_validate_staging_rejects_pem(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["deploy.pem"])
+    assert len(errors) == 1
+    assert "secret-like" in errors[0]
+
+
+def test_validate_staging_rejects_key(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["server.key"])
+    assert len(errors) == 1
+    assert "secret-like" in errors[0]
+
+
+def test_validate_staging_rejects_absolute(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["/etc/passwd"])
+    assert len(errors) == 1
+    assert "absolute" in errors[0]
+
+
+def test_validate_staging_rejects_traversal(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["../outside/file.txt"])
+    assert len(errors) == 1
+    assert "traversal" in errors[0]
+
+
+def test_validate_staging_rejects_outside_repo(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["src/../../outside.txt"])
+    assert len(errors) == 1
+    assert "traversal" in errors[0]
+
+
+def test_validate_staging_rejects_runtime_files(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(
+        tmp_path, [".hoca-runtime/runs/abc/status.json"],
+    )
+    assert len(errors) == 1
+    assert "runtime" in errors[0]
+
+
+def test_validate_staging_rejects_lock_files(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, ["package-lock.lock"])
+    assert len(errors) == 1
+    assert "lock" in errors[0]
+
+
+def test_validate_staging_rejects_token_config(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(tmp_path, [".npmrc"])
+    assert len(errors) == 1
+    assert "secret-like" in errors[0]
+
+
+def test_validate_staging_collects_multiple_errors(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(
+        tmp_path, [".env", "/absolute", "../traversal", "ok.py"],
+    )
+    assert len(errors) == 3

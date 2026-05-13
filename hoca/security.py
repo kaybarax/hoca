@@ -111,6 +111,65 @@ def verify_timestamp(timestamp: str | None) -> bool:
     return abs(time.time() - ts) <= WEBHOOK_TIMESTAMP_MAX_AGE
 
 
+RUNTIME_DIRECTORY_PREFIX = ".hoca-runtime"
+
+LOCK_SUFFIXES = {".lock", ".lck"}
+
+
+def reject_path_traversal(path: str | Path) -> str | None:
+    p = str(path)
+    if Path(p).is_absolute():
+        return "absolute paths are not allowed"
+    if ".." in Path(p).parts:
+        return "path traversal is not allowed"
+    return None
+
+
+def is_path_inside_repo(repo_root: str | Path, candidate_path: str | Path) -> bool:
+    root = Path(repo_root).resolve()
+    candidate = (root / candidate_path).resolve()
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_runtime_path(path: str | Path) -> bool:
+    return any(
+        part == RUNTIME_DIRECTORY_PREFIX for part in Path(path).parts
+    )
+
+
+def _is_lock_file(path: str | Path) -> bool:
+    suffix = Path(path).suffix.lower()
+    return suffix in LOCK_SUFFIXES
+
+
+def validate_staging_file_list(
+    repo_root: str | Path, files: list[str],
+) -> list[str]:
+    errors: list[str] = []
+    for f in files:
+        traversal_error = reject_path_traversal(f)
+        if traversal_error:
+            errors.append(f"{f}: {traversal_error}")
+            continue
+        if not is_path_inside_repo(repo_root, f):
+            errors.append(f"{f}: file is outside the repository")
+            continue
+        if is_secret_like_path(f):
+            errors.append(f"{f}: secret-like file")
+            continue
+        if _is_runtime_path(f):
+            errors.append(f"{f}: runtime file")
+            continue
+        if _is_lock_file(f):
+            errors.append(f"{f}: lock file")
+            continue
+    return errors
+
+
 def is_allowed_repo(repo: str, allowed_repos: str | None) -> bool:
     if not allowed_repos or not allowed_repos.strip():
         return True
