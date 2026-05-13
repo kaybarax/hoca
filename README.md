@@ -126,3 +126,33 @@ The workflow roles are fixed:
 
 This model keeps automated work inside a repository-scoped, review-oriented
 pipeline instead of treating the computer as an unrestricted operating surface.
+
+## Docker
+
+Docker is optional. HOCA uses Docker primarily as the OpenHands sandbox backend.
+A `docker-compose.yml` is provided for optional local services.
+
+Start Docker Desktop or Colima before running HOCA:
+
+```sh
+# Colima example
+colima start --cpu 6 --memory 16
+```
+
+The webhook listener can run as a Docker service, but running it directly on the
+host is preferred when it needs to launch host-level commands (hoca CLI, Docker,
+Ollama):
+
+```sh
+# Preferred: run on host
+python scripts/webhook-listener.py
+
+# Alternative: run in Docker (isolated, cannot spawn host commands)
+docker compose --profile webhook up
+```
+
+Ollama is not included in Docker Compose. Run it natively:
+
+```sh
+ollama serve
+```
