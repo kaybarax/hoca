@@ -1,158 +1,316 @@
 # HOCA
 
-HOCA means **Hermes + OpenHands Computer Automata**.
+**Hermes + OpenHands Computer Automata**
 
-HOCA is a local-first autonomous engineering automation toolkit. It is designed to
-help a developer run structured software engineering work on their own machine,
-inside a bounded repository workspace, with explicit review and safety controls.
+HOCA is a local-first autonomous engineering automation toolkit. It coordinates
+Hermes, OpenHands, Aider, and Ollama to turn a task description or GitHub issue
+into a reviewed pull request — running entirely on your own machine.
 
-HOCA is not an unrestricted self-operating computer agent. It should not receive
-open-ended control over a machine, wander across unrelated folders, or commit and
-merge changes without inspection. HOCA is an experimental but structured AI
-developer workspace: useful because it is automated, and useful because that
-automation is constrained.
+HOCA is **not** an unrestricted self-operating computer agent. It does not
+wander across unrelated folders, commit without inspection, or merge without
+approval. Every run is scoped to a single repository, gated by tests and code
+review, and stopped before merge by default.
 
-## Product Priorities
-
-HOCA must prioritize:
-
-- Local execution.
-- Repository-scoped work.
-- Explicit safety controls.
-- Git hygiene.
-- Review-before-merge.
-- Human review by default.
-- No blind commits.
-- No blind merges.
-- No uncontrolled filesystem access.
-
-These priorities are non-negotiable defaults for the project. Later workflow,
-script, and CLI implementations should make the safe path the normal path.
-
-## Required Default Behavior
-
-HOCA's default behavior is intentionally conservative:
-
-- `auto_merge` is disabled.
-- Pull requests are required for normal completion.
-- Direct pushes to `main` and `master` are forbidden.
-- Each run requires a clean working tree before it starts.
-- Runs stop when unrelated human changes are present.
-- Runs stop when secret-like files are modified or created.
-- Runs stop when tests fail.
-- Runs stop unless Aider returns explicit approval.
-- The task runner commits only after safe staging succeeds, using exactly one `git commit` against the staged index (never blind `git commit -am`).
-- Blind staging commands such as `git add .`, `git add -A`, and `git add --all`
-  are forbidden.
-- Explicit staging also refuses secret-like files such as `.env`, private keys,
-  kubeconfigs, package registry credentials, Docker credentials, browser
-  cookies, and local credential stores.
-- `git commit -am` is forbidden.
-- High-risk changes are never auto-merged.
-- Optional **guarded auto-merge** (milestone 18.2): with `--auto-merge`, `status.json` sets `auto_merge` true. When you later run `create-pr.sh`, HOCA may run `gh pr merge --auto --merge --delete-branch` only if `scripts/auto-merge-guards.sh` passes: tests exited 0, Aider output contains `LGTM`, `risk-level.txt` starts with `low`, `staged-files.txt` has no secret-like paths, infrastructure-sensitive paths appear in `staging-justification.txt`, the repo has GitHub **Allow auto-merge**, and the new PR reports **MERGEABLE**. Otherwise the PR stays open for human review.
-
-These defaults are encoded in `hoca.config` and `hoca.git_utils` so later CLI and
-script work can call the same policy checks instead of reimplementing safety
-rules in separate places.
-
-## Secrets Policy
-
-HOCA must never commit local credentials. Keep real secrets in local environment
-or credential-store tooling outside of committed project files. The safety policy
-rejects secret-like paths before staging, including `.env` files, private key
-formats, `.github/secrets`, kubeconfigs, `.npmrc`, `.pypirc`, Docker registry
-credentials, browser cookies, and local credential stores such as `.ssh`,
-`.aws`, `.azure`, `.gnupg`, and macOS Keychains.
-
-## Core Workflow Model
-
-HOCA uses a bounded engineering workflow that turns a human request or GitHub
-Issue into reviewed repository changes:
+## Architecture
 
 ```text
 Human or GitHub Issue
-        |
-        v
-Hermes Manager
-        |
-        v
-OpenHands Worker
-        |
-        v
-Tests and Diff Inspection
-        |
-        v
-Aider Reviewer
-        |
-        v
-Selective Git Staging
-        |
-        v
-Commit
-        |
-        v
-Pull Request
-        |
-        v
-Human Review by Default
-        |
-        v
-Optional Merge
-        |
-        v
-Notification
+        │
+        ▼
+  Hermes Manager        ← plans work, delegates, coordinates review
+        │
+        ▼
+  OpenHands Worker      ← implements changes inside the target repo
+        │
+        ▼
+  Tests + Diff Check    ← runs project tests, inspects changes
+        │
+        ▼
+  Aider Reviewer        ← independent code review for quality and security
+        │
+        ▼
+  Safe Git Staging      ← selective staging, rejects secrets and blind adds
+        │
+        ▼
+  Commit + PR           ← creates branch, commits, opens pull request
+        │
+        ▼
+  Human Review          ← default: no auto-merge, human approves
 ```
 
-The workflow roles are fixed:
+### Roles
 
-- Hermes is the Manager. It plans work, delegates bounded implementation tasks,
-  inspects workflow state, coordinates review, and manages the Git and pull
-  request lifecycle.
-- OpenHands is the Worker. It performs implementation inside the target
-  repository workspace under the Manager's constraints.
-- Aider is the Reviewer. It provides an independent quality, correctness,
-  security, test, and unnecessary-edit review before changes are accepted.
-- Ollama is the local LLM runtime. It provides local model execution where
-  practical and keeps the default system local-first.
-- Git and GitHub CLI are the version-control and pull-request layer. They create
-  branches, inspect diffs, stage selected files, commit changes, and open pull
-  requests.
-- GitHub Actions and the local webhook listener are the optional issue-trigger
-  layer. They can wake a local HOCA run from labeled or opened GitHub Issues
-  after webhook security checks.
-- macOS notifications and Telegram are the optional notification layer. They
-  report completion, blocked runs, or required human action without making
-  notification delivery a critical path.
+| Component | Role |
+|-----------|------|
+| **Hermes** | Manager. Plans work, delegates bounded tasks, inspects state, coordinates review, manages the Git and PR lifecycle. |
+| **OpenHands** | Worker. Performs implementation inside the target repository under the Manager's constraints. |
+| **Aider** | Reviewer. Provides independent quality, correctness, security, and unnecessary-edit review before changes are accepted. |
+| **Ollama** | Local LLM runtime. Runs models locally to keep the system local-first. |
+| **Git + GitHub CLI** | Version control and pull request layer. |
 
-This model keeps automated work inside a repository-scoped, review-oriented
-pipeline instead of treating the computer as an unrestricted operating surface.
+## Requirements
 
-## Docker
+### Hardware
 
-Docker is optional. HOCA uses Docker primarily as the OpenHands sandbox backend.
-A `docker-compose.yml` is provided for optional local services.
+- Apple Silicon Mac or comparable local machine
+- 48 GB RAM recommended for 32B models (smaller models need less — see
+  [Model Support](#model-support))
 
-Start Docker Desktop or Colima before running HOCA:
+### Software
+
+| Dependency | Purpose |
+|------------|---------|
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [Colima](https://github.com/abiosoft/colima) | OpenHands sandbox backend |
+| [Homebrew](https://brew.sh) | Package manager for macOS dependencies |
+| Python 3.12+ | HOCA runtime and Aider |
+| Node.js | Test runner support for JS/TS projects |
+| Git | Version control |
+| [GitHub CLI (`gh`)](https://cli.github.com) | PR creation and authentication |
+| [Ollama](https://ollama.ai) | Local LLM runtime |
+| [OpenHands CLI](https://docs.all-hands.dev) | AI worker agent |
+| [Aider](https://aider.chat) | AI code reviewer |
+| [Hermes Agent](https://github.com/anthropics/hermes) | Manager agent |
+
+## Model Support
+
+HOCA defaults to `qwen2.5-coder:32b` with a custom Ollama Modelfile that sets
+a 32K context window. If your machine cannot run the 32B model, HOCA supports
+smaller alternatives:
+
+| Model | RAM Needed | Context | Modelfile |
+|-------|-----------|---------|-----------|
+| `qwen2.5-coder:32b` | ~48 GB | 32768 | `models/Modelfile` |
+| `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
+| `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
+
+Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
+be used by setting the `LLM_MODEL`, `AIDER_MODEL`, and `OLLAMA_MODEL`
+environment variables in your `.env` file.
+
+Smaller models trade capability for speed and lower memory use. For high-risk
+work, human review is recommended regardless of model size.
+
+## Installation
 
 ```sh
-# Colima example
-colima start --cpu 6 --memory 16
+git clone <repo-url> hoca
+cd hoca
+cp .env.example .env
+# Edit .env with your local values
+./scripts/install.sh
 ```
 
-The webhook listener can run as a Docker service, but running it directly on the
-host is preferred when it needs to launch host-level commands (hoca CLI, Docker,
-Ollama):
+The install script handles Homebrew packages, Python dependencies, Aider,
+OpenHands, Ollama model pulls, and model alias creation. It prints warnings for
+anything that needs manual follow-up.
+
+After installation:
+
+1. Start Ollama: `ollama serve`
+2. Start Docker: open Docker Desktop, or run `colima start --cpu 6 --memory 16`
+3. Authenticate GitHub: `gh auth login`
+
+## Health Check
+
+Verify that all dependencies are installed and configured:
 
 ```sh
-# Preferred: run on host
-python scripts/webhook-listener.py
-
-# Alternative: run in Docker (isolated, cannot spawn host commands)
-docker compose --profile webhook up
+bin/hoca doctor
 ```
 
-Ollama is not included in Docker Compose. Run it natively:
+Doctor checks for required commands, Docker availability, Ollama connectivity,
+model presence, GitHub authentication, and environment configuration.
+
+## Usage
+
+### Initialize a Target Project
+
+Prepare a repository for HOCA runs by copying worker instructions and reviewer
+configuration:
 
 ```sh
-ollama serve
+bin/hoca init-project /path/to/repo
 ```
+
+### Manual Run
+
+Run a task against a repository:
+
+```sh
+bin/hoca run /path/to/repo "Implement feature X"
+```
+
+### Issue Run
+
+Run a task linked to a GitHub issue:
+
+```sh
+bin/hoca issue /path/to/repo 123 "Fix the login bug"
+```
+
+Both `run` and `issue` accept optional flags:
+
+- `--auto-merge` — enable guarded auto-merge (disabled by default)
+- `--notify-telegram` — send Telegram notifications on completion
+
+## Default Behavior
+
+HOCA is intentionally conservative by default.
+
+### Stop Before Commit
+
+HOCA stops before committing when it cannot safely determine which files to
+stage. Changed files are recorded for human review. This prevents accidental
+inclusion of unrelated changes or sensitive files.
+
+### Safe Staging
+
+HOCA never runs `git add .`, `git add -A`, or `git commit -am`. Files are
+staged selectively. The staging process rejects secret-like files including
+`.env`, private keys, kubeconfigs, package registry credentials, Docker
+credentials, and local credential stores.
+
+### Pull Request Creation
+
+When staging and commit succeed, HOCA creates a pull request using the GitHub
+CLI. The PR includes a summary, validation results, Aider review status, and
+risk assessment.
+
+### Auto-Merge
+
+Auto-merge is **disabled by default**. When enabled with `--auto-merge`, HOCA
+runs additional guards before merging:
+
+- Tests must pass.
+- Aider must return LGTM.
+- Risk level must be low.
+- No secret-like files in the changeset.
+- The repository must allow auto-merge in GitHub settings.
+- The PR must be mergeable.
+
+Auto-merge is **never** allowed for authentication, authorization, payment,
+database migration, infrastructure, or security-sensitive changes.
+
+## GitHub Issue Automation
+
+HOCA can be triggered from GitHub issues using a webhook workflow.
+
+### Webhook Setup
+
+1. Start the local webhook listener:
+
+   ```sh
+   source .env
+   python scripts/webhook-listener.py
+   ```
+
+2. Expose the listener through a secure tunnel (e.g., Cloudflare Tunnel):
+
+   ```sh
+   cloudflared tunnel --url http://127.0.0.1:5000
+   ```
+
+3. Configure GitHub repository secrets:
+
+   | Secret | Value |
+   |--------|-------|
+   | `AGENT_WEBHOOK_URL` | Your tunnel URL + `/webhook` (e.g., `https://example.trycloudflare.com/webhook`) |
+   | `HOCA_WEBHOOK_SECRET` | A shared secret for HMAC signature verification |
+
+4. Create a `fix-me` label in your GitHub repository.
+
+5. Add the `fix-me` label to any issue to trigger a HOCA run.
+
+The included GitHub Actions workflow (`.github/workflows/agent-trigger.yml`)
+sends a signed webhook payload to your local listener, which dispatches Hermes
+to run HOCA against the issue.
+
+### Webhook Security
+
+- The listener binds to `127.0.0.1` only — it is not directly exposed to the
+  internet.
+- Every incoming webhook is verified against an HMAC-SHA256 signature using
+  `HOCA_WEBHOOK_SECRET`.
+- Issue titles are never passed directly into shell commands.
+- The listener can also run as a Docker service, but running on the host is
+  preferred when it needs to launch Hermes, Docker, or Ollama.
+
+## Telegram Notifications
+
+HOCA can send Telegram messages on task completion or when a run is blocked.
+
+Set these in your `.env` file:
+
+```
+TELEGRAM_BOT_TOKEN=<your-bot-token>
+TELEGRAM_CHAT_ID=<your-chat-id>
+```
+
+Use the `--notify-telegram` flag with `run` or `issue` commands.
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `ollama` not found | Install with `brew install ollama` |
+| Ollama server not responding | Start it with `ollama serve` |
+| Docker not running | Start Docker Desktop or run `colima start` |
+| `gh` not authenticated | Run `gh auth login` |
+| `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
+| `aider` not found | Run `pip install aider-install && aider-install` |
+| Model not available | Run `ollama pull qwen2.5-coder:32b` (or 14b/7b) |
+| Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
+| Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
+| Tests fail | Check `.hoca-runtime/runs/<run-id>/tests.log` for details |
+| Aider not LGTM | Check `.hoca-runtime/runs/<run-id>/aider-review.txt` for required fixes |
+
+## Logs
+
+HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
+
+```
+.hoca-runtime/
+├── runs/
+│   └── <run-id>/
+│       ├── status.json         # Run state and metadata
+│       ├── openhands-output.*  # Worker output
+│       ├── aider-review.txt    # Reviewer feedback
+│       ├── tests.log           # Test results
+│       ├── git-status.txt      # Changed files
+│       ├── git-diff.patch      # Full diff
+│       └── pr-body.md          # PR description
+└── logs/
+```
+
+Add `.hoca-runtime/` to the target repository's `.gitignore`.
+
+## Known Limitations
+
+- HOCA currently targets macOS. Linux support is possible but untested.
+- Local models are not as reliable as frontier hosted models. Review all output
+  carefully.
+- OpenHands runs in headless always-approve mode. HOCA's safety controls
+  operate at the staging and review layer, not inside the worker sandbox.
+- The webhook listener requires a secure tunnel for GitHub to reach your local
+  machine. The tunnel must stay running for issue automation to work.
+- Duplicate GitHub Actions runs can occur when issue events (opened + labeled)
+  fire together. The lock mechanism prevents concurrent HOCA runs for the same
+  issue.
+
+## Safety Principles
+
+HOCA is built around the idea that automation is most useful when it is
+constrained:
+
+- **Repository-scoped.** Every run is confined to a single repository working
+  tree.
+- **Review before merge.** Aider reviews all changes. Human review is the
+  default before merge.
+- **No blind commits.** Files are staged selectively. Secret-like paths are
+  always rejected.
+- **No blind merges.** Auto-merge is off by default and gated by strict guards
+  even when enabled.
+- **Clean working tree.** Runs refuse to start when uncommitted human changes
+  are present.
+- **Transparent.** All run artifacts, logs, and decisions are recorded in
+  `.hoca-runtime/`.
