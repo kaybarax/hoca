@@ -1,1 +1,2 @@
-# HOCA Aider configuration template.
+model: ollama_chat/qwen-32b-pro
+auto-test: true

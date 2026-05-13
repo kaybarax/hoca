@@ -1,1 +1,3 @@
-# HOCA Aider model settings template.
+- name: ollama_chat/qwen-32b-pro
+  extra_params:
+    num_ctx: 32768
