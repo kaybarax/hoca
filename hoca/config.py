@@ -1,6 +1,35 @@
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+_FALSY = frozenset({"0", "false", "no", "off", ""})
+
+_SECRET_PATTERN = re.compile(
+    r"(token|secret|password|api_key|private_key)", re.IGNORECASE
+)
+
+
+def parse_bool(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in _TRUTHY:
+        return True
+    if normalized in _FALSY:
+        return False
+    raise ValueError(f"Cannot parse {value!r} as boolean")
+
+
+def _resolve_path(value: str | None, *, default: Path | None = None) -> Path | None:
+    if value is None:
+        return default
+    return Path(value).expanduser().resolve()
 
 
 @dataclass(frozen=True)
@@ -18,6 +47,82 @@ class SafetyPolicy:
 
 
 DEFAULT_POLICY = SafetyPolicy()
+
+
+@dataclass(frozen=True)
+class HocaConfig:
+    auto_merge: bool = False
+    require_aider_lgtm: bool = True
+    require_tests: bool = True
+    stop_on_dirty_tree: bool = True
+
+    workspace_root: Path | None = None
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen-32b-pro"
+    llm_model: str = "ollama/qwen-32b-pro"
+    llm_base_url: str = "http://127.0.0.1:11434"
+    aider_model: str = "ollama_chat/qwen-32b-pro"
+
+    webhook_secret: str = ""
+    webhook_url: str = ""
+    allowed_repos: str = ""
+    max_webhook_bytes: int = 65536
+
+    notify_telegram: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    def safe_repr(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for field_name in self.__dataclass_fields__:
+            value = getattr(self, field_name)
+            if _SECRET_PATTERN.search(field_name):
+                out[field_name] = "***" if value else "(unset)"
+            else:
+                out[field_name] = str(value)
+        return out
+
+
+def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
+    if dotenv_path is not None:
+        load_dotenv(dotenv_path)
+    else:
+        load_dotenv()
+
+    workspace_root = _resolve_path(os.environ.get("HOCA_WORKSPACE_ROOT"))
+
+    return HocaConfig(
+        auto_merge=parse_bool(os.environ.get("HOCA_AUTO_MERGE"), default=False),
+        require_aider_lgtm=parse_bool(
+            os.environ.get("HOCA_REQUIRE_AIDER_LGTM"), default=True
+        ),
+        require_tests=parse_bool(
+            os.environ.get("HOCA_REQUIRE_TESTS"), default=True
+        ),
+        stop_on_dirty_tree=parse_bool(
+            os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True
+        ),
+        workspace_root=workspace_root,
+        ollama_base_url=os.environ.get(
+            "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
+        ),
+        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-32b-pro"),
+        llm_model=os.environ.get("LLM_MODEL", "ollama/qwen-32b-pro"),
+        llm_base_url=os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434"),
+        aider_model=os.environ.get("AIDER_MODEL", "ollama_chat/qwen-32b-pro"),
+        webhook_secret=os.environ.get("HOCA_WEBHOOK_SECRET", ""),
+        webhook_url=os.environ.get("HOCA_WEBHOOK_URL", ""),
+        allowed_repos=os.environ.get("HOCA_ALLOWED_REPOS", ""),
+        max_webhook_bytes=int(
+            os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536")
+        ),
+        notify_telegram=parse_bool(
+            os.environ.get("HOCA_NOTIFY_TELEGRAM"), default=False
+        ),
+        telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+        telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
+    )
 
 
 class PolicyError(RuntimeError):
