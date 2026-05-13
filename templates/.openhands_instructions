@@ -30,12 +30,14 @@ Before editing:
 - Do not reformat unrelated files.
 - Do not rename files unless necessary.
 - Do not change public APIs unless the task requires it.
+- Do not upgrade or add dependencies unless the task requires it.
+- Do not modify generated files unless the task requires it.
 - Do not remove tests unless they are obsolete and the reason is documented.
 - Do not introduce secrets, credentials, or hard-coded local paths.
 
 ## Testing Rules
 
-Run relevant checks after implementation.
+Run the narrowest useful tests first, then broader suites when feasible.
 
 Prefer project-defined commands:
 
@@ -47,15 +49,19 @@ Prefer project-defined commands:
 - `go test ./...`
 - `cargo test`
 
+Report failing tests honestly. Do not suppress, skip, or hide failures.
+
 If no tests exist, explain that no test suite was found and provide a manual verification summary.
 
 ## Git Rules
 
 - Do not commit unless explicitly instructed by the manager.
+- Do not stage files. Leave staging to the HOCA manager.
 - Do not run `git add .`.
-- Do not stage unrelated files.
+- Do not push.
 - Do not force-push.
 - Do not merge.
+- Leave all Git operations to Hermes and the HOCA manager.
 - Summarize changed files before handing control back to the manager.
 
 ## Completion Report
