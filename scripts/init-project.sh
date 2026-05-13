@@ -47,6 +47,18 @@ copy_template ".openhands_instructions"
 copy_template ".aider.conf.yml"
 copy_template ".aider.model.settings.yml"
 
+mkdir -p templates
+if [ ! -f "templates/PR_TEMPLATE.md" ]; then
+  if [ -f "$HOCA_ROOT/templates/PR_TEMPLATE.md" ]; then
+    cp "$HOCA_ROOT/templates/PR_TEMPLATE.md" "templates/PR_TEMPLATE.md"
+    CREATED+=("templates/PR_TEMPLATE.md")
+  else
+    echo "Warning: template not found: $HOCA_ROOT/templates/PR_TEMPLATE.md"
+  fi
+else
+  EXISTED+=("templates/PR_TEMPLATE.md")
+fi
+
 mkdir -p .hoca-runtime/runs
 mkdir -p .hoca-runtime/logs
 CREATED+=(".hoca-runtime/runs/" ".hoca-runtime/logs/")
