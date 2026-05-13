@@ -34,13 +34,51 @@ path_is_secret_like() {
 
 path_is_infrastructure_sensitive() {
   case "$1" in
-    .github/workflows/*|Dockerfile|docker-compose*.yml|docker-compose*.yaml|terraform/*|*.tf|k8s/*|kubernetes/*|charts/*|helm/*|vercel.json)
+    .github/workflows/*|Dockerfile|docker-compose*.yml|docker-compose*.yaml|terraform/*|*.tf|k8s/*|kubernetes/*|charts/*|helm/*|vercel.json|infra/*|*/infra/*)
+      return 0
+      ;;
+  esac
+  local lower
+  lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    */ci/*|*/cd/*|*deploy*|*pipeline*)
       return 0
       ;;
     *)
       return 1
       ;;
   esac
+}
+
+path_is_high_risk_category() {
+  local path="$1"
+  local lower
+  lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    auth/*|*/auth/*|*authentication*|*authorization*|*login*|*oauth*|*session*|*jwt*)
+      return 0 ;;
+    security/*|*/security/*|*encrypt*|*decrypt*|*crypto*|*tls-*|*ssl-*|*/certs/*)
+      return 0 ;;
+    payments/*|*/payments/*|billing/*|*/billing/*|*stripe*|*invoice*|*subscription*)
+      return 0 ;;
+    */permissions/*|*/acl/*|*/rbac/*|*access-control*)
+      return 0 ;;
+  esac
+  case "$lower" in
+    *migrate*|*migration*|*/migrations/*|*/db/schema*|alembic/*|*/alembic/*|flyway/*|*/flyway/*|liquibase/*|*/liquibase/*)
+      return 0 ;;
+  esac
+  case "$lower" in
+    *destroy*|*teardown*|*drop-*|*nuke*|*purge*|*wipe*)
+      return 0 ;;
+  esac
+  local base_lower
+  base_lower="$(basename "$lower")"
+  case "$base_lower" in
+    package.json|package-lock.json|yarn.lock|pnpm-lock.yaml|go.sum|go.mod|requirements*.txt|pipfile.lock|gemfile.lock|cargo.lock|composer.lock|poetry.lock)
+      return 0 ;;
+  esac
+  return 1
 }
 
 wants_auto_merge() {
@@ -129,6 +167,10 @@ precheck() {
     [ -z "$path" ] && continue
     if path_is_secret_like "$path"; then
       log_skip "Secret-like or runtime path in staged commit: $path"
+      return 1
+    fi
+    if path_is_high_risk_category "$path"; then
+      log_skip "High-risk category path blocks auto-merge: $path"
       return 1
     fi
     if path_is_infrastructure_sensitive "$path"; then
