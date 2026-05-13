@@ -55,6 +55,7 @@ append_log_links() {
     "$RUN_DIR/staged-diff.patch" \
     "$RUN_DIR/gh-pr-create.log" \
     "$RUN_DIR/gh-pr-merge.log" \
+    "$RUN_DIR/research-sources.txt" \
     "$RUN_DIR/merge-policy.txt"; do
     if [ -f "$file" ]; then
       printf -- "- %s\n" "$file"
@@ -189,6 +190,13 @@ fi
   echo "- $MERGE_STATUS"
   if [ -f "$RUN_DIR/merge-policy.txt" ]; then
     echo "- Merge policy recorded at: $RUN_DIR/merge-policy.txt"
+  fi
+  echo ""
+  echo "### Research Sources"
+  if [ -s "$RUN_DIR/research-sources.txt" ]; then
+    sed -n '1,40p' "$RUN_DIR/research-sources.txt" | sed 's/^/- /'
+  else
+    echo "- No external research sources used."
   fi
   echo ""
   echo "### Notes"

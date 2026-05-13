@@ -247,6 +247,19 @@ scripts/generate-task-report.sh "$project_path" "$run_dir"
 
 The report must include start time, end time, final status, blocked reason when blocked, failed command when failed, links to useful local logs, validation results, PR information when created, and any human follow-up required. Do not include secrets or dump huge logs.
 
+## Web Research Policy
+
+Do not hard-code unsupported OpenHands browsing flags. Do not pass `--enable-browsing` or any browsing-related flag to OpenHands unless `openhands --help` confirms the flag exists. The `run-openhands-task.sh` runner already validates flags against help output; follow the same pattern for any new flags.
+
+If a task requires web research:
+
+1. Hermes should perform research directly if it has a browsing tool available.
+2. Otherwise, configure OpenHands browsing only through currently supported OpenHands settings.
+3. Do not invent CLI flags. Only use flags confirmed by `openhands --help`.
+4. Record sources used in `research-sources.txt` inside the run directory when research influenced implementation. Each line should contain the URL or source description followed by a brief note on what information was used.
+
+When research cannot be performed because no browsing capability is available and the task genuinely requires external information, stop and ask the engineer for the needed source material rather than guessing or fabricating information.
+
 ## One-Command Shortcut
 
 When the engineer wants the default end-to-end HOCA path, prefer the top-level runner:
