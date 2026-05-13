@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# HOCA milestone 18.2: strict prechecks before enabling GitHub auto-merge.
+# Usage:
+#   auto-merge-guards.sh wants-auto-merge <run-dir>     -> exit 0 if yes, 1 if no
+#   auto-merge-guards.sh precheck <run-dir>             -> exit 0 pass, 1 fail, 2 skip (not requested)
+#   auto-merge-guards.sh postcheck-mergeable           -> exit 0 if MERGEABLE, 1 otherwise (reads PR from gh)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKIP_FILE=""
+RUN_DIR=""
+
+log_skip() {
+  printf '%s\n' "$1" >> "$SKIP_FILE"
+}
+
+path_is_secret_like() {
+  local path="$1"
+  case "$path" in
+    .hoca-runtime/*|.hoca-runtime|.git/*|.git)
+      return 0
+      ;;
+  esac
+  local base lower
+  base="$(basename "$path")"
+  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+path_is_infrastructure_sensitive() {
+  case "$1" in
+    .github/workflows/*|Dockerfile|docker-compose*.yml|docker-compose*.yaml|terraform/*|*.tf|k8s/*|kubernetes/*|charts/*|helm/*|vercel.json)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+wants_auto_merge() {
+  local rd="$1"
+  local status_json="$rd/status.json"
+  if [ ! -f "$status_json" ]; then
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+  local flag
+  flag="$(jq -r 'if (.auto_merge == true) or (.auto_merge == "true") or (.auto_merge == "True") then "yes" else "no" end' "$status_json")"
+  if [ "$flag" = "yes" ]; then
+    return 0
+  fi
+  return 1
+}
+
+repo_allows_auto_merge() {
+  if [ "${HOCA_TEST_FORCE_REPO_AUTO_MERGE:-}" = "1" ]; then
+    return 0
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    log_skip "GitHub CLI (gh) is not available; cannot verify allow_auto_merge."
+    return 1
+  fi
+  local owner_repo allowed
+  owner_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  if [ -z "$owner_repo" ]; then
+    log_skip "Could not resolve nameWithOwner for this repository."
+    return 1
+  fi
+  allowed="$(gh api "repos/${owner_repo}" --jq .allow_auto_merge 2>/dev/null || echo "false")"
+  if [ "$allowed" = "true" ]; then
+    return 0
+  fi
+  log_skip "Repository does not have GitHub allow_auto_merge enabled (Settings → General → Pull Requests)."
+  return 1
+}
+
+precheck() {
+  RUN_DIR="$(cd "$1" && pwd)"
+  SKIP_FILE="$RUN_DIR/auto-merge-precheck-skip.txt"
+  : > "$SKIP_FILE"
+
+  if ! wants_auto_merge "$RUN_DIR"; then
+    rm -f "$SKIP_FILE"
+    return 2
+  fi
+
+  if [ ! -f "$RUN_DIR/tests-exit-code.txt" ]; then
+    log_skip "Missing tests-exit-code.txt; tests must run and record exit code before auto-merge."
+    return 1
+  fi
+  local tex
+  tex="$(tr -d '[:space:]' < "$RUN_DIR/tests-exit-code.txt" || true)"
+  if [ "$tex" != "0" ]; then
+    log_skip "Tests did not pass (tests-exit-code.txt is not 0)."
+    return 1
+  fi
+
+  if [ ! -f "$RUN_DIR/aider-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
+    log_skip "Aider review must contain LGTM before auto-merge."
+    return 1
+  fi
+
+  if [ ! -f "$RUN_DIR/risk-level.txt" ]; then
+    log_skip "Missing risk-level.txt; auto-merge requires an explicit machine-readable risk level."
+    return 1
+  fi
+  local rl
+  rl="$(head -n 1 "$RUN_DIR/risk-level.txt" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [ "$rl" != "low" ]; then
+    log_skip "risk-level.txt must be exactly \"low\" (first line); got \"$rl\"."
+    return 1
+  fi
+
+  if [ ! -f "$RUN_DIR/staged-files.txt" ] || [ ! -s "$RUN_DIR/staged-files.txt" ]; then
+    log_skip "Missing or empty staged-files.txt from the commit run."
+    return 1
+  fi
+
+  local path
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -z "$path" ] && continue
+    if path_is_secret_like "$path"; then
+      log_skip "Secret-like or runtime path in staged commit: $path"
+      return 1
+    fi
+    if path_is_infrastructure_sensitive "$path"; then
+      local just="$RUN_DIR/staging-justification.txt"
+      if [ ! -s "$just" ] || ! grep -Fq "$path" "$just"; then
+        log_skip "Infrastructure-sensitive path requires an entry in staging-justification.txt: $path"
+        return 1
+      fi
+    fi
+  done < "$RUN_DIR/staged-files.txt"
+
+  if ! repo_allows_auto_merge; then
+    return 1
+  fi
+
+  return 0
+}
+
+postcheck_mergeable() {
+  # Current branch's PR must be mergeable (no conflicts with base).
+  if [ "${HOCA_TEST_FORCE_PR_MERGEABLE:-}" = "1" ]; then
+    return 0
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    return 1
+  fi
+  local attempt mergeable
+  for attempt in $(seq 1 10); do
+    mergeable="$(gh pr view --json mergeable -q .mergeable 2>/dev/null || echo "UNKNOWN")"
+    if [ "$mergeable" = "MERGEABLE" ]; then
+      return 0
+    fi
+    if [ "$mergeable" = "CONFLICTING" ]; then
+      return 1
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+cmd="${1:-}"
+shift || true
+case "$cmd" in
+  wants-auto-merge)
+    wants_auto_merge "$1"
+    ;;
+  precheck)
+    precheck "$1"
+    ;;
+  postcheck-mergeable)
+    postcheck_mergeable
+    ;;
+  *)
+    echo "Usage: auto-merge-guards.sh wants-auto-merge|precheck <run-dir> | postcheck-mergeable" >&2
+    exit 2
+    ;;
+esac

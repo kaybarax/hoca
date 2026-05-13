@@ -183,16 +183,20 @@ update_status "committed" "commit_complete"
 
 MERGE_POLICY_FILE="$RUN_DIR/merge-policy.txt"
 {
-  echo "HOCA merge policy (milestone 18.1, default no-merge)"
+  echo "HOCA merge policy (18.1 default no-merge; 18.2 optional guarded auto-merge)"
   echo ""
-  echo "- This run does not invoke gh pr merge. Pull requests stay open for human review."
-  echo "- Remote branches are not deleted by HOCA. Delete a branch only after a successful merge."
-  echo "- The --auto-merge flag is recorded in status.json only; guarded auto-merge is milestone 18.2."
+  echo "- This run does not invoke gh pr merge. Pull requests stay open for human review by default."
+  echo "- When you run create-pr.sh, HOCA may queue GitHub auto-merge only if status.json has auto_merge true and scripts/auto-merge-guards.sh prechecks all pass (see README)."
+  echo "- Remote branches are not deleted from this step; GitHub deletes the branch after merge when auto-merge uses --delete-branch and the merge completes."
   echo ""
   echo "Next step: open a pull request (when tests and review are complete):"
   echo "  $SCRIPT_DIR/create-pr.sh \"$PROJECT_PATH\" <task-one-line> \"$RUN_DIR_ABS\""
   if [ -n "$ISSUE_ID" ]; then
     echo "  (add --issue-id \"$ISSUE_ID\" if the PR should reference the issue)"
+  fi
+  if [ "$AUTO_MERGE" = "true" ]; then
+    echo ""
+    echo "This run requested --auto-merge: add risk-level.txt (first line: low) to the run directory before create-pr if you want guarded auto-merge, and ensure the GitHub repo enables \"Allow auto-merge\"."
   fi
 } > "$MERGE_POLICY_FILE"
 
@@ -207,9 +211,9 @@ fi
 
 echo ""
 echo "------------------------------------------------------------------"
-echo "Merge policy: no automatic merge (default). See: $MERGE_POLICY_FILE"
+echo "Merge policy: no gh merge from this step (default). See: $MERGE_POLICY_FILE"
 if [ "$AUTO_MERGE" = "true" ]; then
-  echo "Note: --auto-merge was passed; HOCA still does not run gh pr merge until milestone 18.2."
+  echo "Note: --auto-merge was passed; see merge-policy.txt and README for guarded auto-merge via create-pr.sh."
 fi
 echo "------------------------------------------------------------------"
 

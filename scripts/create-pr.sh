@@ -50,6 +50,27 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
+AUTO_MERGE_PRECHECK_RC=2
+GUARDS_SH="$SCRIPT_DIR/auto-merge-guards.sh"
+if [ -f "$RUN_DIR/status.json" ] && [ -f "$GUARDS_SH" ]; then
+  if bash "$GUARDS_SH" wants-auto-merge "$RUN_DIR"; then
+    if bash "$GUARDS_SH" precheck "$RUN_DIR"; then
+      AUTO_MERGE_PRECHECK_RC=0
+    else
+      AUTO_MERGE_PRECHECK_RC=1
+    fi
+  fi
+fi
+
+AUTO_MERGE_FOOTER=""
+if [ "$AUTO_MERGE_PRECHECK_RC" -eq 0 ]; then
+  AUTO_MERGE_FOOTER="**Auto-merge**: enabled by HOCA (local prechecks passed). This script runs \`gh pr merge --auto --merge --delete-branch\` after the PR is created so GitHub merges when branch protections and checks allow."
+elif [ "$AUTO_MERGE_PRECHECK_RC" -eq 1 ]; then
+  AUTO_MERGE_FOOTER="**Auto-merge**: requested in \`status.json\` but local prechecks failed — see \`auto-merge-precheck-skip.txt\` in the run directory. This PR will not be auto-merged by HOCA."
+else
+  AUTO_MERGE_FOOTER="**Auto-merge**: disabled (default). This pull request will not be merged automatically."
+fi
+
 if git symbolic-ref -q refs/remotes/origin/HEAD >/dev/null 2>&1; then
   DEFAULT_BRANCH="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
 else
@@ -227,7 +248,7 @@ PR_BODY_FILE="$RUN_DIR/pr-body.md"
       echo "$line"
     fi
   done < "$TEMPLATE_FILE"
-  echo "**Auto-merge**: disabled (default). This pull request will not be merged automatically."
+  printf '%s\n' "$AUTO_MERGE_FOOTER"
   echo ""
   if [ -n "$ISSUE_ID" ]; then
     echo "Refs: #${ISSUE_ID}"
@@ -261,22 +282,81 @@ fi
 printf '%s\n' "$PR_URL" > "$RUN_DIR/pr-url.txt"
 echo "PR URL saved to $RUN_DIR/pr-url.txt"
 
+MERGE_OUTCOME="open_for_review"
+if [ "$AUTO_MERGE_PRECHECK_RC" -eq 0 ]; then
+  if bash "$GUARDS_SH" postcheck-mergeable; then
+    set +e
+    GH_MERGE_LOG="$RUN_DIR/gh-pr-merge.log"
+    gh pr merge --auto --merge --delete-branch >"$GH_MERGE_LOG" 2>&1
+    MERGE_EC=$?
+    set -e
+    if [ "$MERGE_EC" -eq 0 ]; then
+      MERGE_OUTCOME="auto_merge_enabled"
+      {
+        echo "HOCA auto-merge (milestone 18.2)"
+        echo ""
+        echo "Queued GitHub auto-merge with branch delete after merge:"
+        echo "  gh pr merge --auto --merge --delete-branch"
+        echo ""
+        echo "Pull request: $PR_URL"
+      } > "$RUN_DIR/auto-merge-outcome.txt"
+      if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
+        jq '.merge_performed = false | .auto_merge_queued = true | .merge_command = "gh pr merge --auto --merge --delete-branch"' \
+          "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
+        mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+      fi
+    else
+      MERGE_OUTCOME="auto_merge_gh_failed"
+      {
+        echo "HOCA attempted auto-merge but gh pr merge failed (exit $MERGE_EC)."
+        echo "See: $GH_MERGE_LOG"
+      } > "$RUN_DIR/gh-pr-merge-error.txt"
+    fi
+  else
+    MERGE_OUTCOME="not_mergeable_on_github"
+    {
+      echo "HOCA auto-merge prechecks passed, but the pull request is not MERGEABLE on GitHub after waiting (conflicts or unresolved merge state)."
+      echo "See: $PR_URL"
+    } > "$RUN_DIR/auto-merge-postcheck-skip.txt"
+  fi
+fi
+
 ENGINEER_NOTIFY="$RUN_DIR/engineer-followup.txt"
-{
-  echo "Human engineer follow-up (HOCA merge policy 18.1)"
-  echo ""
-  echo "A pull request was created and is left open for your review."
-  echo "HOCA does not merge pull requests automatically in the default configuration."
-  echo "HOCA does not delete the remote branch from this step; remove it only after a successful merge if desired."
-  echo ""
-  echo "Pull request: $PR_URL"
-} > "$ENGINEER_NOTIFY"
+if [ "$MERGE_OUTCOME" = "auto_merge_enabled" ]; then
+  {
+    echo "HOCA merge follow-up (milestone 18.2 — auto-merge queued)"
+    echo ""
+    echo "Local safety checks passed and GitHub auto-merge was requested for this pull request."
+    echo "The branch will be deleted by GitHub after a successful merge if your repository settings allow."
+    echo ""
+    echo "Pull request: $PR_URL"
+  } > "$ENGINEER_NOTIFY"
+else
+  {
+    echo "Human engineer follow-up (HOCA merge policy)"
+    echo ""
+    echo "A pull request was created."
+    if [ "$AUTO_MERGE_PRECHECK_RC" -eq 0 ] && [ "$MERGE_OUTCOME" != "auto_merge_enabled" ]; then
+      echo "Auto-merge was requested but could not be completed automatically; see files in the run directory."
+    else
+      echo "Review and merge when ready (or adjust run metadata and re-open a PR if appropriate)."
+    fi
+    echo "HOCA does not delete the remote branch except when GitHub completes an auto-merge with --delete-branch."
+    echo ""
+    echo "Pull request: $PR_URL"
+  } > "$ENGINEER_NOTIFY"
+fi
 
 echo "" >&2
 echo "================================================================" >&2
-echo "  Human engineer: pull request is open for review." >&2
-echo "  Auto-merge: off (default). This PR will not be merged by HOCA." >&2
-echo "  Remote branch: retained (no automatic delete on open or failed merge)." >&2
+if [ "$MERGE_OUTCOME" = "auto_merge_enabled" ]; then
+  echo "  GitHub auto-merge was queued for this PR (strict rules satisfied)." >&2
+elif [ "$AUTO_MERGE_PRECHECK_RC" -eq 0 ]; then
+  echo "  Auto-merge was requested but not queued; see run directory logs." >&2
+else
+  echo "  Human engineer: pull request is open for review." >&2
+  echo "  Auto-merge: off or prechecks did not pass." >&2
+fi
 echo "  Written: $ENGINEER_NOTIFY" >&2
 echo "================================================================" >&2
 

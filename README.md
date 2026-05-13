@@ -49,6 +49,7 @@ HOCA's default behavior is intentionally conservative:
   cookies, and local credential stores.
 - `git commit -am` is forbidden.
 - High-risk changes are never auto-merged.
+- Optional **guarded auto-merge** (milestone 18.2): with `--auto-merge`, `status.json` sets `auto_merge` true. When you later run `create-pr.sh`, HOCA may run `gh pr merge --auto --merge --delete-branch` only if `scripts/auto-merge-guards.sh` passes: tests exited 0, Aider output contains `LGTM`, `risk-level.txt` starts with `low`, `staged-files.txt` has no secret-like paths, infrastructure-sensitive paths appear in `staging-justification.txt`, the repo has GitHub **Allow auto-merge**, and the new PR reports **MERGEABLE**. Otherwise the PR stays open for human review.
 
 These defaults are encoded in `hoca.config` and `hoca.git_utils` so later CLI and
 script work can call the same policy checks instead of reimplementing safety
