@@ -142,6 +142,7 @@ fi
 echo "Inspecting changed files..."
 git status --short | tee "$RUN_DIR/git-status.txt"
 git diff > "$RUN_DIR/git-diff.patch"
+git status --short | awk '{print $NF}' > "$RUN_DIR/changed-files.txt"
 
 if [ -z "$(git status --short)" ]; then
   echo "No changes produced."
@@ -151,7 +152,7 @@ fi
 
 echo "Manual selective staging is required unless a safe file list is provided."
 echo "For now, stopping before commit to avoid unsafe staging."
-echo "Changed files are recorded in $RUN_DIR/git-status.txt"
+echo "Changed files are recorded in $RUN_DIR/changed-files.txt"
 update_status "needs_human_staging" "selective_staging_required"
 
 if [ "$NOTIFY_TELEGRAM" = "true" ]; then
