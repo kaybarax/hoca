@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import hmac as _hmac
+import time
 from pathlib import Path
+
+WEBHOOK_TIMESTAMP_MAX_AGE = 300
 
 
 FORBIDDEN_SECRET_FILENAMES = {
@@ -76,3 +81,38 @@ def is_secret_like_path(path: str | Path) -> bool:
     if any(part in CREDENTIAL_STORE_DIRECTORIES for part in lower_parts):
         return True
     return any(cookie_path in lower_path for cookie_path in BROWSER_COOKIE_DIRECTORIES)
+
+
+def verify_hmac_signature(
+    secret: str, raw_body: bytes, signature_header: str | None
+) -> bool:
+    if not secret:
+        return False
+    if not signature_header:
+        return False
+    if not signature_header.startswith("sha256="):
+        return False
+    received = signature_header[len("sha256="):]
+    expected = _hmac.new(
+        secret.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return _hmac.compare_digest(expected, received)
+
+
+def verify_timestamp(timestamp: str | None) -> bool:
+    if not timestamp:
+        return False
+    try:
+        ts = int(timestamp)
+    except (ValueError, TypeError):
+        return False
+    return abs(time.time() - ts) <= WEBHOOK_TIMESTAMP_MAX_AGE
+
+
+def is_allowed_repo(repo: str, allowed_repos: str | None) -> bool:
+    if not allowed_repos or not allowed_repos.strip():
+        return True
+    allowed = [r.strip() for r in allowed_repos.split(",") if r.strip()]
+    return repo in allowed

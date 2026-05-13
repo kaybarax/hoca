@@ -1,12 +1,57 @@
-name: HOCA Agent Trigger
-
+name: Trigger HOCA Agent
 on:
   issues:
-    types: [opened, labeled]
-
+    types:
+      - opened
+      - labeled
+      - reopened
+permissions:
+  contents: read
+  issues: read
 jobs:
-  noop:
+  ping-local-agent:
+    if: contains(github.event.issue.labels.*.name, 'fix-me')
     runs-on: ubuntu-latest
     steps:
-      - name: Placeholder
-        run: echo "HOCA agent trigger skeleton"
+      - name: Build signed payload and send webhook
+        env:
+          AGENT_WEBHOOK_URL: ${{ secrets.AGENT_WEBHOOK_URL }}
+          HOCA_WEBHOOK_SECRET: ${{ secrets.HOCA_WEBHOOK_SECRET }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+          ACTION: ${{ github.event.action }}
+          SENDER: ${{ github.actor }}
+        run: |
+          if [ -z "$AGENT_WEBHOOK_URL" ]; then
+            echo "AGENT_WEBHOOK_URL is not configured."
+            exit 1
+          fi
+          if [ -z "$HOCA_WEBHOOK_SECRET" ]; then
+            echo "HOCA_WEBHOOK_SECRET is not configured."
+            exit 1
+          fi
+          timestamp=$(date +%s)
+          payload=$(jq -n \
+            --arg title "$ISSUE_TITLE" \
+            --arg number "$ISSUE_NUMBER" \
+            --arg repo "$REPOSITORY" \
+            --arg action "$ACTION" \
+            --arg sender "$SENDER" \
+            --arg timestamp "$timestamp" \
+            '{
+              issue_title: $title,
+              issue_number: $number,
+              repo: $repo,
+              action: $action,
+              sender: $sender,
+              timestamp: $timestamp
+            }')
+          signature=$(printf '%s' "$payload" \
+            | openssl dgst -sha256 -hmac "$HOCA_WEBHOOK_SECRET" -hex \
+            | sed 's/^.* //')
+          curl -X POST "$AGENT_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-HOCA-Timestamp: $timestamp" \
+            -H "X-HOCA-Signature: sha256=$signature" \
+            -d "$payload"
