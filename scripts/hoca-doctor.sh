@@ -197,21 +197,28 @@ else
 fi
 
 section "OpenHands CLI"
+OH_CAPABILITIES=""
 if command -v openhands >/dev/null 2>&1; then
   if OPENHANDS_HELP="$(openhands --help 2>&1)"; then
     for flag in --headless --task --override-with-envs; do
       if printf '%s\n' "$OPENHANDS_HELP" | grep -q -- "$flag"; then
         ok "OpenHands supports $flag."
+        OH_CAPABILITIES="${OH_CAPABILITIES:+$OH_CAPABILITIES,}${flag#--}"
       else
         fail "OpenHands CLI help does not show $flag."
       fi
     done
 
-    if printf '%s\n' "$OPENHANDS_HELP" | grep -q -- "--json"; then
-      ok "OpenHands supports --json."
-    else
-      warn "OpenHands CLI help does not show optional --json. JSON logging may be unavailable."
-    fi
+    for optional_flag in --json --enable-browsing; do
+      if printf '%s\n' "$OPENHANDS_HELP" | grep -q -- "$optional_flag"; then
+        ok "OpenHands supports $optional_flag."
+        OH_CAPABILITIES="${OH_CAPABILITIES:+$OH_CAPABILITIES,}${optional_flag#--}"
+      else
+        warn "OpenHands CLI help does not show optional $optional_flag."
+      fi
+    done
+
+    ok "OpenHands capabilities: ${OH_CAPABILITIES:-none}"
   else
     fail "OpenHands is installed but 'openhands --help' failed."
   fi

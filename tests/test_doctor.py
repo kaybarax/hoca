@@ -51,6 +51,37 @@ def test_doctor_report_is_not_ok_when_failures_are_present() -> None:
     assert len(report.failures) == 1
 
 
+def test_parse_doctor_output_extracts_openhands_capabilities() -> None:
+    checks = parse_doctor_output(
+        "\n".join(
+            [
+                "[OK] OpenHands supports --headless.",
+                "[OK] OpenHands supports --task.",
+                "[OK] OpenHands supports --override-with-envs.",
+                "[OK] OpenHands supports --json.",
+                "[WARN] OpenHands CLI help does not show optional --enable-browsing.",
+                "[OK] OpenHands capabilities: headless,task,override-with-envs,json",
+            ]
+        )
+    )
+
+    caps_check = [c for c in checks if "capabilities:" in c.message]
+    assert len(caps_check) == 1
+    assert caps_check[0].status == "ok"
+    assert "headless" in caps_check[0].message
+    assert "enable-browsing" not in caps_check[0].message
+
+
+def test_parse_doctor_output_includes_browsing_when_available() -> None:
+    checks = parse_doctor_output(
+        "[OK] OpenHands capabilities: headless,task,override-with-envs,json,enable-browsing\n"
+    )
+
+    caps_check = [c for c in checks if "capabilities:" in c.message]
+    assert len(caps_check) == 1
+    assert "enable-browsing" in caps_check[0].message
+
+
 def test_run_doctor_invokes_shell_source_of_truth(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -60,6 +60,18 @@ if printf '%s\n' "$OH_HELP" | grep -q -- "--json"; then
   USE_JSON=true
 fi
 
+OH_CAPS="headless,task"
+if printf '%s\n' "$OH_HELP" | grep -q -- "--override-with-envs"; then
+  OH_CAPS="$OH_CAPS,override-with-envs"
+fi
+if [ "$USE_JSON" = true ]; then
+  OH_CAPS="$OH_CAPS,json"
+fi
+if printf '%s\n' "$OH_HELP" | grep -q -- "--enable-browsing"; then
+  OH_CAPS="$OH_CAPS,enable-browsing"
+fi
+printf '%s\n' "$OH_CAPS" > "$RUN_DIR/openhands-capabilities.txt"
+
 if [ "$USE_JSON" = true ]; then
   OUTPUT_FILE="$RUN_DIR/openhands-output.jsonl"
 else

@@ -249,16 +249,33 @@ The report must include start time, end time, final status, blocked reason when 
 
 ## Web Research Policy
 
-Do not hard-code unsupported OpenHands browsing flags. Do not pass `--enable-browsing` or any browsing-related flag to OpenHands unless `openhands --help` confirms the flag exists. The `run-openhands-task.sh` runner already validates flags against help output; follow the same pattern for any new flags.
+Do not hard-code unsupported OpenHands browsing flags. Do not pass `--enable-browsing` or any browsing-related flag to OpenHands unless `openhands --help` confirms the flag exists. The `run-openhands-task.sh` runner validates flags against help output and saves detected capabilities to `openhands-capabilities.txt` in the run directory. Follow the same pattern for any new flags.
+
+### Browsing Capability Check
+
+Before using any browsing-related flag, verify it is available:
+
+```bash
+scripts/check-browsing.sh "$run_dir"
+```
+
+To require browsing and fail safely when it is unavailable:
+
+```bash
+scripts/check-browsing.sh "$run_dir" --require
+```
+
+The check reads `openhands-capabilities.txt` (written by `run-openhands-task.sh`) or falls back to inspecting `openhands --help` directly. It writes `browsing-available.txt` to the run directory for downstream scripts.
+
+### Research Workflow
 
 If a task requires web research:
 
 1. Hermes should perform research directly if it has a browsing tool available.
-2. Otherwise, configure OpenHands browsing only through currently supported OpenHands settings.
-3. Do not invent CLI flags. Only use flags confirmed by `openhands --help`.
-4. Record sources used in `research-sources.txt` inside the run directory when research influenced implementation. Each line should contain the URL or source description followed by a brief note on what information was used.
-
-When research cannot be performed because no browsing capability is available and the task genuinely requires external information, stop and ask the engineer for the needed source material rather than guessing or fabricating information.
+2. Otherwise, check `browsing-available.txt` or run `scripts/check-browsing.sh` to determine whether OpenHands has browsing support.
+3. If OpenHands browsing is available, configure it only through currently supported OpenHands settings. Do not invent CLI flags.
+4. If no browsing capability is available and the task genuinely requires external information, stop the run and ask the engineer for the needed source material. Do not guess or fabricate information. Update `status.json` with status `blocked` and reason `research_unavailable`.
+5. Record sources used in `research-sources.txt` inside the run directory when research influenced implementation. Each line should contain the URL or source description followed by a brief note on what information was used.
 
 ## One-Command Shortcut
 
