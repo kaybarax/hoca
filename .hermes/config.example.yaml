@@ -1,3 +1,44 @@
-auto_merge: false
-default_model: qwen2.5-coder:14b
-review_required: true
+# Example Hermes configuration for HOCA.
+# Copy the relevant parts into your real Hermes configuration and replace
+# placeholder paths with paths for your machine. Do not put secrets in this file.
+
+terminal:
+  backend: docker
+  docker_image: "nikolaik/python-nodejs:python3.12-nodejs22"
+  docker_mount_cwd_to_workspace: false
+  docker_run_as_host_user: true
+  docker_forward_env:
+    - GITHUB_TOKEN
+    - LLM_MODEL
+    - LLM_BASE_URL
+    - LLM_API_KEY
+    - OLLAMA_API_BASE
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_CHAT_ID
+    - HOCA_AUTO_MERGE
+    - HOCA_NOTIFY_TELEGRAM
+  docker_volumes:
+    - "~/<path-to-workspace>/hoca:/workspace/hoca"
+    - "~/<path-to-target-repos>:/workspace/projects"
+  container_cpu: 6
+  container_memory: 16384
+  container_persistent: true
+
+skills:
+  external_dirs:
+    - "~/<path-to-workspace>/hoca/hermes-skills"
+
+hoca:
+  workspace_root: "~/<path-to-target-repos>"
+  default_model: "qwen2.5-coder:14b"
+  openhands_runner: "~/<path-to-workspace>/hoca/scripts/run-openhands-task.sh"
+  aider_reviewer: "~/<path-to-workspace>/hoca/scripts/review-with-aider.sh"
+  test_runner: "~/<path-to-workspace>/hoca/scripts/run-tests.sh"
+  pr_creator: "~/<path-to-workspace>/hoca/scripts/create-pr.sh"
+  notifier: "~/<path-to-workspace>/hoca/scripts/notify.sh"
+
+  safety:
+    auto_merge: false
+    require_tests: true
+    require_aider_lgtm: true
+    stop_on_dirty_tree: true
