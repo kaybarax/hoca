@@ -11,7 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GUARDS = REPO_ROOT / "scripts" / "auto-merge-guards.sh"
 
 
-def _run_guards(subcommand: str, run_dir: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_guards(
+    subcommand: str, run_dir: Path, *, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
     if env:
         merged.update(env)
@@ -86,7 +88,9 @@ def test_precheck_fails_risk_not_low(minimal_auto_merge_run: Path):
 
 
 def test_precheck_fails_secret_like_path(minimal_auto_merge_run: Path):
-    (minimal_auto_merge_run / "staged-files.txt").write_text("config/.env.local\n", encoding="utf-8")
+    (minimal_auto_merge_run / "staged-files.txt").write_text(
+        "config/.env.local\n", encoding="utf-8"
+    )
     proc = _run_guards(
         "precheck",
         minimal_auto_merge_run,
@@ -96,7 +100,9 @@ def test_precheck_fails_secret_like_path(minimal_auto_merge_run: Path):
 
 
 def test_precheck_fails_infra_without_justification(minimal_auto_merge_run: Path):
-    (minimal_auto_merge_run / "staged-files.txt").write_text(".github/workflows/ci.yml\n", encoding="utf-8")
+    (minimal_auto_merge_run / "staged-files.txt").write_text(
+        ".github/workflows/ci.yml\n", encoding="utf-8"
+    )
     proc = _run_guards(
         "precheck",
         minimal_auto_merge_run,
@@ -108,7 +114,9 @@ def test_precheck_fails_infra_without_justification(minimal_auto_merge_run: Path
 
 
 def test_precheck_passes_infra_with_justification(minimal_auto_merge_run: Path):
-    (minimal_auto_merge_run / "staged-files.txt").write_text(".github/workflows/ci.yml\n", encoding="utf-8")
+    (minimal_auto_merge_run / "staged-files.txt").write_text(
+        ".github/workflows/ci.yml\n", encoding="utf-8"
+    )
     (minimal_auto_merge_run / "staging-justification.txt").write_text(
         ".github/workflows/ci.yml\n", encoding="utf-8"
     )

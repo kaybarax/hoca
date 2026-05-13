@@ -188,7 +188,8 @@ def test_validate_staging_rejects_outside_repo(tmp_path: Path) -> None:
 
 def test_validate_staging_rejects_runtime_files(tmp_path: Path) -> None:
     errors = validate_staging_file_list(
-        tmp_path, [".hoca-runtime/runs/abc/status.json"],
+        tmp_path,
+        [".hoca-runtime/runs/abc/status.json"],
     )
     assert len(errors) == 1
     assert "runtime" in errors[0]
@@ -208,6 +209,7 @@ def test_validate_staging_rejects_token_config(tmp_path: Path) -> None:
 
 def test_validate_staging_collects_multiple_errors(tmp_path: Path) -> None:
     errors = validate_staging_file_list(
-        tmp_path, [".env", "/absolute", "../traversal", "ok.py"],
+        tmp_path,
+        [".env", "/absolute", "../traversal", "ok.py"],
     )
     assert len(errors) == 3

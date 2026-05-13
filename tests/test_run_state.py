@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 from hoca.run_state import (
     RUN_STATE_DIRNAME,

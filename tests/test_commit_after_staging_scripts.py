@@ -14,7 +14,9 @@ def run_commit(
     cmd = [str(COMMIT_SCRIPT), str(repo), task, str(run_dir)]
     if issue_id:
         cmd.extend(["--issue-id", issue_id])
-    return subprocess.run(cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return subprocess.run(
+        cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
 
 def test_commit_requires_matching_staged_files_list(tmp_path: Path) -> None:

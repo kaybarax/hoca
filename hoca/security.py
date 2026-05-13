@@ -76,23 +76,24 @@ def is_secret_like_path(path: str | Path) -> bool:
         return True
     if lower_path in FORBIDDEN_SECRET_PATHS:
         return True
-    if any(lower_path == secret_path or lower_path.startswith(f"{secret_path}/") for secret_path in FORBIDDEN_SECRET_PATHS):
+    if any(
+        lower_path == secret_path or lower_path.startswith(f"{secret_path}/")
+        for secret_path in FORBIDDEN_SECRET_PATHS
+    ):
         return True
     if any(part in CREDENTIAL_STORE_DIRECTORIES for part in lower_parts):
         return True
     return any(cookie_path in lower_path for cookie_path in BROWSER_COOKIE_DIRECTORIES)
 
 
-def verify_hmac_signature(
-    secret: str, raw_body: bytes, signature_header: str | None
-) -> bool:
+def verify_hmac_signature(secret: str, raw_body: bytes, signature_header: str | None) -> bool:
     if not secret:
         return False
     if not signature_header:
         return False
     if not signature_header.startswith("sha256="):
         return False
-    received = signature_header[len("sha256="):]
+    received = signature_header[len("sha256=") :]
     expected = _hmac.new(
         secret.encode("utf-8"),
         raw_body,
@@ -136,9 +137,7 @@ def is_path_inside_repo(repo_root: str | Path, candidate_path: str | Path) -> bo
 
 
 def _is_runtime_path(path: str | Path) -> bool:
-    return any(
-        part == RUNTIME_DIRECTORY_PREFIX for part in Path(path).parts
-    )
+    return any(part == RUNTIME_DIRECTORY_PREFIX for part in Path(path).parts)
 
 
 def _is_lock_file(path: str | Path) -> bool:
@@ -147,7 +146,8 @@ def _is_lock_file(path: str | Path) -> bool:
 
 
 def validate_staging_file_list(
-    repo_root: str | Path, files: list[str],
+    repo_root: str | Path,
+    files: list[str],
 ) -> list[str]:
     errors: list[str] = []
     for f in files:

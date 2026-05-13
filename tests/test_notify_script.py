@@ -18,18 +18,14 @@ def make_fake_bin(tmp_path: Path) -> tuple[Path, Path, Path]:
 
     osascript = fake_bin / "osascript"
     osascript.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        f'printf "%s\\n" "$@" >> "{osascript_log}"\n',
+        f'#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "$@" >> "{osascript_log}"\n',
         encoding="utf-8",
     )
     osascript.chmod(osascript.stat().st_mode | stat.S_IXUSR)
 
     curl = fake_bin / "curl"
     curl.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        f'printf "%s\\n" "$@" >> "{curl_log}"\n',
+        f'#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "$@" >> "{curl_log}"\n',
         encoding="utf-8",
     )
     curl.chmod(curl.stat().st_mode | stat.S_IXUSR)

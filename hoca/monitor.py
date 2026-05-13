@@ -80,11 +80,13 @@ def check_dangerous_command(line: str) -> str | None:
 
 
 def check_secret_access(line: str, project_path: str) -> str | None:
-    tokens = re.findall(r'[\w./\-]+\.(?:env|pem|key|p12|pfx|kubeconfig)\b', line)
+    tokens = re.findall(r"[\w./\-]+\.(?:env|pem|key|p12|pfx|kubeconfig)\b", line)
     for token in tokens:
         if is_secret_like_path(token):
             return token
-    path_candidates = re.findall(r'(?:cat|less|head|tail|vim|nano|open|cp|mv|rm)\s+([\w./\-]+)', line)
+    path_candidates = re.findall(
+        r"(?:cat|less|head|tail|vim|nano|open|cp|mv|rm)\s+([\w./\-]+)", line
+    )
     for candidate in path_candidates:
         if is_secret_like_path(candidate):
             return candidate
@@ -92,7 +94,7 @@ def check_secret_access(line: str, project_path: str) -> str | None:
 
 
 def check_unrelated_directory(line: str, project_path: str) -> str | None:
-    abs_refs = re.findall(r'(?:cd|cat|ls|rm|cp|mv|vi|vim|nano|open)\s+(/[^\s;|&]+)', line)
+    abs_refs = re.findall(r"(?:cd|cat|ls|rm|cp|mv|vi|vim|nano|open)\s+(/[^\s;|&]+)", line)
     project_resolved = os.path.realpath(project_path)
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
@@ -108,9 +110,14 @@ def _is_progress_line(line: str) -> bool:
     if not line.strip():
         return False
     noise = [
-        "Thinking...", "Processing...", "Waiting",
-        "Retrying", "retry", "timeout",
-        "No changes", "Nothing to do",
+        "Thinking...",
+        "Processing...",
+        "Waiting",
+        "Retrying",
+        "retry",
+        "timeout",
+        "No changes",
+        "Nothing to do",
     ]
     lower = line.lower()
     return not any(n.lower() in lower for n in noise)
@@ -148,7 +155,9 @@ def monitor_process(
     last_progress_time = start_time
     stop_reason = "completed"
 
-    _record(events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s")
+    _record(
+        events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
+    )
 
     try:
         assert process.stdout is not None

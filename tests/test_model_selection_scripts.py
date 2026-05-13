@@ -31,9 +31,7 @@ def make_fake_ollama(tmp_path: Path, models: list[str]) -> Path:
 def make_fake_curl(fake_bin: Path, *, succeeds: bool = True) -> None:
     curl = fake_bin / "curl"
     curl.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        f"exit {0 if succeeds else 7}\n",
+        f"#!/usr/bin/env bash\nset -euo pipefail\nexit {0 if succeeds else 7}\n",
         encoding="utf-8",
     )
     curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
@@ -57,10 +55,7 @@ def make_fake_openhands(fake_bin: Path) -> None:
 def make_fake_aider(fake_bin: Path) -> None:
     aider = fake_bin / "aider"
     aider.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "echo 'Review complete.'\n"
-        "echo 'LGTM'\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\necho 'Review complete.'\necho 'LGTM'\n",
         encoding="utf-8",
     )
     aider.chmod(aider.stat().st_mode | stat.S_IXUSR)

@@ -284,6 +284,15 @@ HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
 
 Add `.hoca-runtime/` to the target repository's `.gitignore`.
 
+## Development
+
+```sh
+pip install -e ".[dev]"
+python -m pytest
+ruff check .
+ruff format --check .
+```
+
 ## Known Limitations
 
 - HOCA currently targets macOS. Linux support is possible but untested.

@@ -19,7 +19,9 @@ def run_dir(tmp_path: Path) -> Path:
     return d
 
 
-def run_check(run_dir: Path, *extra_args: str, env_override: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_check(
+    run_dir: Path, *extra_args: str, env_override: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     if env_override:
         env.update(env_override)

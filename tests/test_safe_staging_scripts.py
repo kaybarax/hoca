@@ -153,7 +153,9 @@ def test_safe_stage_rejects_intended_hoca_runtime_path(tmp_path: Path) -> None:
     runtime_file.parent.mkdir(parents=True)
     runtime_file.write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "add", "-f", "--", ".hoca-runtime/bad.txt"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "track runtime"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "track runtime"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     runtime_file.write_text("y\n", encoding="utf-8")
 
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"

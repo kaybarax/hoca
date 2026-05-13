@@ -46,9 +46,14 @@ def make_fake_preflight_bin(
 
     write_executable(fake_bin / "gh", "#!/usr/bin/env bash\nexit 0\n")
     write_executable(fake_bin / "node", "#!/usr/bin/env bash\necho v20.0.0\n")
-    write_executable(fake_bin / "docker", "#!/usr/bin/env bash\n[[ \"${1:-}\" == info ]] && exit 0\nexit 0\n")
+    write_executable(
+        fake_bin / "docker", '#!/usr/bin/env bash\n[[ "${1:-}" == info ]] && exit 0\nexit 0\n'
+    )
     write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nexit 0\n")
-    write_executable(fake_bin / "ollama", "#!/usr/bin/env bash\ncat <<'EOF'\nNAME ID SIZE MODIFIED\nqwen-7b-pro abc 1GB now\nEOF\n")
+    write_executable(
+        fake_bin / "ollama",
+        "#!/usr/bin/env bash\ncat <<'EOF'\nNAME ID SIZE MODIFIED\nqwen-7b-pro abc 1GB now\nEOF\n",
+    )
 
     openhands = openhands_body or "echo 'OpenHands fake run complete.'\n"
     write_executable(
@@ -72,7 +77,9 @@ def make_fake_preflight_bin(
     )
 
     if pytest_body is not None:
-        write_executable(fake_bin / "pytest", "#!/usr/bin/env bash\nset -euo pipefail\n" + pytest_body)
+        write_executable(
+            fake_bin / "pytest", "#!/usr/bin/env bash\nset -euo pipefail\n" + pytest_body
+        )
 
     return fake_bin
 
@@ -172,7 +179,9 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
     init_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
     subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
         pytest_body="echo 'tests failed'\nexit 3\n",

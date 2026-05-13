@@ -25,7 +25,9 @@ def test_run_command_captures_exit_code_stdout_and_stderr() -> None:
 
 def test_run_checked_raises_with_failure_context(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(CommandError) as error:
-        run_checked([sys.executable, "-c", "import sys; print('bad', file=sys.stderr); sys.exit(2)"])
+        run_checked(
+            [sys.executable, "-c", "import sys; print('bad', file=sys.stderr); sys.exit(2)"]
+        )
 
     captured = capsys.readouterr()
     assert error.value.result.returncode == 2

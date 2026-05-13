@@ -10,9 +10,7 @@ from dotenv import load_dotenv
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
-_SECRET_PATTERN = re.compile(
-    r"(token|secret|password|api_key|private_key)", re.IGNORECASE
-)
+_SECRET_PATTERN = re.compile(r"(token|secret|password|api_key|private_key)", re.IGNORECASE)
 
 
 def parse_bool(value: str | None, *, default: bool) -> bool:
@@ -94,19 +92,11 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
 
     return HocaConfig(
         auto_merge=parse_bool(os.environ.get("HOCA_AUTO_MERGE"), default=False),
-        require_aider_lgtm=parse_bool(
-            os.environ.get("HOCA_REQUIRE_AIDER_LGTM"), default=True
-        ),
-        require_tests=parse_bool(
-            os.environ.get("HOCA_REQUIRE_TESTS"), default=True
-        ),
-        stop_on_dirty_tree=parse_bool(
-            os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True
-        ),
+        require_aider_lgtm=parse_bool(os.environ.get("HOCA_REQUIRE_AIDER_LGTM"), default=True),
+        require_tests=parse_bool(os.environ.get("HOCA_REQUIRE_TESTS"), default=True),
+        stop_on_dirty_tree=parse_bool(os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True),
         workspace_root=workspace_root,
-        ollama_base_url=os.environ.get(
-            "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
-        ),
+        ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
         ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-32b-pro"),
         llm_model=os.environ.get("LLM_MODEL", "ollama/qwen-32b-pro"),
         llm_base_url=os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434"),
@@ -114,12 +104,8 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         webhook_secret=os.environ.get("HOCA_WEBHOOK_SECRET", ""),
         webhook_url=os.environ.get("HOCA_WEBHOOK_URL", ""),
         allowed_repos=os.environ.get("HOCA_ALLOWED_REPOS", ""),
-        max_webhook_bytes=int(
-            os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536")
-        ),
-        notify_telegram=parse_bool(
-            os.environ.get("HOCA_NOTIFY_TELEGRAM"), default=False
-        ),
+        max_webhook_bytes=int(os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536")),
+        notify_telegram=parse_bool(os.environ.get("HOCA_NOTIFY_TELEGRAM"), default=False),
         telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
         telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
     )
@@ -158,6 +144,8 @@ def assert_aider_approved(review_text: str, *, policy: SafetyPolicy = DEFAULT_PO
         raise PolicyError("Aider review did not return approval; stopping the run.")
 
 
-def assert_commit_allowed(*, selective_staging_ready: bool, policy: SafetyPolicy = DEFAULT_POLICY) -> None:
+def assert_commit_allowed(
+    *, selective_staging_ready: bool, policy: SafetyPolicy = DEFAULT_POLICY
+) -> None:
     if policy.stop_before_commit_until_selective_staging and not selective_staging_ready:
         raise PolicyError("Selective staging is not fully implemented; stopping before commit.")

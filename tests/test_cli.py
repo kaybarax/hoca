@@ -123,14 +123,10 @@ def test_run_forwards_auto_merge_flag(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
 
-    result = CliRunner().invoke(
-        main, ["run", str(project_path), "A task", "--auto-merge"]
-    )
+    result = CliRunner().invoke(main, ["run", str(project_path), "A task", "--auto-merge"])
 
     assert result.exit_code == 0
-    assert calls == [
-        ("run-hoca-task.sh", [str(project_path), "A task", "--auto-merge"])
-    ]
+    assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--auto-merge"])]
 
 
 def test_run_forwards_notify_telegram_flag(monkeypatch, tmp_path: Path) -> None:
@@ -144,19 +140,13 @@ def test_run_forwards_notify_telegram_flag(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
 
-    result = CliRunner().invoke(
-        main, ["run", str(project_path), "A task", "--notify-telegram"]
-    )
+    result = CliRunner().invoke(main, ["run", str(project_path), "A task", "--notify-telegram"])
 
     assert result.exit_code == 0
-    assert calls == [
-        ("run-hoca-task.sh", [str(project_path), "A task", "--notify-telegram"])
-    ]
+    assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--notify-telegram"])]
 
 
-def test_issue_constructs_task_and_passes_issue_id(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_issue_constructs_task_and_passes_issue_id(monkeypatch, tmp_path: Path) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
     (project_path / ".git").mkdir()
@@ -167,9 +157,7 @@ def test_issue_constructs_task_and_passes_issue_id(
 
     monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
 
-    result = CliRunner().invoke(
-        main, ["issue", str(project_path), "42", "Fix the login bug"]
-    )
+    result = CliRunner().invoke(main, ["issue", str(project_path), "42", "Fix the login bug"])
 
     assert result.exit_code == 0
     assert calls == [
@@ -185,9 +173,7 @@ def test_issue_constructs_task_and_passes_issue_id(
     ]
 
 
-def test_issue_forwards_auto_merge_and_notify_flags(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_issue_forwards_auto_merge_and_notify_flags(monkeypatch, tmp_path: Path) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
     (project_path / ".git").mkdir()
@@ -230,7 +216,7 @@ def test_run_script_raises_on_missing_script(tmp_path: Path) -> None:
     from hoca.cli import run_script
 
     with patch("hoca.cli.repo_root", return_value=tmp_path):
-        result = CliRunner().invoke(main, ["--help"])
+        CliRunner().invoke(main, ["--help"])
         try:
             run_script("nonexistent.sh", [])
         except Exception as exc:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,9 @@ class TestParseBool:
     def test_truthy_values(self, value: str) -> None:
         assert parse_bool(value, default=False) is True
 
-    @pytest.mark.parametrize("value", ["0", "false", "False", "FALSE", "no", "NO", "off", "OFF", ""])
+    @pytest.mark.parametrize(
+        "value", ["0", "false", "False", "FALSE", "no", "NO", "off", "OFF", ""]
+    )
     def test_falsy_values(self, value: str) -> None:
         assert parse_bool(value, default=True) is False
 
@@ -36,13 +37,23 @@ class TestLoadConfigDefaults:
         empty_env = tmp_path / ".env"
         empty_env.write_text("")
         for key in [
-            "HOCA_AUTO_MERGE", "HOCA_REQUIRE_AIDER_LGTM",
-            "HOCA_REQUIRE_TESTS", "HOCA_STOP_ON_DIRTY_TREE",
-            "HOCA_WORKSPACE_ROOT", "OLLAMA_BASE_URL", "OLLAMA_MODEL",
-            "LLM_MODEL", "LLM_BASE_URL", "AIDER_MODEL",
-            "HOCA_WEBHOOK_SECRET", "HOCA_WEBHOOK_URL",
-            "HOCA_ALLOWED_REPOS", "HOCA_MAX_WEBHOOK_BYTES",
-            "HOCA_NOTIFY_TELEGRAM", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+            "HOCA_AUTO_MERGE",
+            "HOCA_REQUIRE_AIDER_LGTM",
+            "HOCA_REQUIRE_TESTS",
+            "HOCA_STOP_ON_DIRTY_TREE",
+            "HOCA_WORKSPACE_ROOT",
+            "OLLAMA_BASE_URL",
+            "OLLAMA_MODEL",
+            "LLM_MODEL",
+            "LLM_BASE_URL",
+            "AIDER_MODEL",
+            "HOCA_WEBHOOK_SECRET",
+            "HOCA_WEBHOOK_URL",
+            "HOCA_ALLOWED_REPOS",
+            "HOCA_MAX_WEBHOOK_BYTES",
+            "HOCA_NOTIFY_TELEGRAM",
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_ID",
         ]:
             monkeypatch.delenv(key, raising=False)
 
@@ -67,8 +78,10 @@ class TestLoadConfigDefaults:
             "HOCA_WORKSPACE_ROOT=~/projects\n"
         )
         for key in [
-            "HOCA_AUTO_MERGE", "HOCA_REQUIRE_TESTS",
-            "OLLAMA_MODEL", "HOCA_WORKSPACE_ROOT",
+            "HOCA_AUTO_MERGE",
+            "HOCA_REQUIRE_TESTS",
+            "OLLAMA_MODEL",
+            "HOCA_WORKSPACE_ROOT",
         ]:
             monkeypatch.delenv(key, raising=False)
 
@@ -80,7 +93,9 @@ class TestLoadConfigDefaults:
         assert cfg.workspace_root is not None
         assert "~" not in str(cfg.workspace_root)
 
-    def test_env_var_overrides_dotenv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_overrides_dotenv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("HOCA_AUTO_MERGE=false\n")
         monkeypatch.setenv("HOCA_AUTO_MERGE", "true")

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -21,9 +20,7 @@ app = Flask(__name__)
 
 WEBHOOK_SECRET = os.environ.get("HOCA_WEBHOOK_SECRET", "")
 ALLOWED_REPOS = os.environ.get("HOCA_ALLOWED_REPOS", "")
-HOCA_WORKSPACE_ROOT = Path(
-    os.environ.get("HOCA_WORKSPACE_ROOT", str(Path.home()))
-).expanduser()
+HOCA_WORKSPACE_ROOT = Path(os.environ.get("HOCA_WORKSPACE_ROOT", str(Path.home()))).expanduser()
 MAX_CONTENT_LENGTH = int(os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536"))
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
@@ -88,13 +85,16 @@ def handle_issue():
         }, 200
 
     lock_path = project_path / ".hoca-runtime" / "runs" / f"issue-{issue_number}.lock"
-    acquired = acquire_lock(lock_path, {
-        "issue_number": issue_number,
-        "issue_title": issue_title,
-        "repo": repo,
-        "action": data["action"],
-        "sender": data["sender"],
-    })
+    acquired = acquire_lock(
+        lock_path,
+        {
+            "issue_number": issue_number,
+            "issue_title": issue_title,
+            "repo": repo,
+            "action": data["action"],
+            "sender": data["sender"],
+        },
+    )
     if not acquired:
         return {
             "status": "duplicate",

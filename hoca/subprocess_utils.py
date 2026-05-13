@@ -39,7 +39,10 @@ def _validate_command(command: Command) -> tuple[str, ...]:
 
 
 def _print_failure(result: CommandResult) -> None:
-    print(f"Command failed with exit code {result.returncode}: {' '.join(result.command)}", file=sys.stderr)
+    print(
+        f"Command failed with exit code {result.returncode}: {' '.join(result.command)}",
+        file=sys.stderr,
+    )
     if result.stdout:
         print("stdout:", file=sys.stderr)
         print(result.stdout.rstrip(), file=sys.stderr)
