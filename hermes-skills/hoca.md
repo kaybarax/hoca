@@ -120,7 +120,25 @@ git status --short
 git diff
 ```
 
-Confirm all changed files are relevant to `task`. Watch for unrelated rewrites, generated files, dependency lockfiles, infrastructure changes, and secret-like paths. If changes are suspicious or too broad, stop and report the risk.
+Use `git status --short` to classify every path before review, staging, or
+commit:
+
+- changed files
+- new untracked files
+- deleted files
+- suspicious changes, including broad rewrites, formatting churn, unexpected
+  binary changes, dependency lockfiles, migrations, infrastructure changes, and
+  generated output
+- unrelated changes outside the task scope
+- generated files that need explicit justification
+- secret-like files or paths, including `.env`, keys, certificates, tokens,
+  kubeconfigs, package registry credentials, browser cookies, and local
+  credential stores
+
+Use `git diff` to inspect the content of tracked changes. Confirm all changed,
+new, and deleted files are relevant to `task`. If changes are suspicious, too
+broad, unrelated, generated without justification, or secret-like, stop and
+report the risk before tests, review, staging, commit, or PR creation.
 
 ### 8. Run Tests
 
