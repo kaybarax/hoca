@@ -150,13 +150,27 @@ if [ -z "$(git status --short)" ]; then
   exit 0
 fi
 
-echo "Manual selective staging is required unless a safe file list is provided."
-echo "For now, stopping before commit to avoid unsafe staging."
-echo "Changed files are recorded in $RUN_DIR/changed-files.txt"
-update_status "needs_human_staging" "selective_staging_required"
+INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
+if [ ! -f "$INTENDED_FILE_LIST" ]; then
+  echo "Automatic safe staging requires Manager or Reviewer to write: $INTENDED_FILE_LIST"
+  echo "Changed files are recorded in $RUN_DIR/changed-files.txt"
+  update_status "needs_human_staging" "intended_file_list_required"
+
+  if [ "$NOTIFY_TELEGRAM" = "true" ]; then
+    "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
+  fi
+
+  echo "HOCA run completed up to review. Human staging required."
+  exit 0
+fi
+
+echo "Running automatic safe staging from reviewed intended file list..."
+"$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"
+git diff --cached > "$RUN_DIR/staged-diff.patch"
+update_status "staged" "safe_staging_complete"
 
 if [ "$NOTIFY_TELEGRAM" = "true" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
 fi
 
-echo "HOCA run completed up to review. Human staging required."
+echo "HOCA run completed through safe staging. Staged files are recorded in $RUN_DIR/staged-files.txt"
