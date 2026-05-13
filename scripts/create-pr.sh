@@ -347,6 +347,10 @@ else
   } > "$ENGINEER_NOTIFY"
 fi
 
+if [ -x "$SCRIPT_DIR/generate-task-report.sh" ]; then
+  "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null || true
+fi
+
 echo "" >&2
 echo "================================================================" >&2
 if [ "$MERGE_OUTCOME" = "auto_merge_enabled" ]; then

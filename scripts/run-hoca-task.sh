@@ -72,9 +72,25 @@ cat > "$LOCK_FILE" <<EOF
 EOF
 
 cleanup() {
+  if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
+    "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  fi
   rm -f "$LOCK_FILE"
 }
 trap cleanup EXIT
+
+record_failed_command() {
+  local exit_code="$?"
+  local command="$BASH_COMMAND"
+  if [[ "$command" == exit* ]]; then
+    return
+  fi
+  if [ "$exit_code" -ne 0 ] && [ -d "$RUN_DIR" ]; then
+    printf '%s\n' "$command" > "$RUN_DIR/failed-command.txt"
+    update_status "failed" "command_failed"
+  fi
+}
+trap record_failed_command ERR
 
 update_status() {
   local new_status="$1"
@@ -208,6 +224,8 @@ if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
     "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
   mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
 fi
+
+"$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
 
 echo ""
 echo "------------------------------------------------------------------"
