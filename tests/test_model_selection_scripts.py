@@ -165,3 +165,8 @@ def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Running Aider review with model: ollama_chat/qwen-32b-pro" in result.stdout
+    assert (run_dir / "aider-review.txt").read_text(encoding="utf-8") == (
+        "Review complete.\nLGTM\n"
+    )
+    assert (run_dir / "aider-stderr.log").read_text(encoding="utf-8") == ""
+    assert (run_dir / "aider-exit-code.txt").read_text(encoding="utf-8") == "0\n"
