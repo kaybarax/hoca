@@ -9,6 +9,7 @@ BREW_PACKAGES=(
   gh
   python@3.12
   node
+  pipx
   jq
   curl
   openssl
@@ -77,40 +78,66 @@ python_bin() {
   fi
 }
 
-install_python_dependencies() {
+venv_python_bin() {
+  printf '%s\n' "$REPO_ROOT/.venv/bin/python"
+}
+
+ensure_hoca_venv() {
   local py_bin
+  local venv_py
 
   py_bin="$(python_bin)" || {
     fail_soft "Python 3.12+ is required, but no python3 executable was found."
-    return
+    return 1
   }
 
-  info "Installing HOCA Python package dependencies with $py_bin"
-  if ! "$py_bin" -m pip install --upgrade -e "$REPO_ROOT"; then
-    info "Retrying Python dependency install with --user."
-    "$py_bin" -m pip install --user --upgrade -e "$REPO_ROOT"
+  venv_py="$(venv_python_bin)"
+  if [[ ! -x "$venv_py" ]]; then
+    info "Creating HOCA Python virtual environment: $REPO_ROOT/.venv"
+    "$py_bin" -m venv "$REPO_ROOT/.venv"
+  fi
+
+  if [[ ! -x "$venv_py" ]]; then
+    fail_soft "HOCA virtual environment was not created successfully."
+    return 1
   fi
 }
 
-install_aider() {
-  local py_bin
+install_python_dependencies() {
+  local venv_py
 
+  ensure_hoca_venv || {
+    return
+  }
+
+  venv_py="$(venv_python_bin)"
+  info "Installing HOCA Python package dependencies with $venv_py"
+  "$venv_py" -m pip install --upgrade pip
+  "$venv_py" -m pip install --upgrade -e "$REPO_ROOT"
+}
+
+install_aider() {
   if command -v aider >/dev/null 2>&1; then
     info "Found aider: $(command -v aider)"
     return
   fi
 
-  py_bin="$(python_bin)" || {
-    fail_soft "Cannot install Aider because Python is missing."
+  if ! command -v pipx >/dev/null 2>&1; then
+    fail_soft "Cannot install Aider because pipx is missing. Install it with: brew install pipx"
     return
-  }
+  fi
 
-  info "Installing Aider."
-  "$py_bin" -m pip install --user --upgrade aider-install
+  info "Installing Aider installer with pipx."
+  if ! pipx install aider-install; then
+    info "aider-install may already be installed with pipx; continuing."
+  fi
+
   if command -v aider-install >/dev/null 2>&1; then
     aider-install
+  elif [[ -x "$HOME/.local/bin/aider-install" ]]; then
+    "$HOME/.local/bin/aider-install"
   else
-    fail_soft "aider-install was installed but is not on PATH. Add your Python user bin directory to PATH and rerun this script."
+    fail_soft "aider-install was installed but is not on PATH. Run: pipx ensurepath"
   fi
 }
 
@@ -161,7 +188,7 @@ ollama_server_responds() {
 ollama_has_model() {
   local model="$1"
 
-  ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fx "$model" >/dev/null 2>&1
+  ollama list 2>/dev/null | awk -v model="$model" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'
 }
 
 pull_ollama_model() {
@@ -283,6 +310,7 @@ main() {
   check_command gh "Install GitHub CLI with: brew install gh"
   check_command python3.12 "Install Python 3.12 with: brew install python@3.12"
   check_command node "Install Node.js with: brew install node"
+  check_command pipx "Install pipx with: brew install pipx"
   check_command jq "Install jq with: brew install jq"
   check_command curl "Install curl with: brew install curl"
   check_command openssl "Install OpenSSL with: brew install openssl"

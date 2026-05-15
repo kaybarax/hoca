@@ -23,6 +23,7 @@ SUMMARY_FILE="$RUN_DIR/tests-summary.md"
 TESTS_RUN=0
 OVERALL_EXIT=0
 TEST_COMMAND=""
+FAILED_COMMAND=""
 FAILURE_TYPE=""
 
 run_test_command() {
@@ -37,8 +38,46 @@ run_test_command() {
   echo "$name exit code: $exit_code" | tee -a "$STDOUT_LOG"
   if [ "$exit_code" -ne 0 ]; then
     OVERALL_EXIT="$exit_code"
+    if [ -z "$FAILED_COMMAND" ]; then
+      FAILED_COMMAND="$*"
+      printf '%s\n' "$FAILED_COMMAND" > "$RUN_DIR/failed-command.txt"
+    fi
   fi
   return "$exit_code"
+}
+
+package_script_exists() {
+  local script_name="$1"
+
+  if command -v jq >/dev/null 2>&1 && jq -e --arg script_name "$script_name" '.scripts[$script_name] // empty' package.json >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    if python3 - "$script_name" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+script_name = sys.argv[1]
+try:
+    package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+scripts = package.get("scripts")
+if isinstance(scripts, dict) and script_name in scripts:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 classify_failure() {
@@ -70,6 +109,9 @@ write_summary() {
     if [ -n "$TEST_COMMAND" ]; then
       echo "- **Command**: \`$TEST_COMMAND\`"
     fi
+    if [ -n "$FAILED_COMMAND" ]; then
+      echo "- **Failed command**: \`$FAILED_COMMAND\`"
+    fi
     if [ -n "$FAILURE_TYPE" ]; then
       echo "- **Failure type**: $FAILURE_TYPE"
     fi
@@ -89,31 +131,29 @@ pick_node_runner() {
 }
 
 if [ -f "package.json" ]; then
-  if command -v jq >/dev/null 2>&1; then
-    runner="$(pick_node_runner)"
-    if jq -e '.scripts.test' package.json >/dev/null 2>&1; then
-      TESTS_RUN=1
-      if [ "$runner" = "npm" ]; then
-        run_test_command "$runner test" "$runner" test || true
-      else
-        run_test_command "$runner test" "$runner" test || true
-      fi
+  runner="$(pick_node_runner)"
+  if package_script_exists "test"; then
+    TESTS_RUN=1
+    if [ "$runner" = "npm" ]; then
+      run_test_command "$runner test" "$runner" test || true
+    else
+      run_test_command "$runner test" "$runner" test || true
     fi
-    if jq -e '.scripts.lint' package.json >/dev/null 2>&1; then
-      TESTS_RUN=1
-      if [ "$runner" = "npm" ]; then
-        run_test_command "$runner lint" "$runner" run lint || true
-      else
-        run_test_command "$runner lint" "$runner" lint || true
-      fi
+  fi
+  if package_script_exists "lint"; then
+    TESTS_RUN=1
+    if [ "$runner" = "npm" ]; then
+      run_test_command "$runner lint" "$runner" run lint || true
+    else
+      run_test_command "$runner lint" "$runner" lint || true
     fi
-    if jq -e '.scripts.typecheck' package.json >/dev/null 2>&1; then
-      TESTS_RUN=1
-      if [ "$runner" = "npm" ]; then
-        run_test_command "$runner typecheck" "$runner" run typecheck || true
-      else
-        run_test_command "$runner typecheck" "$runner" typecheck || true
-      fi
+  fi
+  if package_script_exists "typecheck"; then
+    TESTS_RUN=1
+    if [ "$runner" = "npm" ]; then
+      run_test_command "$runner typecheck" "$runner" run typecheck || true
+    else
+      run_test_command "$runner typecheck" "$runner" typecheck || true
     fi
   fi
 fi
@@ -154,7 +194,7 @@ if [ "$OVERALL_EXIT" -ne 0 ]; then
   classify_failure
   write_summary "failed"
   echo "Tests failed (exit $OVERALL_EXIT, classified as $FAILURE_TYPE)."
-  exit 1
+  exit "$OVERALL_EXIT"
 fi
 
 write_summary "passed"

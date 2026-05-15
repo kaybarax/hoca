@@ -46,8 +46,23 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+git_status_short_for_task() {
+  git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
+    local path="${status_line#???}"
+    case "$path" in
+      .hoca-runtime|.hoca-runtime/*) continue ;;
+    esac
+    printf '%s\n' "$status_line"
+  done
+}
+
+changed_files_for_task() {
+  git_status_short_for_task | sed 's/^...//'
+}
+
 CURRENT_BRANCH="$(git branch --show-current)"
-PRE_RUN_STATUS="$(git status --short)"
+PRE_RUN_STATUS="$(git_status_short_for_task)"
 
 echo "Repository root: $REPO_ROOT"
 if [ -n "$CURRENT_BRANCH" ]; then
@@ -80,27 +95,36 @@ fi
 RUN_DIR=".hoca-runtime/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
 
-if [ -f "$LOCK_FILE" ]; then
-  echo "Another HOCA run appears to be active for this task: $LOCK_FILE"
-  exit 0
-fi
-
-cat > "$LOCK_FILE" <<EOF
+LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
+LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
+cat > "$LOCK_METADATA_FILE" <<EOF
 {
   "run_id": "$RUN_ID",
   "issue_id": "$ISSUE_ID",
+  "owner_token": "$LOCK_OWNER",
+  "pid": $$,
   "task": $(printf '%s' "$TASK" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
 
+if ! (set -o noclobber; cat "$LOCK_METADATA_FILE" > "$LOCK_FILE") 2>/dev/null; then
+  echo "Another HOCA run appears to be active for this task: $LOCK_FILE"
+  exit 0
+fi
+
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
-  rm -f "$LOCK_FILE"
+  if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
+    rm -f "$LOCK_FILE"
+  fi
 }
 trap cleanup EXIT
+trap 'cleanup; exit 129' HUP
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 update_status() {
   local new_status="$1"
@@ -190,9 +214,10 @@ if [ "${HOCA_RUN_INIT_PROJECT:-false}" = "true" ]; then
 fi
 
 echo "Checking working tree..."
-if [ -n "$(git status --short)" ]; then
+TASK_STATUS="$(git_status_short_for_task)"
+if [ -n "$TASK_STATUS" ]; then
   echo "Working tree has existing changes:"
-  git status --short
+  printf '%s\n' "$TASK_STATUS"
   block_run "dirty_working_tree" "Stopping to avoid mixing human and agent changes."
 fi
 
@@ -240,7 +265,7 @@ path_is_secret_like() {
   return 1
 }
 
-git status --short | awk '{print $NF}' > "$RUN_DIR/changed-files-after-openhands.txt"
+changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
 while IFS= read -r changed_path || [ -n "$changed_path" ]; do
   [ -z "$changed_path" ] && continue
   if path_is_secret_like "$changed_path"; then
@@ -274,87 +299,43 @@ if ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
 fi
 
 echo "Inspecting changed files..."
-git status --short | tee "$RUN_DIR/git-status.txt"
+git_status_short_for_task | tee "$RUN_DIR/git-status.txt"
 git diff > "$RUN_DIR/git-diff.patch"
-git status --short | awk '{print $NF}' > "$RUN_DIR/changed-files.txt"
+changed_files_for_task > "$RUN_DIR/changed-files.txt"
 
-if [ -z "$(git status --short)" ]; then
+if [ -z "$(git_status_short_for_task)" ]; then
   echo "No changes produced."
   update_status "no_changes"
   exit 0
 fi
 
 INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
-if [ ! -f "$INTENDED_FILE_LIST" ]; then
-  echo "Automatic safe staging requires Manager or Reviewer to write: $INTENDED_FILE_LIST"
-  echo "Changed files are recorded in $RUN_DIR/changed-files.txt"
-  update_status "needs_human_staging" "intended_file_list_required"
+INTENDED_FILE_SOURCE="$RUN_DIR/intended-files-source.txt"
 
-  if [ "$NOTIFY_TELEGRAM" = "true" ]; then
-    "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
+if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
+  echo "Safe staging artifacts detected. Attempting automatic safe staging..."
+  if "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+    update_status "staged" "safe_staging_completed"
+  else
+    STAGING_EXIT=$?
+    update_status "needs_human_staging" "safe_staging_failed"
+    exit "$STAGING_EXIT"
   fi
-
-  echo "HOCA run completed up to review. Human staging required."
-  exit 0
-fi
-
-echo "Running automatic safe staging from reviewed intended file list..."
-"$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"
-git diff --cached > "$RUN_DIR/staged-diff.patch"
-update_status "staged" "safe_staging_complete"
-
-RUN_DIR_ABS="$(cd "$RUN_DIR" && pwd)"
-COMMIT_EXTRA=()
-if [ -n "$ISSUE_ID" ]; then
-  COMMIT_EXTRA=(--issue-id "$ISSUE_ID")
-fi
-if ! "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR_ABS" "${COMMIT_EXTRA[@]}"; then
-  update_status "blocked" "commit_failed"
-  exit 1
-fi
-
-update_status "committed" "commit_complete"
-
-MERGE_POLICY_FILE="$RUN_DIR/merge-policy.txt"
-{
-  echo "HOCA merge policy (18.1 default no-merge; 18.2 optional guarded auto-merge)"
-  echo ""
-  echo "- This run does not invoke gh pr merge. Pull requests stay open for human review by default."
-  echo "- When you run create-pr.sh, HOCA may queue GitHub auto-merge only if status.json has auto_merge true and scripts/auto-merge-guards.sh prechecks all pass (see README)."
-  echo "- Remote branches are not deleted from this step; GitHub deletes the branch after merge when auto-merge uses --delete-branch and the merge completes."
-  echo ""
-  echo "Next step: open a pull request (when tests and review are complete):"
-  echo "  $SCRIPT_DIR/create-pr.sh \"$PROJECT_PATH\" <task-one-line> \"$RUN_DIR_ABS\""
-  if [ -n "$ISSUE_ID" ]; then
-    echo "  (add --issue-id \"$ISSUE_ID\" if the PR should reference the issue)"
-  fi
-  if [ "$AUTO_MERGE" = "true" ]; then
-    echo ""
-    echo "This run requested --auto-merge: add risk-level.txt (first line: low) to the run directory before create-pr if you want guarded auto-merge, and ensure the GitHub repo enables \"Allow auto-merge\"."
-  fi
-} > "$MERGE_POLICY_FILE"
-
-if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
-  jq \
-    --arg mp "no_auto_merge_default" \
-    --arg bd "only_after_successful_merge" \
-    '.merge_policy = $mp | .merge_performed = false | .branch_delete_policy = $bd' \
-    "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
-  mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+else
+  echo "Manual selective staging is required."
+  echo "Stopping before staging; changed files are recorded in $RUN_DIR/changed-files.txt"
+  echo "Diff is recorded in $RUN_DIR/git-diff.patch"
+  update_status "needs_human_staging" "selective_staging_required"
 fi
 
 "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
-
-echo ""
-echo "------------------------------------------------------------------"
-echo "Merge policy: no gh merge from this step (default). See: $MERGE_POLICY_FILE"
-if [ "$AUTO_MERGE" = "true" ]; then
-  echo "Note: --auto-merge was passed; see merge-policy.txt and README for guarded auto-merge via create-pr.sh."
-fi
-echo "------------------------------------------------------------------"
 
 if [ "$NOTIFY_TELEGRAM" = "true" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
 fi
 
-echo "HOCA run completed through commit. Hash recorded in $RUN_DIR/commit-hash.txt"
+if [ -s "$RUN_DIR/staged-files.txt" ]; then
+  echo "HOCA run completed through safe staging. Commit still requires the commit milestone."
+else
+  echo "HOCA run completed up to review. Human staging required."
+fi

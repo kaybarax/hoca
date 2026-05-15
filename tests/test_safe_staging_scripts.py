@@ -4,7 +4,9 @@ import subprocess
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "safe-stage-after-review.sh"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPT = SCRIPT_DIR / "safe-stage-after-review.sh"
+STAGE_SAFE_FILES_SCRIPT = SCRIPT_DIR / "stage-safe-files.sh"
 
 
 def init_repo(path: Path) -> None:
@@ -42,6 +44,53 @@ def staged_files(repo: Path) -> list[str]:
         stdout=subprocess.PIPE,
     )
     return result.stdout.splitlines()
+
+
+def run_stage_safe_files(repo: Path, file_list: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(STAGE_SAFE_FILES_SCRIPT), str(repo), str(file_list)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def test_stage_safe_files_rejects_absolute_paths(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    file_list = tmp_path / "files.txt"
+    file_list.write_text(f"{tmp_path / 'README.md'}\n", encoding="utf-8")
+
+    result = run_stage_safe_files(tmp_path, file_list)
+
+    assert result.returncode != 0
+    assert "Refusing absolute path" in result.stderr
+    assert staged_files(tmp_path) == []
+
+
+def test_stage_safe_files_rejects_path_traversal(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    file_list = tmp_path / "files.txt"
+    file_list.write_text("../outside.txt\n", encoding="utf-8")
+
+    result = run_stage_safe_files(tmp_path, file_list)
+
+    assert result.returncode != 0
+    assert "Refusing path traversal" in result.stderr
+    assert staged_files(tmp_path) == []
+
+
+def test_stage_safe_files_rejects_secret_paths(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / ".env.local").write_text("TOKEN=value\n", encoding="utf-8")
+    file_list = tmp_path / "files.txt"
+    file_list.write_text(".env.local\n", encoding="utf-8")
+
+    result = run_stage_safe_files(tmp_path, file_list)
+
+    assert result.returncode != 0
+    assert "secret-like file" in result.stderr
+    assert staged_files(tmp_path) == []
 
 
 def test_safe_stage_requires_lgtm_review(tmp_path: Path) -> None:

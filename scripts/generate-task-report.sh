@@ -154,6 +154,9 @@ fi
     committed)
       echo "- Task completed through commit creation."
       ;;
+    staged)
+      echo "- Task completed through safe staging and is ready for commit."
+      ;;
     no_changes)
       echo "- Task produced no repository changes."
       ;;

@@ -78,6 +78,8 @@ def run_script(
 ):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    for key in ("AIDER_MODEL", "LLM_MODEL", "OLLAMA_MODEL"):
+        env.pop(key, None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -107,6 +109,16 @@ def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-7b-pro"
+
+
+def test_select_model_accepts_latest_tagged_aliases(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro:latest"])
+    make_fake_curl(fake_bin)
+
+    result = run_script("select-model.sh", fake_bin)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "qwen-14b-pro"
 
 
 def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> None:
@@ -165,3 +177,8 @@ def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Running Aider review with model: ollama_chat/qwen-32b-pro" in result.stdout
+    assert (run_dir / "aider-review.txt").read_text(encoding="utf-8") == (
+        "Review complete.\nLGTM\n"
+    )
+    assert (run_dir / "aider-stderr.log").read_text(encoding="utf-8") == ""
+    assert (run_dir / "aider-exit-code.txt").read_text(encoding="utf-8") == "0\n"

@@ -73,15 +73,15 @@ Human or GitHub Issue
 
 ## Model Support
 
-HOCA defaults to `qwen2.5-coder:32b` with a custom Ollama Modelfile that sets
-a 32K context window. If your machine cannot run the 32B model, HOCA supports
-smaller alternatives:
+HOCA defaults to the local Ollama alias `qwen-32b-pro`, created from
+`qwen2.5-coder:32b` with a custom Modelfile that sets a 32K context window. If
+your machine cannot run the 32B model, HOCA supports smaller alternatives:
 
-| Model | RAM Needed | Context | Modelfile |
-|-------|-----------|---------|-----------|
-| `qwen2.5-coder:32b` | ~48 GB | 32768 | `models/Modelfile` |
-| `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
-| `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
+| HOCA Alias | Base Model | RAM Needed | Context | Modelfile |
+|------------|------------|------------|---------|-----------|
+| `qwen-32b-pro` | `qwen2.5-coder:32b` | ~48 GB | 32768 | `models/Modelfile` |
+| `qwen-14b-pro` | `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
+| `qwen-7b-pro` | `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
 
 Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
 be used by setting the `LLM_MODEL`, `AIDER_MODEL`, and `OLLAMA_MODEL`
@@ -100,9 +100,9 @@ cp .env.example .env
 ./scripts/install.sh
 ```
 
-The install script handles Homebrew packages, Python dependencies, Aider,
-OpenHands, Ollama model pulls, and model alias creation. It prints warnings for
-anything that needs manual follow-up.
+The install script handles Homebrew packages, a repo-local `.venv` for Python
+dependencies, Aider, OpenHands, Ollama model pulls, and model alias creation. It
+prints warnings for anything that needs manual follow-up.
 
 After installation:
 
@@ -257,8 +257,8 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 | Docker not running | Start Docker Desktop or run `colima start` |
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
-| `aider` not found | Run `pip install aider-install && aider-install` |
-| Model not available | Run `ollama pull qwen2.5-coder:32b` (or 14b/7b) |
+| `aider` not found | Run `brew install pipx && pipx install aider-install && aider-install` |
+| Model not available | Run `ollama pull qwen2.5-coder:32b`, then `ollama create qwen-32b-pro -f ./models/Modelfile` (or use the 14B/7B aliases) |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
 | Tests fail | Check `.hoca-runtime/runs/<run-id>/tests.log` for details |
@@ -287,10 +287,10 @@ Add `.hoca-runtime/` to the target repository's `.gitignore`.
 ## Development
 
 ```sh
-pip install -e ".[dev]"
-python -m pytest
-ruff check .
-ruff format --check .
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
 ```
 
 ## Known Limitations
