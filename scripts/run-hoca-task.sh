@@ -116,6 +116,7 @@ fi
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+    "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
@@ -329,10 +330,6 @@ else
 fi
 
 "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
-
-if [ "$NOTIFY_TELEGRAM" = "true" ]; then
-  "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
-fi
 
 if [ -s "$RUN_DIR/staged-files.txt" ]; then
   echo "HOCA run completed through safe staging. Commit still requires the commit milestone."

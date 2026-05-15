@@ -110,6 +110,11 @@ def latest_status(repo: Path, run_id: str | None = None) -> str:
     return status_path.read_text(encoding="utf-8")
 
 
+def latest_notification_result(repo: Path) -> str:
+    result_paths = sorted((repo / ".hoca-runtime" / "runs").glob("*/notification-result.txt"))
+    return result_paths[-1].read_text(encoding="utf-8")
+
+
 def fake_tools_root(repo: Path, name: str = "tools") -> Path:
     return repo.parent / f"{repo.name}-{name}"
 
@@ -141,6 +146,7 @@ def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None
     assert result.returncode != 0
     assert "HOCA doctor failed" in result.stderr
     assert '"reason": "doctor_failed"' in latest_status(tmp_path)
+    assert "type=failed" in latest_notification_result(tmp_path)
 
 
 def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) -> None:
@@ -287,6 +293,7 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
     assert '"reason": "selective_staging_required"' in latest_status(tmp_path)
     assert staged.stdout == ""
+    assert "type=needs-review" in latest_notification_result(tmp_path)
 
 
 def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
