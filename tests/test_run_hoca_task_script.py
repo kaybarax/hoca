@@ -228,6 +228,68 @@ def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path
     assert '"reason": "aider_not_lgtm"' in latest_status(repo2)
 
 
+def test_run_hoca_task_stops_before_staging_even_with_intended_file_list(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "issue-42"
+    run_dir.mkdir(parents=True)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (run_dir / "intended-files-source.txt").write_text("manager\n", encoding="utf-8")
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--issue-id", "42")
+
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    assert result.returncode == 0
+    assert "Stopping before staging" in result.stdout
+    assert '"status": "needs_human_staging"' in latest_status(tmp_path, "issue-42")
+    assert '"reason": "selective_staging_required"' in latest_status(tmp_path, "issue-42")
+    assert staged.stdout == ""
+    assert not (run_dir / "commit-hash.txt").exists()
+
+
+def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "do not ignore hoca runtime"],
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    changed_files = sorted(
+        (tmp_path / ".hoca-runtime" / "runs").glob("*/changed-files.txt")
+    )[-1].read_text(encoding="utf-8")
+    assert result.returncode == 0
+    assert "Working tree has existing changes:" not in result.stdout
+    assert "README.md" in changed_files
+    assert ".hoca-runtime" not in changed_files
+
+
 def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> None:
     init_repo(tmp_path)
     lock_dir = tmp_path / ".hoca-runtime" / "runs"
