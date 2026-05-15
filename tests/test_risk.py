@@ -214,3 +214,79 @@ class TestClassifyTask:
         )
         assert result.level == RiskLevel.LOW
         assert result.auto_mergeable is True
+
+    # -- 34.2  Low-risk examples ------------------------------------------------
+
+    def test_low_doc_only_changes(self):
+        result = classify_task(
+            description="Improve installation docs",
+            changed_paths=["docs/install.md", "docs/quickstart.rst"],
+        )
+        assert result.level == RiskLevel.LOW
+        assert result.auto_mergeable is True
+
+    def test_low_small_readme_update(self):
+        result = classify_task(
+            description="Add badge to README",
+            changed_paths=["README.md"],
+        )
+        assert result.level == RiskLevel.LOW
+        assert result.auto_mergeable is True
+
+    def test_low_simple_typo_fix_in_docs(self):
+        result = classify_task(
+            description="Fix typo in contributing guide",
+            changed_paths=["CONTRIBUTING.md"],
+        )
+        assert result.level == RiskLevel.LOW
+        assert result.auto_mergeable is True
+
+    def test_low_narrow_unit_test_addition(self):
+        result = classify_task(
+            description="Add test for edge case in parser",
+            changed_paths=["tests/test_parser.py"],
+        )
+        assert result.level == RiskLevel.LOW
+        assert result.auto_mergeable is True
+
+    def test_low_non_production_example_update(self):
+        result = classify_task(
+            description="Update example script",
+            changed_paths=["examples/basic_usage.py", "examples/README.md"],
+        )
+        assert result.level == RiskLevel.LOW
+        assert result.auto_mergeable is True
+
+    # -- 34.3  Medium-risk examples ---------------------------------------------
+
+    def test_medium_small_source_change(self):
+        result = classify_task(
+            description="Rename helper function",
+            changed_paths=["src/utils/helpers.py"],
+        )
+        assert result.level == RiskLevel.MEDIUM
+        assert result.auto_mergeable is False
+
+    def test_medium_bug_fix_with_tests(self):
+        result = classify_task(
+            description="Fix off-by-one in pagination",
+            changed_paths=["src/pagination.py", "tests/test_pagination.py"],
+        )
+        assert result.level == RiskLevel.MEDIUM
+        assert result.auto_mergeable is False
+
+    def test_medium_refactor_single_module(self):
+        result = classify_task(
+            description="Refactor formatting utilities",
+            changed_paths=["src/utils/format.py"],
+        )
+        assert result.level == RiskLevel.MEDIUM
+        assert result.auto_mergeable is False
+
+    def test_medium_non_breaking_config_change(self):
+        result = classify_task(
+            description="Update linter settings",
+            changed_paths=["pyproject.toml"],
+        )
+        assert result.level == RiskLevel.MEDIUM
+        assert result.auto_mergeable is False
