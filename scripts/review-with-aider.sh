@@ -38,6 +38,13 @@ echo "Running Aider review with model: $AIDER_MODEL"
 
 AIDER_REVIEW_ARGS=(
   --model "$AIDER_MODEL"
+  --no-gitignore
+  --no-show-model-warnings
+  --no-show-release-notes
+  --map-tokens 0
+  --input-history-file "$RUN_DIR/aider-input.history"
+  --chat-history-file "$RUN_DIR/aider-chat-history.md"
+  --llm-history-file "$RUN_DIR/aider-llm-history.md"
   --message "$PROMPT"
 )
 
