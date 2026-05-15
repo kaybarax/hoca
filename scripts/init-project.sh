@@ -70,6 +70,9 @@ add_gitignore_rule() {
     return 0
   fi
   if ! grep -qxF "$rule" .gitignore; then
+    if [ -s .gitignore ] && [ "$(tail -c 1 .gitignore)" != "" ]; then
+      printf '\n' >> .gitignore
+    fi
     echo "$rule" >> .gitignore
     return 0
   fi
