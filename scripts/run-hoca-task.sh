@@ -80,27 +80,36 @@ fi
 RUN_DIR=".hoca-runtime/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
 
-if [ -f "$LOCK_FILE" ]; then
-  echo "Another HOCA run appears to be active for this task: $LOCK_FILE"
-  exit 0
-fi
-
-cat > "$LOCK_FILE" <<EOF
+LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
+LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
+cat > "$LOCK_METADATA_FILE" <<EOF
 {
   "run_id": "$RUN_ID",
   "issue_id": "$ISSUE_ID",
+  "owner_token": "$LOCK_OWNER",
+  "pid": $$,
   "task": $(printf '%s' "$TASK" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
 
+if ! (set -o noclobber; cat "$LOCK_METADATA_FILE" > "$LOCK_FILE") 2>/dev/null; then
+  echo "Another HOCA run appears to be active for this task: $LOCK_FILE"
+  exit 0
+fi
+
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
-  rm -f "$LOCK_FILE"
+  if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
+    rm -f "$LOCK_FILE"
+  fi
 }
 trap cleanup EXIT
+trap 'cleanup; exit 129' HUP
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 update_status() {
   local new_status="$1"

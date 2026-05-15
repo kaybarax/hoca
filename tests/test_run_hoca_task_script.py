@@ -232,7 +232,8 @@ def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> 
     init_repo(tmp_path)
     lock_dir = tmp_path / ".hoca-runtime" / "runs"
     lock_dir.mkdir(parents=True)
-    (lock_dir / "issue-42.lock").write_text("{}\n", encoding="utf-8")
+    lock = lock_dir / "issue-42.lock"
+    lock.write_text('{"owner_token": "foreign"}\n', encoding="utf-8")
 
     result = subprocess.run(
         [str(SCRIPT), str(tmp_path), "Fix issue", "--issue-id", "42"],
@@ -244,3 +245,26 @@ def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> 
 
     assert result.returncode == 0
     assert "Another HOCA run appears to be active" in result.stdout
+    assert lock.exists()
+    assert "foreign" in lock.read_text(encoding="utf-8")
+
+
+def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            "cat > .hoca-runtime/runs/issue-42.lock <<'EOF'\n"
+            '{"owner_token": "foreign", "pid": 99999}\n'
+            "EOF\n"
+        ),
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Fix issue", env, "--issue-id", "42")
+
+    lock = tmp_path / ".hoca-runtime" / "runs" / "issue-42.lock"
+    assert result.returncode == 0
+    assert lock.exists()
+    assert "foreign" in lock.read_text(encoding="utf-8")

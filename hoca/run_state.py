@@ -12,6 +12,7 @@ from typing import Any
 RUN_STATE_DIRNAME = ".hoca-runtime"
 
 _held_locks: list[Path] = []
+_held_lock_ids: dict[Path, tuple[int, int]] = {}
 
 
 def now_epoch() -> int:
@@ -90,6 +91,7 @@ def acquire_lock(lock_path: Path, metadata: dict[str, Any]) -> bool:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         return False
+    stat_result = os.fstat(fd)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, sort_keys=True)
@@ -101,23 +103,30 @@ def acquire_lock(lock_path: Path, metadata: dict[str, Any]) -> bool:
             pass
         raise
     _held_locks.append(lock_path)
+    _held_lock_ids[lock_path] = (stat_result.st_dev, stat_result.st_ino)
     return True
 
 
 def release_lock(lock_path: Path) -> None:
-    if lock_path.exists():
-        lock_path.unlink()
     if lock_path in _held_locks:
+        expected_id = _held_lock_ids.get(lock_path)
+        try:
+            current = lock_path.stat()
+        except FileNotFoundError:
+            pass
+        else:
+            current_id = (current.st_dev, current.st_ino)
+            if expected_id is None or current_id == expected_id:
+                lock_path.unlink()
         _held_locks.remove(lock_path)
+        _held_lock_ids.pop(lock_path, None)
 
 
 def _cleanup_locks() -> None:
     for lp in list(_held_locks):
-        try:
-            lp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        release_lock(lp)
     _held_locks.clear()
+    _held_lock_ids.clear()
 
 
 def _signal_handler(signum: int, _frame: Any) -> None:

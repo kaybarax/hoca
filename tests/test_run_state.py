@@ -145,6 +145,28 @@ def test_release_lock_missing_file_is_safe(tmp_path: Path) -> None:
     release_lock(lock)
 
 
+def test_release_lock_does_not_remove_unheld_lock(tmp_path: Path) -> None:
+    lock = tmp_path / "foreign.lock"
+    lock.write_text(json.dumps({"pid": 2}), encoding="utf-8")
+
+    release_lock(lock)
+
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8")) == {"pid": 2}
+
+
+def test_release_lock_does_not_remove_replaced_lock(tmp_path: Path) -> None:
+    lock = tmp_path / "replaced.lock"
+    acquire_lock(lock, {"pid": 1})
+    lock.unlink()
+    lock.write_text(json.dumps({"pid": 2}), encoding="utf-8")
+
+    release_lock(lock)
+
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8")) == {"pid": 2}
+
+
 def test_lock_metadata_is_json(tmp_path: Path) -> None:
     lock = tmp_path / "meta.lock"
     meta = {"run_id": "run-5", "started_at": 1700000000}
