@@ -290,3 +290,125 @@ class TestClassifyTask:
         )
         assert result.level == RiskLevel.MEDIUM
         assert result.auto_mergeable is False
+
+    # -- 34.4  High-risk examples ----------------------------------------------
+
+    def test_high_authentication(self):
+        result = classify_task(
+            description="Fix auth token refresh flow",
+            changed_paths=["src/auth/middleware.py", "src/auth/tokens.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_authorization(self):
+        result = classify_task(
+            description="Update authorization policies",
+            changed_paths=["app/authorization/policies.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_payment(self):
+        result = classify_task(
+            description="Fix payment processing timeout",
+            changed_paths=["payments/stripe_webhook.py", "payments/charge.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_billing(self):
+        result = classify_task(
+            description="Update billing cycle logic",
+            changed_paths=["src/billing/invoice.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_database_migrations(self):
+        result = classify_task(
+            description="Run database migration for user table",
+            changed_paths=["alembic/versions/002_add_user_cols.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_infrastructure(self):
+        result = classify_task(
+            description="Resize production cluster",
+            changed_paths=["infra/main.tf", "infra/variables.tf"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_secrets(self):
+        result = classify_task(
+            description="Rotate secret keys for API access",
+            changed_paths=["src/config/secrets.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_cicd_permissions(self):
+        result = classify_task(
+            description="Update CI workflow permissions",
+            changed_paths=[".github/workflows/ci.yml"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_deployment_scripts(self):
+        result = classify_task(
+            description="Fix deploy script for staging",
+            changed_paths=["scripts/deploy_prod.sh"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_dependency_upgrades(self):
+        result = classify_task(
+            description="Upgrade Flask to latest major version",
+            changed_paths=["requirements.txt", "requirements-dev.txt"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_data_deletion(self):
+        result = classify_task(
+            description="Delete old user records from archive",
+            changed_paths=["scripts/destroy_old_data.sh"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_file_deletion(self):
+        result = classify_task(
+            description="Purge stale cache files",
+            changed_paths=["ops/nuke_cache.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_encryption(self):
+        result = classify_task(
+            description="Add encryption to user PII fields",
+            changed_paths=["lib/encrypt_util.py", "core/crypto.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_user_permissions(self):
+        result = classify_task(
+            description="Refactor permission checks for admin roles",
+            changed_paths=["src/permissions/check.py", "lib/rbac/roles.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
+
+    def test_high_security_sensitive_code(self):
+        result = classify_task(
+            description="Harden session validation",
+            changed_paths=["security/audit.py", "src/auth/session.py"],
+        )
+        assert result.level == RiskLevel.HIGH
+        assert result.auto_mergeable is False
