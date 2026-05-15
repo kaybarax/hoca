@@ -309,10 +309,24 @@ if [ -z "$(git_status_short_for_task)" ]; then
   exit 0
 fi
 
-echo "Manual selective staging is required."
-echo "Stopping before staging; changed files are recorded in $RUN_DIR/changed-files.txt"
-echo "Diff is recorded in $RUN_DIR/git-diff.patch"
-update_status "needs_human_staging" "selective_staging_required"
+INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
+INTENDED_FILE_SOURCE="$RUN_DIR/intended-files-source.txt"
+
+if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
+  echo "Safe staging artifacts detected. Attempting automatic safe staging..."
+  if "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+    update_status "staged" "safe_staging_completed"
+  else
+    STAGING_EXIT=$?
+    update_status "needs_human_staging" "safe_staging_failed"
+    exit "$STAGING_EXIT"
+  fi
+else
+  echo "Manual selective staging is required."
+  echo "Stopping before staging; changed files are recorded in $RUN_DIR/changed-files.txt"
+  echo "Diff is recorded in $RUN_DIR/git-diff.patch"
+  update_status "needs_human_staging" "selective_staging_required"
+fi
 
 "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
 
@@ -320,4 +334,8 @@ if [ "$NOTIFY_TELEGRAM" = "true" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" 2>/dev/null || true
 fi
 
-echo "HOCA run completed up to review. Human staging required."
+if [ -s "$RUN_DIR/staged-files.txt" ]; then
+  echo "HOCA run completed through safe staging. Commit still requires the commit milestone."
+else
+  echo "HOCA run completed up to review. Human staging required."
+fi

@@ -228,7 +228,7 @@ def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path
     assert '"reason": "aider_not_lgtm"' in latest_status(repo2)
 
 
-def test_run_hoca_task_stops_before_staging_even_with_intended_file_list(
+def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     tmp_path: Path,
 ) -> None:
     init_repo(tmp_path)
@@ -253,11 +253,40 @@ def test_run_hoca_task_stops_before_staging_even_with_intended_file_list(
         stdout=subprocess.PIPE,
     )
     assert result.returncode == 0
-    assert "Stopping before staging" in result.stdout
-    assert '"status": "needs_human_staging"' in latest_status(tmp_path, "issue-42")
-    assert '"reason": "selective_staging_required"' in latest_status(tmp_path, "issue-42")
-    assert staged.stdout == ""
+    assert "Safe staging artifacts detected" in result.stdout
+    assert "HOCA run completed through safe staging" in result.stdout
+    assert '"status": "staged"' in latest_status(tmp_path, "issue-42")
+    assert '"reason": "safe_staging_completed"' in latest_status(tmp_path, "issue-42")
+    assert staged.stdout == "README.md\n"
+    assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert not (run_dir / "commit-hash.txt").exists()
+
+
+def test_run_hoca_task_stops_before_staging_without_intended_file_list(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    assert result.returncode == 0
+    assert "Stopping before staging" in result.stdout
+    assert '"status": "needs_human_staging"' in latest_status(tmp_path)
+    assert '"reason": "selective_staging_required"' in latest_status(tmp_path)
+    assert staged.stdout == ""
 
 
 def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
