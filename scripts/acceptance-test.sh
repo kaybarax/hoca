@@ -7,7 +7,9 @@ TMP_ROOT="${TMPDIR:-/tmp}"
 TMP_ROOT="${TMP_ROOT%/}"
 WORK_DIR="$(mktemp -d "$TMP_ROOT/hoca-acceptance.XXXXXX")"
 TEST_REPO="$WORK_DIR/disposable-repo"
+ISSUE_REPO="$WORK_DIR/disposable-issue-repo"
 TASK="Add a Local Development section to README.md. Keep it short and clear."
+ISSUE_TITLE="Add a short issue note to README.md"
 USE_FAKE_TOOLS="${HOCA_ACCEPTANCE_FAKE_TOOLS:-false}"
 
 print_step() {
@@ -35,9 +37,21 @@ assert_file_contains() {
 }
 
 latest_run_dir() {
-  find "$TEST_REPO/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d \
+  local repo="$1"
+  find "$repo/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d \
     | sort \
     | tail -n 1
+}
+
+create_disposable_repo() {
+  local repo="$1"
+  mkdir -p "$repo"
+  git -C "$repo" init >/dev/null
+  git -C "$repo" config user.email "hoca-acceptance@example.test"
+  git -C "$repo" config user.name "HOCA Acceptance"
+  printf '# Disposable Acceptance Repo\n\nSmall repo for HOCA acceptance testing.\n' > "$repo/README.md"
+  git -C "$repo" add -- README.md
+  git -C "$repo" commit -m "Initial README" >/dev/null
 }
 
 add_python_shim() {
@@ -140,14 +154,11 @@ fi
 print_step "Recording HOCA workspace baseline"
 HOCA_STATUS_BEFORE="$(git -C "$HOCA_ROOT" status --short --untracked-files=all)"
 
+print_step "Running hoca doctor"
+"$HOCA_ROOT/bin/hoca" doctor
+
 print_step "Creating disposable Git repository"
-mkdir -p "$TEST_REPO"
-git -C "$TEST_REPO" init >/dev/null
-git -C "$TEST_REPO" config user.email "hoca-acceptance@example.test"
-git -C "$TEST_REPO" config user.name "HOCA Acceptance"
-printf '# Disposable Acceptance Repo\n\nSmall repo for HOCA acceptance testing.\n' > "$TEST_REPO/README.md"
-git -C "$TEST_REPO" add -- README.md
-git -C "$TEST_REPO" commit -m "Initial README" >/dev/null
+create_disposable_repo "$TEST_REPO"
 START_BRANCH="$(git -C "$TEST_REPO" branch --show-current)"
 
 print_step "Running init-project"
@@ -175,7 +186,7 @@ if [ "$RUN_EXIT" -ne 0 ]; then
   fail "bin/hoca run exited with $RUN_EXIT"
 fi
 
-RUN_DIR="$(latest_run_dir)"
+RUN_DIR="$(latest_run_dir "$TEST_REPO")"
 [ -n "$RUN_DIR" ] || fail "no HOCA run directory was created"
 
 print_step "Verifying branch and run artifacts"
@@ -221,6 +232,45 @@ if find "$TEST_REPO" \
   \( -name '.env' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa' -o -name 'id_ed25519' -o -name '*.kubeconfig' \) \
   -print -quit | grep -q .; then
   fail "secret-like file was created in disposable repo"
+fi
+
+print_step "Creating disposable issue repository"
+create_disposable_repo "$ISSUE_REPO"
+ISSUE_START_BRANCH="$(git -C "$ISSUE_REPO" branch --show-current)"
+
+print_step "Running init-project for issue repository"
+"$SCRIPT_DIR/init-project.sh" "$ISSUE_REPO"
+git -C "$ISSUE_REPO" add -- .gitignore .openhands_instructions templates/PR_TEMPLATE.md
+git -C "$ISSUE_REPO" commit -m "Initialize HOCA project config" >/dev/null
+
+print_step "Running hoca issue"
+set +e
+"$HOCA_ROOT/bin/hoca" issue "$ISSUE_REPO" 123 "$ISSUE_TITLE" > "$WORK_DIR/hoca-issue-output.log" 2> "$WORK_DIR/hoca-issue-stderr.log"
+ISSUE_EXIT=$?
+set -e
+
+cat "$WORK_DIR/hoca-issue-output.log"
+if [ -s "$WORK_DIR/hoca-issue-stderr.log" ]; then
+  cat "$WORK_DIR/hoca-issue-stderr.log" >&2
+fi
+
+if [ "$ISSUE_EXIT" -ne 0 ]; then
+  fail "bin/hoca issue exited with $ISSUE_EXIT"
+fi
+
+ISSUE_RUN_DIR="$ISSUE_REPO/.hoca-runtime/runs/issue-123"
+assert_file_exists "$ISSUE_RUN_DIR/status.json" "issue run status"
+assert_file_contains "$ISSUE_RUN_DIR/status.json" '"issue_id": "123"' "issue run status"
+assert_file_contains "$ISSUE_RUN_DIR/status.json" 'Fix GitHub issue #123' "issue run task"
+assert_file_contains "$ISSUE_RUN_DIR/openhands-exit-code.txt" '^0$' "issue OpenHands exit code"
+assert_file_contains "$ISSUE_REPO/README.md" 'Local Development' "issue README update"
+
+ISSUE_BRANCH="$(git -C "$ISSUE_REPO" branch --show-current)"
+if [ "$ISSUE_BRANCH" = "$ISSUE_START_BRANCH" ]; then
+  fail "HOCA issue did not create or switch to an issue branch"
+fi
+if [ "$ISSUE_BRANCH" != "fix/issue-123" ]; then
+  fail "unexpected issue branch name: $ISSUE_BRANCH"
 fi
 
 HOCA_STATUS_AFTER="$(git -C "$HOCA_ROOT" status --short --untracked-files=all)"

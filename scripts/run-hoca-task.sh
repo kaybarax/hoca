@@ -275,6 +275,12 @@ while IFS= read -r changed_path || [ -n "$changed_path" ]; do
   fi
 done < "$RUN_DIR/changed-files-after-openhands.txt"
 
+if [ -z "$(git_status_short_for_task)" ]; then
+  echo "No changes produced."
+  update_status "no_changes"
+  exit 0
+fi
+
 echo "Running tests..."
 set +e
 "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"

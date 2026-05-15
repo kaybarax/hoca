@@ -36,6 +36,20 @@ If not acceptable, list required fixes clearly."
 
 echo "Running Aider review with model: $AIDER_MODEL"
 
+changed_files_for_review() {
+  {
+    git diff --name-only --diff-filter=ACMRTUXB
+    git ls-files --others --exclude-standard
+  } | while IFS= read -r changed_path || [ -n "$changed_path" ]; do
+    [ -n "$changed_path" ] || continue
+    case "$changed_path" in
+      .hoca-runtime|.hoca-runtime/*) continue ;;
+    esac
+    [ -e "$changed_path" ] || continue
+    printf '%s\n' "$changed_path"
+  done | sort -u
+}
+
 AIDER_REVIEW_ARGS=(
   --model "$AIDER_MODEL"
   --no-gitignore
@@ -48,11 +62,22 @@ AIDER_REVIEW_ARGS=(
   --message "$PROMPT"
 )
 
-if aider --help 2>&1 | grep -q -- "--read-only"; then
+AIDER_HELP="$(aider --help 2>&1 || true)"
+
+if printf '%s\n' "$AIDER_HELP" | grep -q -- "--yes-always"; then
+  AIDER_REVIEW_ARGS+=(--yes-always)
+fi
+
+if printf '%s\n' "$AIDER_HELP" | grep -q -- "--read-only"; then
   AIDER_REVIEW_ARGS+=(--read-only)
 else
   AIDER_REVIEW_ARGS+=(--dry-run --no-auto-commits --no-dirty-commits)
 fi
+
+while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+  [ -n "$changed_file" ] || continue
+  AIDER_REVIEW_ARGS+=("$changed_file")
+done < <(changed_files_for_review)
 
 set +e
 aider "${AIDER_REVIEW_ARGS[@]}" \

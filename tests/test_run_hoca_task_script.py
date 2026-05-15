@@ -190,6 +190,7 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
     )
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
         pytest_body="echo 'tests failed'\nexit 3\n",
     )
     env = os.environ.copy()
@@ -202,10 +203,29 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
     assert '"reason": "tests_failed"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    assert result.returncode == 0
+    assert "No changes produced." in result.stdout
+    assert '"status": "no_changes"' in latest_status(tmp_path)
+    assert not (run_dir / "tests-summary.md").exists()
+    assert not (run_dir / "aider-review.txt").exists()
+
+
 def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
         aider_body="echo 'aider crashed' >&2\nexit 5\n",
     )
     env = os.environ.copy()
@@ -222,6 +242,7 @@ def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path
     init_repo(repo2)
     fake_bin2 = make_fake_preflight_bin(
         fake_tools_root(repo2, "tools2"),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
         aider_body="echo 'Needs fixes.'\nexit 0\n",
     )
     env2 = os.environ.copy()

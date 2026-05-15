@@ -149,6 +149,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     project.mkdir()
     init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
 
     result = run_script(
         "run-openhands-task.sh",
@@ -168,6 +169,7 @@ def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     project.mkdir()
     init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
 
     result = run_script(
         "review-with-aider.sh",
@@ -182,3 +184,41 @@ def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
     )
     assert (run_dir / "aider-stderr.log").read_text(encoding="utf-8") == ""
     assert (run_dir / "aider-exit-code.txt").read_text(encoding="utf-8") == "0\n"
+
+
+def test_aider_wrapper_uses_yes_always_when_supported(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
+    args_file = tmp_path / "aider-args.txt"
+    aider = fake_bin / "aider"
+    aider.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "aider --yes-always --read-only"\n'
+        "  exit 0\n"
+        "fi\n"
+        "printf '%s\\n' \"$@\" > \"$AIDER_ARGS_FILE\"\n"
+        "echo 'Review complete.'\n"
+        "echo 'LGTM'\n",
+        encoding="utf-8",
+    )
+    aider.chmod(aider.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+
+    result = run_script(
+        "review-with-aider.sh",
+        fake_bin,
+        extra_env={"AIDER_ARGS_FILE": str(args_file)},
+        args=[str(project), "Review project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    args = args_file.read_text(encoding="utf-8").splitlines()
+    assert "--yes-always" in args
+    assert "--read-only" in args
+    assert "README.md" in args
