@@ -78,6 +78,8 @@ def run_script(
 ):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    for key in ("AIDER_MODEL", "LLM_MODEL", "OLLAMA_MODEL"):
+        env.pop(key, None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(

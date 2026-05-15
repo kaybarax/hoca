@@ -100,9 +100,9 @@ cp .env.example .env
 ./scripts/install.sh
 ```
 
-The install script handles Homebrew packages, Python dependencies, Aider,
-OpenHands, Ollama model pulls, and model alias creation. It prints warnings for
-anything that needs manual follow-up.
+The install script handles Homebrew packages, a repo-local `.venv` for Python
+dependencies, Aider, OpenHands, Ollama model pulls, and model alias creation. It
+prints warnings for anything that needs manual follow-up.
 
 After installation:
 
@@ -257,7 +257,7 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 | Docker not running | Start Docker Desktop or run `colima start` |
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
-| `aider` not found | Run `pip install aider-install && aider-install` |
+| `aider` not found | Run `brew install pipx && pipx install aider-install && aider-install` |
 | Model not available | Run `ollama pull qwen2.5-coder:32b`, then `ollama create qwen-32b-pro -f ./models/Modelfile` (or use the 14B/7B aliases) |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
@@ -287,10 +287,10 @@ Add `.hoca-runtime/` to the target repository's `.gitignore`.
 ## Development
 
 ```sh
-pip install -e ".[dev]"
-python -m pytest
-ruff check .
-ruff format --check .
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
 ```
 
 ## Known Limitations
