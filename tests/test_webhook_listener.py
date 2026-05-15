@@ -125,3 +125,24 @@ def test_duplicate_lock_prevents_duplicate_run(mock_dup, mock_lock, mock_popen, 
     data = resp.get_json()
     assert data["status"] == "duplicate"
     mock_popen.assert_not_called()
+
+
+@mock.patch("webhook_listener.subprocess.Popen")
+@mock.patch("webhook_listener.is_duplicate_issue_run", return_value=True)
+def test_existing_issue_run_returns_duplicate(mock_dup, mock_popen, client):
+    resp = _post_webhook(client)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "duplicate"
+    mock_popen.assert_not_called()
+
+
+def test_missing_timestamp_returns_401(client):
+    resp = _post_webhook(client, omit_timestamp=True)
+    assert resp.status_code == 401
+
+
+def test_health_endpoint(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
