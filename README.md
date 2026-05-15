@@ -87,6 +87,12 @@ Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
 be used by setting the `LLM_MODEL`, `AIDER_MODEL`, and `OLLAMA_MODEL`
 environment variables in your `.env` file.
 
+**Model fallback:** `scripts/select-model.sh` checks which models your Ollama
+instance has loaded. It tries `OLLAMA_MODEL` first (default `qwen-32b-pro`),
+then falls back through `qwen-14b-pro` and `qwen-7b-pro`. If none are
+available, the run fails with a clear diagnostic. Both the OpenHands runner and
+Aider reviewer use the selected model automatically.
+
 Smaller models trade capability for speed and lower memory use. For high-risk
 work, human review is recommended regardless of model size.
 

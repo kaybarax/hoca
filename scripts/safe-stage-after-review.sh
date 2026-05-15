@@ -154,7 +154,7 @@ is_dependency_lockfile() {
 
 is_runtime_lock_file() {
   case "$1" in
-    *.lock|*.lock.json|*.pid|.hoca-runtime/runs/*.lock)
+    .hoca-runtime/runs/*.lock|*.lock|*.lock.json|*.pid)
       return 0
       ;;
     *)

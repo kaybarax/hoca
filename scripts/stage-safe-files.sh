@@ -37,9 +37,10 @@ is_secret_like() {
   local filename
   filename="$(basename "$1")"
   local lower
-  lower="$(echo "$filename" | tr '[:upper:]' '[:lower:]')"
+  lower="$(printf '%s' "$filename" | tr '[:upper:]' '[:lower:]')"
 
   for pattern in "${SECRET_PATTERNS[@]}"; do
+    # shellcheck disable=SC2254
     case "$lower" in
       $pattern) return 0 ;;
     esac

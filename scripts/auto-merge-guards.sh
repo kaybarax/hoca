@@ -6,7 +6,6 @@
 #   auto-merge-guards.sh postcheck-mergeable           -> exit 0 if MERGEABLE, 1 otherwise (reads PR from gh)
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKIP_FILE=""
 RUN_DIR=""
 
@@ -65,7 +64,7 @@ path_is_high_risk_category() {
       return 0 ;;
   esac
   case "$lower" in
-    *migrate*|*migration*|*/migrations/*|*/db/schema*|alembic/*|*/alembic/*|flyway/*|*/flyway/*|liquibase/*|*/liquibase/*)
+    *migration*|*migrate*|*/db/schema*|alembic/*|*/alembic/*|flyway/*|*/flyway/*|liquibase/*|*/liquibase/*)
       return 0 ;;
   esac
   case "$lower" in
@@ -197,8 +196,8 @@ postcheck_mergeable() {
   if ! command -v gh >/dev/null 2>&1; then
     return 1
   fi
-  local attempt mergeable
-  for attempt in $(seq 1 10); do
+  local _attempt mergeable
+  for _attempt in $(seq 1 10); do
     mergeable="$(gh pr view --json mergeable -q .mergeable 2>/dev/null || echo "UNKNOWN")"
     if [ "$mergeable" = "MERGEABLE" ]; then
       return 0
