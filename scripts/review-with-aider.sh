@@ -36,11 +36,19 @@ If not acceptable, list required fixes clearly."
 
 echo "Running Aider review with model: $AIDER_MODEL"
 
+AIDER_REVIEW_ARGS=(
+  --model "$AIDER_MODEL"
+  --message "$PROMPT"
+)
+
+if aider --help 2>&1 | grep -q -- "--read-only"; then
+  AIDER_REVIEW_ARGS+=(--read-only)
+else
+  AIDER_REVIEW_ARGS+=(--dry-run --no-auto-commits --no-dirty-commits)
+fi
+
 set +e
-aider \
-  --model "$AIDER_MODEL" \
-  --read-only \
-  --message "$PROMPT" \
+aider "${AIDER_REVIEW_ARGS[@]}" \
   > "$RUN_DIR/aider-review.txt" 2> "$RUN_DIR/aider-stderr.log"
 EXIT_CODE=$?
 set -e
