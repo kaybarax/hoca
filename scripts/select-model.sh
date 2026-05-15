@@ -22,7 +22,7 @@ fi
 
 model_exists() {
   local candidate="$1"
-  printf '%s\n' "$MODEL_LIST" | grep -qx "$candidate"
+  printf '%s\n' "$MODEL_LIST" | awk -v model="$candidate" '$1 == model || $1 == model ":latest" { found = 1 } END { exit found ? 0 : 1 }'
 }
 
 try_model() {

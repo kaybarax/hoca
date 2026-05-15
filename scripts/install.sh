@@ -188,7 +188,7 @@ ollama_server_responds() {
 ollama_has_model() {
   local model="$1"
 
-  ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fx "$model" >/dev/null 2>&1
+  ollama list 2>/dev/null | awk -v model="$model" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'
 }
 
 pull_ollama_model() {

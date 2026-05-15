@@ -111,6 +111,16 @@ def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
     assert result.stdout.strip() == "qwen-7b-pro"
 
 
+def test_select_model_accepts_latest_tagged_aliases(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro:latest"])
+    make_fake_curl(fake_bin)
+
+    result = run_script("select-model.sh", fake_bin)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "qwen-14b-pro"
+
+
 def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["unrelated-model"])
     make_fake_curl(fake_bin)
