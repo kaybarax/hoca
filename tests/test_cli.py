@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -19,6 +22,25 @@ def test_cli_help_displays_group_help() -> None:
     assert "init-project" in result.output
     assert "run" in result.output
     assert "issue" in result.output
+
+
+def test_bin_hoca_displays_help() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["HOCA_PYTHON"] = sys.executable
+
+    result = subprocess.run(
+        [str(repo_root / "bin" / "hoca"), "--help"],
+        cwd=repo_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "HOCA local autonomous engineering toolkit." in result.stdout
+    assert "doctor" in result.stdout
 
 
 def test_doctor_reports_success(monkeypatch) -> None:
