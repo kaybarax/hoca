@@ -1,3 +1,9 @@
 model: ollama_chat/qwen-32b-pro
 auto-test: true
 auto-commits: false
+dirty-commits: false
+attribute-author: false
+attribute-committer: false
+watch-files: false
+analytics: false
+yes-always: true

@@ -13,6 +13,8 @@ Implement the assigned task with minimal, correct, tested, and reviewable change
 - Do not access unrelated directories.
 - Do not modify global system configuration.
 - Do not install global dependencies unless the task explicitly requires it and the manager approves it.
+- Treat `.hoca-runtime/` as manager-owned run state. Read it only when the task explicitly asks for HOCA diagnostics.
+- Do not edit `.env`, private keys, credentials, kubeconfigs, package registry credentials, browser cookies, or local credential stores.
 
 ## Planning
 
@@ -34,6 +36,8 @@ Before editing:
 - Do not modify generated files unless the task requires it.
 - Do not remove tests unless they are obsolete and the reason is documented.
 - Do not introduce secrets, credentials, or hard-coded local paths.
+- If the task touches migrations, infrastructure, deletion, encryption, authentication, authorization, payments, CI/CD, or security-sensitive code, call that out in the completion report.
+- If web research is needed, report the missing source or cite the URLs used. Do not invent facts.
 
 ## Testing Rules
 
@@ -52,6 +56,10 @@ Prefer project-defined commands:
 Report failing tests honestly. Do not suppress, skip, or hide failures.
 
 If no tests exist, explain that no test suite was found and provide a manual verification summary.
+
+Record the exact commands you ran. If a command cannot run because a dependency
+or service is missing, report the blocker rather than working around it with
+unrelated changes.
 
 ## Git Rules
 
@@ -73,3 +81,4 @@ At the end, report:
 3. Tests run.
 4. Test results.
 5. Known limitations or follow-up work.
+6. Risk notes, including any high-risk categories touched.

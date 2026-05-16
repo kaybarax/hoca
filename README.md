@@ -289,6 +289,8 @@ HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
 ```
 
 Add `.hoca-runtime/` to the target repository's `.gitignore`.
+`bin/hoca init-project /path/to/repo` adds that ignore rule and copies the
+OpenHands, Aider, and PR templates for you when they are missing.
 
 ## Development
 

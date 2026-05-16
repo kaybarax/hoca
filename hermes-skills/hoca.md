@@ -25,6 +25,32 @@ HOCA is local-first and repository-scoped. Do not treat it as unrestricted compu
 
 Never override these defaults unless the engineer explicitly requests the override and the local HOCA configuration allows it. Even when `auto_merge=true`, merge is guarded and may only be queued after all configured safety checks pass.
 
+## Configuration Contract
+
+Read HOCA behavior from the repository `.env` or inherited environment. The
+expected safe defaults are documented in `.env.example`:
+
+- `HOCA_AUTO_MERGE=false`
+- `HOCA_REQUIRE_AIDER_LGTM=true`
+- `HOCA_REQUIRE_TESTS=true`
+- `HOCA_STOP_ON_DIRTY_TREE=true`
+- `HOCA_RUN_INIT_PROJECT=false`
+- `HOCA_NOTIFY_TELEGRAM=false`
+- `HOCA_WEBHOOK_ENABLED=false`
+
+Use `OLLAMA_MODEL`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, and
+`AIDER_MODEL` only through the HOCA wrappers. Do not pass raw provider secrets
+to worker prompts or reports. For GitHub issue automation, require a configured
+`HOCA_WEBHOOK_SECRET` before accepting webhooks.
+
+## Model Fallback
+
+Use `scripts/select-model.sh` indirectly through the OpenHands and Aider
+wrappers. The selector tries the configured `OLLAMA_MODEL` first, then the
+provided local aliases `qwen-14b-pro` and `qwen-7b-pro`. If no model is
+available, stop with a clear setup diagnostic instead of silently switching to a
+hosted model.
+
 ## Manager Workflow
 
 ### 1. Validate Workspace
@@ -111,6 +137,9 @@ Track run state in `.hoca-runtime/runs/<run_id>/`. Preserve useful logs, includi
 
 If the worker fails, record the failed command and stop before review, staging, commit, or PR creation.
 
+Do not delete run artifacts during normal task execution. They are the audit
+trail for later troubleshooting, PR review, and human recovery.
+
 ### 7. Inspect Changes
 
 After OpenHands completes, inspect:
@@ -150,6 +179,9 @@ scripts/run-tests.sh "$project_path" "$run_dir"
 
 Because `require_tests=true`, a failing test command blocks the run. If the project has no test command, record that clearly in the report and require human judgment before proceeding.
 
+Never mark tests as passed from absence of a test suite. Use the report to make
+the validation gap explicit.
+
 ### 9. Run Aider Review
 
 Run independent review through the HOCA wrapper:
@@ -159,6 +191,12 @@ scripts/review-with-aider.sh "$project_path" "$task" "$run_dir"
 ```
 
 Because `require_aider_lgtm=true`, continue only when `aider-review.txt` contains `LGTM`. If Aider requests changes or fails, stop and report the review findings.
+
+The target repository may include `.aider.conf.yml` and
+`.aider.model.settings.yml` copied by `hoca init-project`; treat those as
+reviewer configuration, but do not let Aider commit, stage, or rewrite the Git
+lifecycle. Hermes remains responsible for staging, committing, PR creation, and
+merge policy.
 
 ### 10. Stage Files Safely
 
