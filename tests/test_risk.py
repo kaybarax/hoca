@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from hoca.risk import (
-    RiskClassification,
     RiskLevel,
     classify_description,
     classify_paths,
