@@ -198,7 +198,7 @@ def test_aider_wrapper_uses_yes_always_when_supported(tmp_path: Path) -> None:
         '  echo "aider --yes-always --read-only"\n'
         "  exit 0\n"
         "fi\n"
-        "printf '%s\\n' \"$@\" > \"$AIDER_ARGS_FILE\"\n"
+        'printf \'%s\\n\' "$@" > "$AIDER_ARGS_FILE"\n'
         "echo 'Review complete.'\n"
         "echo 'LGTM'\n",
         encoding="utf-8",

@@ -45,6 +45,7 @@ latest_run_dir() {
 
 create_disposable_repo() {
   local repo="$1"
+  local remote="$repo-origin.git"
   mkdir -p "$repo"
   git -C "$repo" init >/dev/null
   git -C "$repo" config user.email "hoca-acceptance@example.test"
@@ -52,6 +53,9 @@ create_disposable_repo() {
   printf '# Disposable Acceptance Repo\n\nSmall repo for HOCA acceptance testing.\n' > "$repo/README.md"
   git -C "$repo" add -- README.md
   git -C "$repo" commit -m "Initial README" >/dev/null
+  git init --bare "$remote" >/dev/null
+  git -C "$repo" remote add origin "$remote"
+  git -C "$repo" push -u origin HEAD >/dev/null
 }
 
 add_python_shim() {
@@ -81,6 +85,22 @@ make_fake_tools() {
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+  exit 0
+fi
+if [ "${1:-}" = "pr" ] && [ "${2:-}" = "create" ]; then
+  printf 'https://github.com/example/disposable/pull/1\n'
+  exit 0
+fi
+if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  printf 'https://github.com/example/disposable/pull/1\n'
+  exit 0
+fi
+if [ "${1:-}" = "repo" ] && [ "${2:-}" = "view" ]; then
+  printf 'example/disposable\n'
+  exit 0
+fi
+if [ "${1:-}" = "api" ]; then
+  printf 'false\n'
   exit 0
 fi
 exit 0
@@ -120,10 +140,14 @@ if [ "${1:-}" = "--help" ]; then
   printf 'openhands --headless --task --override-with-envs --json\n'
   exit 0
 fi
+RUN_DIR="$(find .hoca-runtime/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
 {
   printf '\n## Local Development\n\n'
   printf 'Run tests with your project command before opening a PR.\n'
 } >> README.md
+printf 'README.md\n' > "$RUN_DIR/intended-files.txt"
+printf 'manager\n' > "$RUN_DIR/intended-files-source.txt"
+printf 'low\n' > "$RUN_DIR/risk-level.txt"
 printf 'OpenHands fake run attempted README update.\n'
 EOS
 
@@ -204,9 +228,12 @@ assert_file_exists "$RUN_DIR/workspace-validation.txt" "workspace validation log
 assert_file_exists "$RUN_DIR/openhands-exit-code.txt" "OpenHands exit code"
 assert_file_exists "$RUN_DIR/tests-summary.md" "test summary"
 assert_file_exists "$RUN_DIR/aider-review.txt" "Aider review"
+assert_file_exists "$RUN_DIR/commit-hash.txt" "commit hash"
+assert_file_exists "$RUN_DIR/pr-url.txt" "pull request URL"
 assert_file_contains "$RUN_DIR/openhands-exit-code.txt" '^0$' "OpenHands exit code"
 assert_file_contains "$RUN_DIR/tests-summary.md" 'no-tests-detected' "no-test project summary"
 assert_file_contains "$RUN_DIR/aider-review.txt" 'LGTM' "Aider review"
+assert_file_contains "$RUN_DIR/pr-url.txt" '^https://github.com/example/disposable/pull/1$' "pull request URL"
 assert_file_contains "$TEST_REPO/README.md" 'Local Development' "README update"
 
 if [ -f "$RUN_DIR/openhands-output.jsonl" ]; then
@@ -218,14 +245,10 @@ else
 fi
 
 print_step "Verifying staging and safety boundaries"
-if git -C "$TEST_REPO" diff --cached --quiet; then
-  printf 'No files are staged, as expected without an intended-files.txt review artifact.\n'
-else
-  STAGED_FILES="$(git -C "$TEST_REPO" diff --cached --name-only)"
-  if [ "$STAGED_FILES" != "README.md" ]; then
-    printf '%s\n' "$STAGED_FILES" >&2
-    fail "unexpected files were staged"
-  fi
+STAGED_FILES="$(git -C "$TEST_REPO" diff --cached --name-only)"
+if [ -n "$STAGED_FILES" ]; then
+  printf '%s\n' "$STAGED_FILES" >&2
+  fail "files remained staged after commit"
 fi
 
 if find "$TEST_REPO" \
@@ -263,6 +286,8 @@ assert_file_exists "$ISSUE_RUN_DIR/status.json" "issue run status"
 assert_file_contains "$ISSUE_RUN_DIR/status.json" '"issue_id": "123"' "issue run status"
 assert_file_contains "$ISSUE_RUN_DIR/status.json" 'Fix GitHub issue #123' "issue run task"
 assert_file_contains "$ISSUE_RUN_DIR/openhands-exit-code.txt" '^0$' "issue OpenHands exit code"
+assert_file_exists "$ISSUE_RUN_DIR/commit-hash.txt" "issue commit hash"
+assert_file_exists "$ISSUE_RUN_DIR/pr-url.txt" "issue pull request URL"
 assert_file_contains "$ISSUE_REPO/README.md" 'Local Development' "issue README update"
 
 ISSUE_BRANCH="$(git -C "$ISSUE_REPO" branch --show-current)"

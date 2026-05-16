@@ -154,6 +154,9 @@ fi
     committed)
       echo "- Task completed through commit creation."
       ;;
+    pr_created)
+      echo "- Task completed through pull request creation."
+      ;;
     staged)
       echo "- Task completed through safe staging and is ready for commit."
       ;;

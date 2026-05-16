@@ -338,7 +338,24 @@ fi
 "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
 
 if [ -s "$RUN_DIR/staged-files.txt" ]; then
-  echo "HOCA run completed through safe staging. Commit still requires the commit milestone."
+  echo "Creating commit from safely staged files..."
+  COMMIT_ARGS=()
+  if [ -n "$ISSUE_ID" ]; then
+    COMMIT_ARGS=(--issue-id "$ISSUE_ID")
+  fi
+  "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${COMMIT_ARGS[@]}"
+  update_status "committed" "commit_created"
+
+  echo "Creating pull request..."
+  PR_ARGS=()
+  if [ -n "$ISSUE_ID" ]; then
+    PR_ARGS=(--issue-id "$ISSUE_ID")
+  fi
+  "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  update_status "pr_created" "pull_request_created"
+  "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
+  "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "HOCA run completed through pull request creation."
 else
   echo "HOCA run completed up to review. Human staging required."
 fi

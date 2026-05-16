@@ -36,6 +36,44 @@ if ! command -v openhands >/dev/null 2>&1; then
   exit 1
 fi
 
+OPENHANDS_BIN="$(command -v openhands)"
+OPENHANDS_SHEBANG="$(head -n 1 "$OPENHANDS_BIN" 2>/dev/null || true)"
+OPENHANDS_PYTHON=""
+case "$OPENHANDS_SHEBANG" in
+  "#!"*python*)
+    OPENHANDS_PYTHON="${OPENHANDS_SHEBANG#\#!}"
+    ;;
+esac
+
+if [ -n "$OPENHANDS_PYTHON" ] && [ -x "$OPENHANDS_PYTHON" ]; then
+  OPENHANDS_PERSISTENCE_DIR="$RUN_DIR/openhands-persistence"
+  export OPENHANDS_PERSISTENCE_DIR
+  mkdir -p "$OPENHANDS_PERSISTENCE_DIR"
+  "$OPENHANDS_PYTHON" - "$MODEL" "$BASE_URL" "$API_KEY" "$OPENHANDS_PERSISTENCE_DIR/agent_settings.json" <<'PY'
+import sys
+from pathlib import Path
+
+from openhands.sdk import LLM
+from openhands_cli.utils import get_default_cli_agent
+
+model, base_url, api_key, settings_path = sys.argv[1:5]
+llm = LLM(
+    model=model,
+    base_url=base_url,
+    api_key=api_key,
+    usage_id="agent",
+    reasoning_effort=None,
+    enable_encrypted_reasoning=False,
+    extended_thinking_budget=None,
+)
+agent = get_default_cli_agent(llm)
+Path(settings_path).write_text(agent.model_dump_json(), encoding="utf-8")
+PY
+  echo "Using isolated OpenHands config: $OPENHANDS_PERSISTENCE_DIR"
+else
+  echo "Could not create isolated OpenHands config; using OpenHands defaults."
+fi
+
 OH_HELP="$(openhands --help 2>&1 || true)"
 
 if ! printf '%s\n' "$OH_HELP" | grep -q -- "--headless"; then
@@ -160,6 +198,12 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   fi
   echo "Logs: $RUN_DIR/"
   exit "$EXIT_CODE"
+fi
+
+if grep -q '"kind": "ConversationErrorEvent"' "$OUTPUT_FILE"; then
+  echo "OpenHands reported a conversation error event." | tee "$RUN_DIR/openhands-error.txt"
+  echo "Logs: $RUN_DIR/"
+  exit 1
 fi
 
 echo "OpenHands completed successfully."

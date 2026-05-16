@@ -44,7 +44,23 @@ def make_fake_preflight_bin(
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir(parents=True)
 
-    write_executable(fake_bin / "gh", "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(
+        fake_bin / "gh",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "auth" && "${2:-}" == "status" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "pr" && "${2:-}" == "create" ]]; then\n'
+        "  echo 'https://github.com/example/repo/pull/1'\n"
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then\n'
+        "  echo 'https://github.com/example/repo/pull/1'\n"
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "repo" && "${2:-}" == "view" ]]; then echo "example/repo"; exit 0; fi\n'
+        'if [[ "${1:-}" == "api" ]]; then echo "false"; exit 0; fi\n'
+        "exit 0\n",
+    )
     write_executable(fake_bin / "node", "#!/usr/bin/env bash\necho v20.0.0\n")
     write_executable(
         fake_bin / "docker", '#!/usr/bin/env bash\n[[ "${1:-}" == info ]] && exit 0\nexit 0\n'
@@ -119,6 +135,33 @@ def fake_tools_root(repo: Path, name: str = "tools") -> Path:
     return repo.parent / f"{repo.name}-{name}"
 
 
+def prepare_pr_ready_repo(repo: Path) -> None:
+    (repo / "templates").mkdir(exist_ok=True)
+    (repo / "templates" / "PR_TEMPLATE.md").write_text(
+        "## Summary\n\n## Changes\n\n## Validation\n\n## Aider Review\n\n"
+        "## Risk\n\n## Linked Issue\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "--", "templates/PR_TEMPLATE.md"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add PR template"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    remote = repo.parent / f"{repo.name}-origin.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "push", "-u", "origin", "HEAD"], cwd=repo, check=True, stdout=subprocess.PIPE
+    )
+
+
 def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: Path) -> None:
     init_repo(tmp_path)
     (tmp_path / "README.md").write_text("human edit\n", encoding="utf-8")
@@ -161,6 +204,25 @@ def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) ->
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode != 0
+    assert "OpenHands failed with exit code" in result.stderr
+    assert '"reason": "openhands_failed"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_marks_openhands_conversation_error_as_failure(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body='echo \'{"kind": "ConversationErrorEvent", "code": "LLMServiceUnavailableError"}\'\n',
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "OpenHands reported a conversation error event" in result.stdout
     assert "OpenHands failed with exit code" in result.stderr
     assert '"reason": "openhands_failed"' in latest_status(tmp_path)
 
@@ -259,6 +321,7 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     tmp_path: Path,
 ) -> None:
     init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "issue-42"
     run_dir.mkdir(parents=True)
     (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
@@ -281,12 +344,15 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     )
     assert result.returncode == 0
     assert "Safe staging artifacts detected" in result.stdout
-    assert "HOCA run completed through safe staging" in result.stdout
-    assert '"status": "staged"' in latest_status(tmp_path, "issue-42")
-    assert '"reason": "safe_staging_completed"' in latest_status(tmp_path, "issue-42")
-    assert staged.stdout == "README.md\n"
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert '"status": "pr_created"' in latest_status(tmp_path, "issue-42")
+    assert '"reason": "pull_request_created"' in latest_status(tmp_path, "issue-42")
+    assert staged.stdout == ""
     assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
-    assert not (run_dir / "commit-hash.txt").exists()
+    assert (run_dir / "commit-hash.txt").is_file()
+    assert (run_dir / "pr-url.txt").read_text(encoding="utf-8").strip() == (
+        "https://github.com/example/repo/pull/1"
+    )
 
 
 def test_run_hoca_task_stops_before_staging_without_intended_file_list(
@@ -338,9 +404,9 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    changed_files = sorted(
-        (tmp_path / ".hoca-runtime" / "runs").glob("*/changed-files.txt")
-    )[-1].read_text(encoding="utf-8")
+    changed_files = sorted((tmp_path / ".hoca-runtime" / "runs").glob("*/changed-files.txt"))[
+        -1
+    ].read_text(encoding="utf-8")
     assert result.returncode == 0
     assert "Working tree has existing changes:" not in result.stdout
     assert "README.md" in changed_files
