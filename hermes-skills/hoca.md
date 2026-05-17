@@ -4,7 +4,7 @@
 
 Coordinate a bounded HOCA Manager -> Worker -> Reviewer engineering workflow for a single target repository.
 
-Use this skill when Hermes is asked to run local autonomous engineering work through HOCA. Hermes is the Manager: it validates the workspace, turns the task into worker instructions, delegates implementation to OpenHands, inspects the result, requires tests and Aider review, stages only reviewed intended files, commits, opens a pull request, applies the merge policy, notifies the engineer, and produces a human-readable task report.
+Use this skill when Hermes is asked to run local autonomous engineering work through HOCA. Hermes is the Manager: it validates the workspace, turns the task into worker instructions, delegates implementation to OpenHands, inspects the result, requires tests and code review, stages only reviewed intended files, commits, opens a pull request, applies the merge policy, notifies the engineer, and produces a human-readable task report.
 
 HOCA is local-first and repository-scoped. Do not treat it as unrestricted computer automation. Keep work inside the requested Git repository and prefer human review before merge.
 
@@ -20,7 +20,7 @@ HOCA is local-first and repository-scoped. Do not treat it as unrestricted compu
 
 - `auto_merge=false`
 - `require_tests=true`
-- `require_aider_lgtm=true`
+- `require_review_lgtm=true`
 - `stop_on_dirty_tree=true`
 
 Never override these defaults unless the engineer explicitly requests the override and the local HOCA configuration allows it. Even when `auto_merge=true`, merge is guarded and may only be queued after all configured safety checks pass.
@@ -31,25 +31,24 @@ Read HOCA behavior from the repository `.env` or inherited environment. The
 expected safe defaults are documented in `.env.example`:
 
 - `HOCA_AUTO_MERGE=false`
-- `HOCA_REQUIRE_AIDER_LGTM=true`
+- `HOCA_REQUIRE_REVIEW_LGTM=true`
 - `HOCA_REQUIRE_TESTS=true`
 - `HOCA_STOP_ON_DIRTY_TREE=true`
 - `HOCA_RUN_INIT_PROJECT=false`
 - `HOCA_NOTIFY_TELEGRAM=false`
 - `HOCA_WEBHOOK_ENABLED=false`
 
-Use `OLLAMA_MODEL`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, and
-`AIDER_MODEL` only through the HOCA wrappers. Do not pass raw provider secrets
-to worker prompts or reports. For GitHub issue automation, require a configured
-`HOCA_WEBHOOK_SECRET` before accepting webhooks.
+Use `OLLAMA_MODEL`, `LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` only through
+the HOCA wrappers. Do not pass raw provider secrets to worker prompts or reports.
+For GitHub issue automation, require a configured `HOCA_WEBHOOK_SECRET` before
+accepting webhooks.
 
 ## Model Fallback
 
-Use `scripts/select-model.sh` indirectly through the OpenHands and Aider
-wrappers. The selector tries the configured `OLLAMA_MODEL` first, then the
-provided local aliases `qwen-14b-pro` and `qwen-7b-pro`. If no model is
-available, stop with a clear setup diagnostic instead of silently switching to a
-hosted model.
+Use `scripts/select-model.sh` indirectly through the OpenHands wrapper. The
+selector tries the configured `OLLAMA_MODEL` first, then the provided local
+aliases `qwen-14b-pro` and `qwen-7b-pro`. If no local model is available and no
+cloud provider is configured, stop with a clear setup diagnostic.
 
 ## Manager Workflow
 
@@ -132,7 +131,7 @@ Track run state in `.hoca-runtime/runs/<run_id>/`. Preserve useful logs, includi
 - status metadata
 - failed command, if any
 - test output
-- Aider review output
+- Code review output
 - Git status and diffs
 
 If the worker fails, record the failed command and stop before review, staging, commit, or PR creation.
@@ -188,25 +187,22 @@ needed.
 Never mark tests as passed from absence of a test suite. Use the report to make
 the validation gap explicit.
 
-### 9. Run Aider Review
+### 9. Run Code Review
 
 Run independent review through the HOCA wrapper:
 
 ```bash
-scripts/review-with-aider.sh "$project_path" "$task" "$run_dir"
+scripts/review-with-openhands.sh "$project_path" "$task" "$run_dir"
 ```
 
-Because `require_aider_lgtm=true`, continue only when `aider-review.txt`
-contains `LGTM`. If Aider requests changes, inspect the feedback, then either
-fix directly or delegate a focused repair brief back to OpenHands before
-running tests and Aider again. If the Aider command itself fails, stop and
+Because `require_review_lgtm=true`, continue only when `openhands-review.txt`
+contains `LGTM`. If the review requests changes, inspect the feedback, then
+either fix directly or delegate a focused repair brief back to OpenHands before
+running tests and review again. If the review command itself fails, stop and
 report the tooling failure as a human-intervention condition.
 
-The target repository may include `.aider.conf.yml` and
-`.aider.model.settings.yml` copied by `hoca init-project`; treat those as
-reviewer configuration, but do not let Aider commit, stage, or rewrite the Git
-lifecycle. Hermes remains responsible for staging, committing, PR creation, and
-merge policy.
+Hermes remains responsible for staging, committing, PR creation, and merge
+policy.
 
 ### 10. Stage Files Safely
 
@@ -253,7 +249,7 @@ Open a pull request with the configured PR creator:
 scripts/create-pr.sh "$project_path" "$task" "$run_dir"
 ```
 
-Include `--issue-id "$issue_id"` when an issue is present. The PR should include summary, validation, Aider review status, risk notes, linked issue, and merge policy.
+Include `--issue-id "$issue_id"` when an issue is present. The PR should include summary, validation, code review status, risk notes, linked issue, and merge policy.
 
 ### 13. Apply Merge Policy
 
@@ -261,7 +257,7 @@ Default policy: do not merge automatically.
 
 If `auto_merge=false`, leave the PR open for human review.
 
-If `auto_merge=true`, allow HOCA to queue GitHub auto-merge only when the guarded auto-merge prechecks pass. High-risk changes, failed tests, missing Aider LGTM, secret-like staged paths, missing risk approval, or GitHub mergeability failures must leave the PR open.
+If `auto_merge=true`, allow HOCA to queue GitHub auto-merge only when the guarded auto-merge prechecks pass. High-risk changes, failed tests, missing review LGTM, secret-like staged paths, missing risk approval, or GitHub mergeability failures must leave the PR open.
 
 ### 14. Finalize
 
@@ -346,4 +342,4 @@ Optional flags:
 --notify-telegram
 ```
 
-The shortcut still uses the same conservative defaults and may stop for human staging, failed tests, missing Aider LGTM, or merge-policy restrictions.
+The shortcut still uses the same conservative defaults and may stop for human staging, failed tests, missing review LGTM, or merge-policy restrictions.
