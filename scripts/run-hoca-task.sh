@@ -14,6 +14,7 @@ ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 REQUESTED_MODEL=""
+MAX_REPAIR_ATTEMPTS="${HOCA_MAX_REPAIR_ATTEMPTS:-2}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -253,20 +254,27 @@ fi
 echo "Creating branch: $BRANCH"
 git checkout -b "$BRANCH"
 
-echo "Running OpenHands..."
-set +e
-"$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
-OPENHANDS_EXIT=$?
-set -e
-if [ "$OPENHANDS_EXIT" -ne 0 ]; then
-  if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
-    STOP_REASON="$(jq -r '.stop_reason // "unknown"' "$RUN_DIR/monitor-result.json")"
-    if [ "$STOP_REASON" != "completed" ]; then
-      block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
+run_openhands_phase() {
+  local phase_task="$1"
+  local phase_label="${2:-implementation}"
+
+  echo "Running OpenHands ($phase_label)..."
+  set +e
+  "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$phase_task" "$RUN_DIR"
+  local openhands_exit=$?
+  set -e
+  if [ "$openhands_exit" -ne 0 ]; then
+    if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
+      STOP_REASON="$(jq -r '.stop_reason // "unknown"' "$RUN_DIR/monitor-result.json")"
+      if [ "$STOP_REASON" != "completed" ]; then
+        block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
+      fi
     fi
+    fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
   fi
-  fail_run "openhands_failed" "OpenHands failed with exit code $OPENHANDS_EXIT. Logs were saved in $RUN_DIR."
-fi
+}
+
+run_openhands_phase "$TASK" "implementation"
 
 path_is_secret_like() {
   local path="$1"
@@ -287,44 +295,128 @@ path_is_secret_like() {
   return 1
 }
 
-changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
-while IFS= read -r changed_path || [ -n "$changed_path" ]; do
-  [ -z "$changed_path" ] && continue
-  if path_is_secret_like "$changed_path"; then
-    printf '%s\n' "$changed_path" > "$RUN_DIR/secret-detected.txt"
-    fail_run "secret_detected" "Secret-like changed file detected after OpenHands: $changed_path. Stopping immediately."
+check_openhands_changed_files() {
+  changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
+  while IFS= read -r changed_path || [ -n "$changed_path" ]; do
+    [ -z "$changed_path" ] && continue
+    if path_is_secret_like "$changed_path"; then
+      printf '%s\n' "$changed_path" > "$RUN_DIR/secret-detected.txt"
+      fail_run "secret_detected" "Secret-like changed file detected after OpenHands: $changed_path. Stopping immediately."
+    fi
+  done < "$RUN_DIR/changed-files-after-openhands.txt"
+}
+
+check_openhands_changed_files
+
+build_repair_task() {
+  local reason="$1"
+  local attempt="$2"
+  local repair_file="$RUN_DIR/repair-attempt-${attempt}.md"
+
+  {
+    echo "Continue this HOCA task by fixing the current repository changes; do not start over."
+    echo ""
+    echo "Original task:"
+    echo "$TASK"
+    echo ""
+    echo "Repair reason: $reason"
+    echo "Repair attempt: $attempt of $MAX_REPAIR_ATTEMPTS"
+    echo ""
+    echo "Current git status:"
+    git status --short
+    echo ""
+    echo "Current diff:"
+    git diff
+    echo ""
+    if [ -f "$RUN_DIR/tests-summary.md" ]; then
+      echo "Test summary:"
+      cat "$RUN_DIR/tests-summary.md"
+      echo ""
+    fi
+    if [ -f "$RUN_DIR/failed-command.txt" ]; then
+      echo "Failed command:"
+      cat "$RUN_DIR/failed-command.txt"
+      echo ""
+    fi
+    if [ -f "$RUN_DIR/tests-output.log" ]; then
+      echo "Recent test output:"
+      tail -n 120 "$RUN_DIR/tests-output.log"
+      echo ""
+    fi
+    if [ -f "$RUN_DIR/tests-stderr.log" ]; then
+      echo "Recent test stderr:"
+      tail -n 120 "$RUN_DIR/tests-stderr.log"
+      echo ""
+    fi
+    if [ -f "$RUN_DIR/aider-review.txt" ]; then
+      echo "Aider review feedback:"
+      cat "$RUN_DIR/aider-review.txt"
+      echo ""
+    fi
+    echo "Fix only issues needed to make validation and review pass. If the failure is caused by missing local services, missing dependencies, credentials, or another human-only environment problem, explain that clearly and make no unrelated changes."
+  } > "$repair_file"
+
+  cat "$repair_file"
+}
+
+repair_attempt=0
+
+while true; do
+  if [ -z "$(git_status_short_for_task)" ]; then
+    echo "No changes produced."
+    update_status "no_changes"
+    exit 0
   fi
-done < "$RUN_DIR/changed-files-after-openhands.txt"
 
-if [ -z "$(git_status_short_for_task)" ]; then
-  echo "No changes produced."
-  update_status "no_changes"
-  exit 0
-fi
+  echo "Running tests..."
+  set +e
+  "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
+  TESTS_EXIT=$?
+  set -e
+  if [ "$TESTS_EXIT" -ne 0 ]; then
+    FAILURE_TYPE=""
+    if [ -f "$RUN_DIR/tests-summary.md" ]; then
+      FAILURE_TYPE="$(awk -F': ' '/Failure type/ { gsub(/\r/, "", $2); print $2; exit }' "$RUN_DIR/tests-summary.md" | tr -d '*')"
+    fi
+    if [ "$FAILURE_TYPE" = "environment" ] || [ "$FAILURE_TYPE" = "pre-existing" ]; then
+      block_run "tests_${FAILURE_TYPE}" "Tests failed due to $FAILURE_TYPE conditions. Human intervention is needed; see $RUN_DIR/tests-summary.md."
+    fi
+    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
+      fail_run "tests_failed" "Tests still failed after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/tests-summary.md."
+    fi
+    repair_attempt=$((repair_attempt + 1))
+    update_status "repairing" "tests_failed_attempt_${repair_attempt}"
+    REPAIR_TASK="$(build_repair_task "tests_failed" "$repair_attempt")"
+    run_openhands_phase "$REPAIR_TASK" "test repair attempt $repair_attempt"
+    check_openhands_changed_files
+    continue
+  fi
 
-echo "Running tests..."
-set +e
-"$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
-TESTS_EXIT=$?
-set -e
-if [ "$TESTS_EXIT" -ne 0 ]; then
-  fail_run "tests_failed" "Tests failed. Stopping before review or commit; see $RUN_DIR/tests-summary.md."
-fi
+  echo "Running Aider review..."
+  set +e
+  "$SCRIPT_DIR/review-with-aider.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  AIDER_EXIT=$?
+  set -e
+  if [ "$AIDER_EXIT" -eq 2 ] || { [ "$AIDER_EXIT" -eq 0 ] && ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; }; then
+    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
+      block_run "aider_not_lgtm" "Aider still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/aider-review.txt."
+    fi
+    repair_attempt=$((repair_attempt + 1))
+    update_status "repairing" "aider_not_lgtm_attempt_${repair_attempt}"
+    REPAIR_TASK="$(build_repair_task "aider_not_lgtm" "$repair_attempt")"
+    run_openhands_phase "$REPAIR_TASK" "Aider repair attempt $repair_attempt"
+    check_openhands_changed_files
+    continue
+  elif [ "$AIDER_EXIT" -ne 0 ]; then
+    block_run "aider_failed" "Aider failed with exit code $AIDER_EXIT. Human intervention may be needed; see $RUN_DIR/aider-review.txt and aider-stderr.log."
+  fi
 
-echo "Running Aider review..."
-set +e
-"$SCRIPT_DIR/review-with-aider.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
-AIDER_EXIT=$?
-set -e
-if [ "$AIDER_EXIT" -eq 2 ]; then
-  block_run "aider_not_lgtm" "Aider did not return LGTM. Stopping and recording required fixes in $RUN_DIR/aider-review.txt."
-elif [ "$AIDER_EXIT" -ne 0 ]; then
-  fail_run "aider_failed" "Aider failed with exit code $AIDER_EXIT. Stopping before commit; see $RUN_DIR/aider-review.txt and aider-stderr.log."
-fi
+  if ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
+    block_run "aider_not_lgtm" "Aider did not return LGTM. Stopping before commit."
+  fi
 
-if ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-  block_run "aider_not_lgtm" "Aider did not return LGTM. Stopping before commit."
-fi
+  break
+done
 
 echo "Inspecting changed files..."
 git_status_short_for_task | tee "$RUN_DIR/git-status.txt"

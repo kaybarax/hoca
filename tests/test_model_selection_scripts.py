@@ -183,6 +183,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-14b-pro" in result.stdout
+    assert "OpenHands fake run complete." in result.stdout
 
 
 def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:

@@ -157,6 +157,7 @@ with open(output_file, 'w') as out_f:
             for line in self._real_stdout:
                 self._out_file.write(line)
                 self._out_file.flush()
+                print(line, end='', flush=True)
                 yield line
 
     tee = TeeStdout(proc, out_f)

@@ -257,12 +257,46 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode != 0
-    assert "Tests failed. Stopping before review or commit" in result.stderr
+    assert "Tests still failed after 1 repair attempt" in result.stderr
     assert '"reason": "tests_failed"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
+    count_file = tmp_path / "openhands-count"
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            'count="$(cat "$OPENHANDS_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+            'count="$((count + 1))"\n'
+            'printf "%s\\n" "$count" > "$OPENHANDS_COUNT_FILE"\n'
+            'if [[ "$count" == "1" ]]; then printf "broken\\n" > README.md; '
+            'else printf "fixed\\n" > README.md; fi\n'
+        ),
+        pytest_body="grep -q '^fixed$' README.md\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["OPENHANDS_COUNT_FILE"] = str(count_file)
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Running OpenHands (test repair attempt 1)" in result.stdout
+    assert count_file.read_text(encoding="utf-8") == "2\n"
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "fixed\n"
+    assert '"status": "needs_human_staging"' in latest_status(tmp_path)
 
 
 def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes(
@@ -309,12 +343,44 @@ def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path
     )
     env2 = os.environ.copy()
     env2["PATH"] = f"{fake_bin2}{os.pathsep}{env2['PATH']}"
+    env2["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
 
     rejected = run_hoca_task_with_env(repo2, "Update README", env2)
 
     assert rejected.returncode != 0
-    assert "Aider did not return LGTM" in rejected.stderr
+    assert "Aider still did not return LGTM after 1 repair attempt" in rejected.stderr
     assert '"reason": "aider_not_lgtm"' in latest_status(repo2)
+
+
+def test_run_hoca_task_repairs_aider_rejections(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    count_file = tmp_path / "openhands-count"
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            'count="$(cat "$OPENHANDS_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+            'count="$((count + 1))"\n'
+            'printf "%s\\n" "$count" > "$OPENHANDS_COUNT_FILE"\n'
+            'if [[ "$count" == "1" ]]; then printf "needs review\\n" > README.md; '
+            'else printf "ready\\n" > README.md; fi\n'
+        ),
+        aider_body=(
+            "if grep -q '^ready$' README.md; then echo 'Looks good.'; echo 'LGTM'; "
+            "else echo 'Needs fixes.'; fi\n"
+        ),
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["OPENHANDS_COUNT_FILE"] = str(count_file)
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Running OpenHands (Aider repair attempt 1)" in result.stdout
+    assert count_file.read_text(encoding="utf-8") == "2\n"
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "ready\n"
+    assert '"status": "needs_human_staging"' in latest_status(tmp_path)
 
 
 def test_run_hoca_task_runs_safe_staging_with_intended_file_list(

@@ -177,7 +177,13 @@ Run the configured HOCA test runner:
 scripts/run-tests.sh "$project_path" "$run_dir"
 ```
 
-Because `require_tests=true`, a failing test command blocks the run. If the project has no test command, record that clearly in the report and require human judgment before proceeding.
+Because `require_tests=true`, a failing test command blocks commit and PR
+creation, but it does not always end the run. If the failure is classified as
+`current-task`, inspect the test summary and logs, then either fix directly or
+delegate a focused repair brief back to OpenHands. Repeat tests until they pass
+or until the configured repair limit is exhausted. If the failure is
+`environment` or `pre-existing`, stop and report that human intervention is
+needed.
 
 Never mark tests as passed from absence of a test suite. Use the report to make
 the validation gap explicit.
@@ -190,7 +196,11 @@ Run independent review through the HOCA wrapper:
 scripts/review-with-aider.sh "$project_path" "$task" "$run_dir"
 ```
 
-Because `require_aider_lgtm=true`, continue only when `aider-review.txt` contains `LGTM`. If Aider requests changes or fails, stop and report the review findings.
+Because `require_aider_lgtm=true`, continue only when `aider-review.txt`
+contains `LGTM`. If Aider requests changes, inspect the feedback, then either
+fix directly or delegate a focused repair brief back to OpenHands before
+running tests and Aider again. If the Aider command itself fails, stop and
+report the tooling failure as a human-intervention condition.
 
 The target repository may include `.aider.conf.yml` and
 `.aider.model.settings.yml` copied by `hoca init-project`; treat those as
