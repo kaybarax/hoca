@@ -65,7 +65,7 @@ class TestLoadConfigDefaults:
         assert cfg.stop_on_dirty_tree is True
         assert cfg.workspace_root is None
         assert cfg.ollama_base_url == "http://127.0.0.1:11434"
-        assert cfg.ollama_model == "qwen-32b-pro"
+        assert cfg.ollama_model == "qwen-14b-pro"
         assert cfg.webhook_secret == ""
         assert cfg.notify_telegram is False
 

@@ -101,6 +101,30 @@ def test_select_model_prefers_configured_ollama_model(tmp_path: Path) -> None:
     assert result.stdout.strip() == "custom-coder"
 
 
+def test_select_model_requires_explicit_requested_model(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
+    make_fake_curl(fake_bin)
+
+    result = run_script(
+        "select-model.sh",
+        fake_bin,
+        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "OLLAMA_MODEL": "qwen-14b-pro"},
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "qwen-7b-pro"
+
+
+def test_select_model_errors_when_requested_model_is_missing(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+
+    result = run_script("select-model.sh", fake_bin, {"HOCA_REQUESTED_MODEL": "qwen-7b-pro"})
+
+    assert result.returncode == 1
+    assert "Requested HOCA model not found" in result.stderr
+
+
 def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
     make_fake_curl(fake_bin)
@@ -159,6 +183,31 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-14b-pro" in result.stdout
+
+
+def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
+    make_fake_curl(fake_bin)
+    make_fake_openhands(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_REQUESTED_MODEL": "qwen-7b-pro",
+            "OLLAMA_MODEL": "qwen-7b-pro",
+            "LLM_MODEL": "ollama/qwen-7b-pro",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MODEL=ollama/qwen-7b-pro" in result.stdout
 
 
 def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
