@@ -19,10 +19,8 @@ REQUIRED_COMMANDS = (
     "jq",
     "curl",
     "openssl",
-    "ollama",
     "docker",
     "openhands",
-    "aider",
 )
 
 STATUS_PREFIXES: dict[str, DoctorStatus] = {

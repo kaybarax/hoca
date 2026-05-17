@@ -39,7 +39,7 @@ class SafetyPolicy:
     stop_on_unrelated_changes: bool = True
     stop_on_secret_changes: bool = True
     stop_on_test_failure: bool = True
-    require_aider_approval: bool = True
+    require_review_approval: bool = True
     stop_before_commit_until_selective_staging: bool = True
     allow_high_risk_auto_merge: bool = False
 
@@ -50,7 +50,6 @@ DEFAULT_POLICY = SafetyPolicy()
 @dataclass(frozen=True)
 class HocaConfig:
     auto_merge: bool = False
-    require_aider_lgtm: bool = True
     require_tests: bool = True
     stop_on_dirty_tree: bool = True
 
@@ -60,7 +59,6 @@ class HocaConfig:
     ollama_model: str = "qwen-14b-pro"
     llm_model: str = "ollama/qwen-14b-pro"
     llm_base_url: str = "http://127.0.0.1:11434"
-    aider_model: str = "ollama_chat/qwen-14b-pro"
 
     webhook_secret: str = ""
     webhook_url: str = ""
@@ -90,17 +88,23 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
 
     workspace_root = _resolve_path(os.environ.get("HOCA_WORKSPACE_ROOT"))
 
+    llm_model = os.environ.get("LLM_MODEL", "ollama/qwen-14b-pro")
+    if llm_model.startswith("ollama/"):
+        default_base_url = "http://127.0.0.1:11434"
+    elif llm_model.startswith("openai/"):
+        default_base_url = "http://localhost:1234/v1"
+    else:
+        default_base_url = ""
+
     return HocaConfig(
         auto_merge=parse_bool(os.environ.get("HOCA_AUTO_MERGE"), default=False),
-        require_aider_lgtm=parse_bool(os.environ.get("HOCA_REQUIRE_AIDER_LGTM"), default=True),
         require_tests=parse_bool(os.environ.get("HOCA_REQUIRE_TESTS"), default=True),
         stop_on_dirty_tree=parse_bool(os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True),
         workspace_root=workspace_root,
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
         ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-14b-pro"),
-        llm_model=os.environ.get("LLM_MODEL", "ollama/qwen-14b-pro"),
-        llm_base_url=os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434"),
-        aider_model=os.environ.get("AIDER_MODEL", "ollama_chat/qwen-14b-pro"),
+        llm_model=llm_model,
+        llm_base_url=os.environ.get("LLM_BASE_URL", default_base_url),
         webhook_secret=os.environ.get("HOCA_WEBHOOK_SECRET", ""),
         webhook_url=os.environ.get("HOCA_WEBHOOK_URL", ""),
         allowed_repos=os.environ.get("HOCA_ALLOWED_REPOS", ""),
@@ -137,11 +141,11 @@ def assert_tests_passed(returncode: int, *, policy: SafetyPolicy = DEFAULT_POLIC
         raise PolicyError("Tests failed; stopping the run.")
 
 
-def assert_aider_approved(review_text: str, *, policy: SafetyPolicy = DEFAULT_POLICY) -> None:
+def assert_review_approved(review_text: str, *, policy: SafetyPolicy = DEFAULT_POLICY) -> None:
     normalized = review_text.strip().lower()
     approved = normalized in {"approved", "approval: approved", "hoca-review: approved"}
-    if policy.require_aider_approval and not approved:
-        raise PolicyError("Aider review did not return approval; stopping the run.")
+    if policy.require_review_approval and not approved:
+        raise PolicyError("Code review did not return approval; stopping the run.")
 
 
 def assert_commit_allowed(
