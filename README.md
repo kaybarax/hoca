@@ -165,6 +165,7 @@ Both `run` and `issue` accept optional flags:
 
 - `--auto-merge` — enable guarded auto-merge (disabled by default)
 - `--notify-telegram` — send Telegram notifications on completion
+- `--model MODEL` — use a specific Ollama alias for this run, such as `qwen-14b-pro`
 
 ## Default Behavior
 
@@ -182,6 +183,18 @@ HOCA never runs `git add .`, `git add -A`, or `git commit -am`. Files are
 staged selectively. The staging process rejects secret-like files including
 `.env`, private keys, kubeconfigs, package registry credentials, Docker
 credentials, and local credential stores.
+
+### Repair Loop
+
+When OpenHands produces changes but tests fail because of the current task, or
+Aider requests fixes, HOCA gives OpenHands a repair brief containing the
+failure summary, recent logs, review feedback, and current diff. It repeats
+validation after each repair pass.
+
+HOCA stops for human intervention when the failure is classified as
+environmental or pre-existing, when Aider itself crashes, or when repair
+attempts are exhausted. Configure the repair limit with
+`HOCA_MAX_REPAIR_ATTEMPTS` (default `2`).
 
 ### Pull Request Creation
 
