@@ -1,15 +1,16 @@
 # HOCA Docker Compose — optional local services.
 #
-# The webhook listener is better run directly on the host when it needs
-# to launch host-level hoca, Docker, or Ollama commands.  Use the
-# "webhook" profile only when you want an isolated listener that
-# forwards events without spawning host processes.
+# Profiles:
+#   webhook  — isolated webhook listener for GitHub event-driven runs
+#   sandbox  — build the worker sandbox image (used by HOCA_USE_SANDBOX=true)
 #
 # Ollama is intentionally excluded — run it natively via `ollama serve`.
 #
 # Usage:
 #   docker compose --profile webhook up        # start webhook listener
 #   docker compose --profile webhook down       # stop
+#   docker compose --profile sandbox build     # build sandbox image
+#   bin/hoca run /path/to/repo "task"          # uses sandbox automatically
 
 services:
   webhook-listener:
@@ -32,3 +33,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+
+  sandbox:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.sandbox
+    image: hoca-sandbox:latest
+    profiles:
+      - sandbox
+    command: "echo 'Sandbox image built successfully.'"

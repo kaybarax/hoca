@@ -12,6 +12,7 @@ from hoca.monitor import (
     check_secret_access,
     check_unrelated_directory,
     monitor_process,
+    monitor_process_stream,
     save_events,
     save_stop_reason,
 )
@@ -235,3 +236,117 @@ class TestMonitorProcess:
         )
         assert result.stop_reason == "timeout"
         assert any(e.kind == "timeout" for e in result.events)
+
+
+class TestRmRfSafeTargets:
+    def test_rm_rf_dist_allowed(self):
+        assert check_dangerous_command("rm -rf dist") is None
+
+    def test_rm_rf_dist_slash_allowed(self):
+        assert check_dangerous_command("rm -rf dist/") is None
+
+    def test_rm_rf_relative_dist_allowed(self):
+        assert check_dangerous_command("rm -rf ./dist") is None
+
+    def test_rm_rf_node_modules_allowed(self):
+        assert check_dangerous_command("rm -rf node_modules") is None
+
+    def test_rm_rf_nested_dist_allowed(self):
+        assert check_dangerous_command("rm -rf apps/api-gateway/dist") is None
+
+    def test_rm_rf_build_allowed(self):
+        assert check_dangerous_command("rm -rf build") is None
+
+    def test_rm_rf_next_allowed(self):
+        assert check_dangerous_command("rm -rf .next") is None
+
+    def test_rm_rf_turbo_allowed(self):
+        assert check_dangerous_command("rm -rf .turbo") is None
+
+    def test_rm_rf_coverage_allowed(self):
+        assert check_dangerous_command("rm -rf coverage") is None
+
+    def test_rm_rf_root_blocked(self):
+        assert check_dangerous_command("rm -rf /") is not None
+
+    def test_rm_rf_etc_blocked(self):
+        assert check_dangerous_command("rm -rf /etc") is not None
+
+    def test_rm_rf_dot_blocked(self):
+        assert check_dangerous_command("rm -rf .") is not None
+
+    def test_rm_rf_dotdot_blocked(self):
+        assert check_dangerous_command("rm -rf ..") is not None
+
+    def test_rm_rf_src_blocked(self):
+        assert check_dangerous_command("rm -rf src") is not None
+
+    def test_rm_rf_home_blocked(self):
+        assert check_dangerous_command("rm -rf ~") is not None
+
+    def test_rm_rf_absolute_path_blocked(self):
+        assert check_dangerous_command("rm -rf /usr/local") is not None
+
+    def test_rm_rf_multiple_safe_targets(self):
+        assert check_dangerous_command("rm -rf dist node_modules .next") is None
+
+    def test_rm_rf_mixed_safe_and_unsafe_blocked(self):
+        assert check_dangerous_command("rm -rf dist src") is not None
+
+
+class TestEnvExampleNotBlocked:
+    def test_env_example_is_safe(self):
+        assert check_secret_access("cat apps/api-gateway/.env.example", "/project") is None
+
+    def test_env_example_create_is_safe(self):
+        assert check_secret_access("create file apps/api-gateway/.env.example", "/project") is None
+
+    def test_env_local_is_blocked(self):
+        assert check_secret_access("cat .env.local", "/project") is not None
+
+    def test_env_production_is_blocked(self):
+        assert check_secret_access("cat .env.production", "/project") is not None
+
+    def test_plain_env_still_blocked(self):
+        assert check_secret_access("cat .env", "/project") is not None
+
+
+class TestMonitorProcessStream:
+    def test_clean_stream(self, tmp_path: Path):
+        import io
+        stream = io.StringIO("line1\nline2\nline3\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.exit_code == 0
+        assert result.stop_reason == "completed"
+
+    def test_dangerous_command_in_stream(self, tmp_path: Path):
+        import io
+        stream = io.StringIO("doing work\nrm -rf /\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "dangerous_command"
+        assert result.exit_code == 1
+
+    def test_safe_rm_rf_in_stream(self, tmp_path: Path):
+        import io
+        stream = io.StringIO("cleaning\nrm -rf dist\nbuilding\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0

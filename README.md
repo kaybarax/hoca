@@ -196,6 +196,37 @@ environmental or pre-existing, when Aider itself crashes, or when repair
 attempts are exhausted. Configure the repair limit with
 `HOCA_MAX_REPAIR_ATTEMPTS` (default `2`).
 
+### Docker Sandbox
+
+HOCA can run the OpenHands worker inside an isolated Docker container for
+safety and reproducibility. The sandbox container comes pre-built with bun,
+node, pnpm, git, and GitHub CLI — the worker has network access for package
+installation but is filesystem-isolated from the host.
+
+Enable sandbox mode:
+
+```sh
+export HOCA_USE_SANDBOX=true
+bin/hoca run /path/to/repo "Implement feature X"
+```
+
+Build the sandbox image manually:
+
+```sh
+docker compose --profile sandbox build
+# or
+scripts/sandbox-manager.sh build
+```
+
+The sandbox provides:
+
+- Pre-installed tools (bun, node, pnpm, git, gh)
+- Network access for `pnpm install`, registry fetches, etc.
+- Host Ollama access via `host.docker.internal`
+- Memory and PID limits (configurable via `HOCA_SANDBOX_MEMORY`, `HOCA_SANDBOX_PIDS`)
+- Dropped capabilities (`--cap-drop=ALL --security-opt=no-new-privileges`)
+- Automatic container cleanup after each run
+
 ### Pull Request Creation
 
 When staging and commit succeed, HOCA creates a pull request using the GitHub

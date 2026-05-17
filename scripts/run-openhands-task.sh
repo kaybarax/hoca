@@ -23,6 +23,7 @@ API_KEY="${LLM_API_KEY:-ollama}"
 
 TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
+USE_SANDBOX="${HOCA_USE_SANDBOX:-false}"
 
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
@@ -30,6 +31,16 @@ echo "  BASE_URL=$BASE_URL"
 echo "  PROJECT_PATH=$PROJECT_PATH"
 echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
+echo "  SANDBOX=$USE_SANDBOX"
+
+# --- Sandbox mode: run everything inside a Docker container ---
+if [ "$USE_SANDBOX" = "true" ] && command -v docker >/dev/null 2>&1; then
+  SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
+  if [ -x "$SANDBOX_SCRIPT" ]; then
+    exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL"
+  fi
+  echo "Warning: HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found. Falling back to host execution."
+fi
 
 if ! command -v openhands >/dev/null 2>&1; then
   echo "openhands command not found." | tee "$RUN_DIR/openhands-error.txt"

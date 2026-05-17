@@ -12,7 +12,6 @@ from pathlib import Path
 from hoca.security import is_secret_like_path
 
 DANGEROUS_COMMANDS: list[re.Pattern[str]] = [
-    re.compile(r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\b"),
     re.compile(r"\bsudo\s+rm\b"),
     re.compile(r"\bchmod\s+(-R\s+)?777\b"),
     re.compile(r"\bchown\s+-R\b"),
@@ -28,6 +27,26 @@ DANGEROUS_COMMANDS: list[re.Pattern[str]] = [
     re.compile(r"\bgit\s+push\b(?!.*--set-upstream)(?!.*-u\b)"),
     re.compile(r"\bgit\s+merge\b"),
 ]
+
+# Relative paths that rm -rf is allowed to target within the project.
+_SAFE_RM_TARGETS = frozenset({
+    "dist", "dist/", "./dist", "./dist/",
+    "build", "build/", "./build", "./build/",
+    "node_modules", "node_modules/", "./node_modules", "./node_modules/",
+    ".next", ".next/", "./.next", "./.next/",
+    ".turbo", ".turbo/", "./.turbo", "./.turbo/",
+    "coverage", "coverage/", "./coverage", "./coverage/",
+    ".cache", ".cache/", "./.cache", "./.cache/",
+    "out", "out/", "./out", "./out/",
+    "tmp", "tmp/", "./tmp", "./tmp/",
+})
+
+_RM_RF_PATTERN = re.compile(
+    r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\s+(.*)"
+)
+_RM_RF_BARE = re.compile(
+    r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\b"
+)
 
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_STALL_SECONDS = 300
@@ -72,7 +91,37 @@ def _record(events: list[MonitorEvent], kind: str, message: str) -> MonitorEvent
     return event
 
 
+def _is_safe_rm_target(line: str) -> bool:
+    """Check if an rm -rf command only targets safe build artifact directories."""
+    match = _RM_RF_PATTERN.search(line)
+    if not match:
+        return False
+    targets_str = match.group(2).strip()
+    targets = targets_str.split()
+    if not targets:
+        return False
+    for target in targets:
+        base = target.rstrip("/")
+        # Allow relative paths into known safe directories
+        # e.g., "apps/api-gateway/dist" is safe because basename is "dist"
+        parts = base.split("/")
+        leaf = parts[-1] if parts else ""
+        normalized = target.rstrip("/") + "/"
+        if target in _SAFE_RM_TARGETS:
+            continue
+        if leaf in {t.rstrip("/") for t in _SAFE_RM_TARGETS}:
+            continue
+        # Block anything that starts with / (absolute) or looks unsafe
+        return False
+    return True
+
+
 def check_dangerous_command(line: str) -> str | None:
+    # Check rm -rf separately — allow it for safe build artifact targets
+    if _RM_RF_BARE.search(line):
+        if not _is_safe_rm_target(line):
+            return _RM_RF_BARE.pattern
+
     for pattern in DANGEROUS_COMMANDS:
         if pattern.search(line):
             return pattern.pattern
@@ -140,6 +189,84 @@ def save_stop_reason(run_dir: Path, reason: str, detail: str) -> None:
     with open(status_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, sort_keys=True)
         f.write("\n")
+
+
+def monitor_process_stream(
+    stream,
+    *,
+    project_path: str,
+    run_dir: Path,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    stall_seconds: int = DEFAULT_STALL_SECONDS,
+    output_file=None,
+) -> MonitorResult:
+    """Monitor a stream (e.g. stdin piped from docker) for dangerous activity."""
+    events: list[MonitorEvent] = []
+    start_time = _now()
+    last_progress_time = start_time
+    stop_reason = "completed"
+    exit_code = 0
+
+    _record(
+        events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
+    )
+
+    try:
+        for line in stream:
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            line = line.rstrip("\n")
+
+            if output_file:
+                output_file.write(line + "\n")
+                output_file.flush()
+            print(line, end="\n", flush=True)
+
+            elapsed = _now() - start_time
+
+            if elapsed > timeout_seconds:
+                _record(events, "timeout", f"Hard timeout after {timeout_seconds}s")
+                stop_reason = "timeout"
+                break
+
+            dangerous = check_dangerous_command(line)
+            if dangerous:
+                _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
+                stop_reason = "dangerous_command"
+                break
+
+            secret = check_secret_access(line, project_path)
+            if secret:
+                _record(events, "secret_access", f"Secret-like file access: {secret}")
+                stop_reason = "secret_access"
+                break
+
+            unrelated = check_unrelated_directory(line, project_path)
+            if unrelated:
+                _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
+                stop_reason = "unrelated_directory"
+                break
+
+            if _is_progress_line(line):
+                last_progress_time = _now()
+            elif _now() - last_progress_time > stall_seconds:
+                _record(events, "stall", f"No meaningful progress for {stall_seconds}s")
+                stop_reason = "stall"
+                break
+
+    except Exception as exc:
+        _record(events, "error", f"Monitor error: {exc}")
+        stop_reason = "monitor_error"
+
+    _record(events, "exit", f"Stream ended with stop_reason={stop_reason}")
+
+    save_events(run_dir, events)
+    if stop_reason != "completed":
+        detail = events[-2].message if len(events) >= 2 else stop_reason
+        save_stop_reason(run_dir, stop_reason, detail)
+        exit_code = 1
+
+    return MonitorResult(exit_code=exit_code, stop_reason=stop_reason, events=events)
 
 
 def monitor_process(
