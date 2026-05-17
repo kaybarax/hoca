@@ -80,7 +80,7 @@ def check_dangerous_command(line: str) -> str | None:
 
 
 def check_secret_access(line: str, project_path: str) -> str | None:
-    tokens = re.findall(r"[\w./\-]+\.(?:env|pem|key|p12|pfx|kubeconfig)\b", line)
+    tokens = re.findall(r"[\w./\-]+\.(?:env|pem|key|p12|pfx|kubeconfig)(?:\.[\w\-]+)*\b", line)
     for token in tokens:
         if is_secret_like_path(token):
             return token
