@@ -32,7 +32,7 @@ hoca:
   workspace_root: "~/<path-to-target-repos>"
   default_model: "qwen2.5-coder:14b"
   openhands_runner: "~/<path-to-workspace>/hoca/scripts/run-openhands-task.sh"
-  aider_reviewer: "~/<path-to-workspace>/hoca/scripts/review-with-aider.sh"
+  code_reviewer: "~/<path-to-workspace>/hoca/scripts/review-with-openhands.sh"
   test_runner: "~/<path-to-workspace>/hoca/scripts/run-tests.sh"
   pr_creator: "~/<path-to-workspace>/hoca/scripts/create-pr.sh"
   notifier: "~/<path-to-workspace>/hoca/scripts/notify.sh"
@@ -40,5 +40,5 @@ hoca:
   safety:
     auto_merge: false
     require_tests: true
-    require_aider_lgtm: true
+    require_review_lgtm: true
     stop_on_dirty_tree: true
