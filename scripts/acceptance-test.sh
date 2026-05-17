@@ -151,19 +151,8 @@ printf 'low\n' > "$RUN_DIR/risk-level.txt"
 printf 'OpenHands fake run attempted README update.\n'
 EOS
 
-  cat > "$fake_bin/aider" <<'EOS'
-#!/usr/bin/env bash
-set -euo pipefail
-if [ "${1:-}" = "--version" ]; then
-  printf 'aider 1.0\n'
-  exit 0
-fi
-printf 'Review complete.\n'
-printf 'LGTM\n'
-EOS
-
   chmod +x "$fake_bin/gh" "$fake_bin/node" "$fake_bin/docker" "$fake_bin/curl"
-  chmod +x "$fake_bin/ollama" "$fake_bin/openhands" "$fake_bin/aider"
+  chmod +x "$fake_bin/ollama" "$fake_bin/openhands"
   PATH="$fake_bin:$PATH"
   export PATH
 }
@@ -188,7 +177,6 @@ START_BRANCH="$(git -C "$TEST_REPO" branch --show-current)"
 print_step "Running init-project"
 "$SCRIPT_DIR/init-project.sh" "$TEST_REPO"
 assert_file_exists "$TEST_REPO/.openhands_instructions" "OpenHands instructions template"
-assert_file_exists "$TEST_REPO/.aider.conf.yml" "Aider config template"
 assert_file_exists "$TEST_REPO/.hoca-runtime/runs" "HOCA runtime runs directory"
 assert_file_contains "$TEST_REPO/.gitignore" '^\.hoca-runtime/$' ".gitignore"
 
@@ -227,12 +215,12 @@ assert_file_exists "$RUN_DIR/status.json" "run status"
 assert_file_exists "$RUN_DIR/workspace-validation.txt" "workspace validation log"
 assert_file_exists "$RUN_DIR/openhands-exit-code.txt" "OpenHands exit code"
 assert_file_exists "$RUN_DIR/tests-summary.md" "test summary"
-assert_file_exists "$RUN_DIR/aider-review.txt" "Aider review"
+assert_file_exists "$RUN_DIR/openhands-review.txt" "Code review"
 assert_file_exists "$RUN_DIR/commit-hash.txt" "commit hash"
 assert_file_exists "$RUN_DIR/pr-url.txt" "pull request URL"
 assert_file_contains "$RUN_DIR/openhands-exit-code.txt" '^0$' "OpenHands exit code"
 assert_file_contains "$RUN_DIR/tests-summary.md" 'no-tests-detected' "no-test project summary"
-assert_file_contains "$RUN_DIR/aider-review.txt" 'LGTM' "Aider review"
+assert_file_contains "$RUN_DIR/openhands-review.txt" 'LGTM' "Code review"
 assert_file_contains "$RUN_DIR/pr-url.txt" '^https://github.com/example/disposable/pull/1$' "pull request URL"
 assert_file_contains "$TEST_REPO/README.md" 'Local Development' "README update"
 

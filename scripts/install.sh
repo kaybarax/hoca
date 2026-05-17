@@ -116,30 +116,6 @@ install_python_dependencies() {
   "$venv_py" -m pip install --upgrade -e "$REPO_ROOT"
 }
 
-install_aider() {
-  if command -v aider >/dev/null 2>&1; then
-    info "Found aider: $(command -v aider)"
-    return
-  fi
-
-  if ! command -v pipx >/dev/null 2>&1; then
-    fail_soft "Cannot install Aider because pipx is missing. Install it with: brew install pipx"
-    return
-  fi
-
-  info "Installing Aider installer with pipx."
-  if ! pipx install aider-install; then
-    info "aider-install may already be installed with pipx; continuing."
-  fi
-
-  if command -v aider-install >/dev/null 2>&1; then
-    aider-install
-  elif [[ -x "$HOME/.local/bin/aider-install" ]]; then
-    "$HOME/.local/bin/aider-install"
-  else
-    fail_soft "aider-install was installed but is not on PATH. Run: pipx ensurepath"
-  fi
-}
 
 install_openhands() {
   if command -v openhands >/dev/null 2>&1; then
@@ -321,7 +297,6 @@ main() {
 
   info ""
   install_python_dependencies
-  install_aider
   install_openhands
 
   info ""

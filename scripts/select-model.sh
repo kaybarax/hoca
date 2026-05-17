@@ -1,8 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# If LLM_MODEL is already set with a provider prefix, echo the bare model name and exit.
+if [[ -n "${LLM_MODEL:-}" ]]; then
+  case "$LLM_MODEL" in
+    openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
+      echo "${LLM_MODEL#*/}"
+      exit 0
+      ;;
+    ollama/*)
+      HOCA_REQUESTED_MODEL="${HOCA_REQUESTED_MODEL:-${LLM_MODEL#ollama/}}"
+      ;;
+  esac
+fi
+
+# Try LM Studio if configured or auto-detected
+LMSTUDIO_URL="${LLM_BASE_URL:-http://localhost:1234/v1}"
+if [[ "${HOCA_LLM_PROVIDER:-}" == "lmstudio" ]] || \
+   { [[ -z "${HOCA_LLM_PROVIDER:-}" ]] && ! command -v ollama >/dev/null 2>&1 && \
+     command -v curl >/dev/null 2>&1 && curl -fsS "$LMSTUDIO_URL/models" >/dev/null 2>&1; }; then
+  if command -v curl >/dev/null 2>&1; then
+    MODEL_JSON="$(curl -fsS "$LMSTUDIO_URL/models" 2>/dev/null || true)"
+    if [[ -n "$MODEL_JSON" ]] && command -v jq >/dev/null 2>&1; then
+      FIRST_MODEL="$(printf '%s' "$MODEL_JSON" | jq -r '.data[0].id // empty' 2>/dev/null || true)"
+      if [[ -n "$FIRST_MODEL" ]]; then
+        echo "$FIRST_MODEL"
+        exit 0
+      fi
+    fi
+  fi
+  echo "LM Studio provider selected but no models found at $LMSTUDIO_URL" >&2
+  exit 1
+fi
+
+# Ollama path (default)
 if ! command -v ollama >/dev/null 2>&1; then
-  echo "Ollama CLI is required to select a HOCA-compatible model. Install Ollama and run: ollama serve" >&2
+  echo "No LLM provider available. Install Ollama, start LM Studio, or set LLM_MODEL to a cloud provider." >&2
   exit 1
 fi
 

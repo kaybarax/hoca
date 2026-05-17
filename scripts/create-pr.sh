@@ -197,21 +197,21 @@ else
   write_fragment "validation" "_No \`tests-summary.md\` found in the run directory._"
 fi
 
-if [ -f "$RUN_DIR/aider-review.txt" ]; then
+if [ -f "$RUN_DIR/openhands-review.txt" ]; then
   {
-    if grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-      echo "**Status**: LGTM present in Aider review output."
+    if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+      echo "**Status**: LGTM present in code review output."
     else
-      echo "**Status**: LGTM not detected in Aider review output (human review recommended)."
+      echo "**Status**: LGTM not detected in code review output (human review recommended)."
     fi
     echo ""
     echo "**Excerpt** (first 80 lines):"
     echo '```text'
-    head -n 80 "$RUN_DIR/aider-review.txt"
+    head -n 80 "$RUN_DIR/openhands-review.txt"
     echo '```'
-  } > "$RUN_DIR/pr-fragment-aider-review.txt"
+  } > "$RUN_DIR/pr-fragment-code-review.txt"
 else
-  write_fragment "aider-review" "_No \`aider-review.txt\` found in the run directory._"
+  write_fragment "code-review" "_No \`openhands-review.txt\` found in the run directory._"
 fi
 
 if [ -f "$RUN_DIR/risk-notes.txt" ]; then

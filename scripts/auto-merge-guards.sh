@@ -143,8 +143,8 @@ precheck() {
     return 1
   fi
 
-  if [ ! -f "$RUN_DIR/aider-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-    log_skip "Aider review must contain LGTM before auto-merge."
+  if [ ! -f "$RUN_DIR/openhands-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+    log_skip "Code review must contain LGTM before auto-merge."
     return 1
   fi
 

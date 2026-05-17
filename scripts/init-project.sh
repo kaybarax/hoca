@@ -44,8 +44,6 @@ copy_template() {
 }
 
 copy_template ".openhands_instructions"
-copy_template ".aider.conf.yml"
-copy_template ".aider.model.settings.yml"
 
 mkdir -p templates
 if [ ! -f "templates/PR_TEMPLATE.md" ]; then
@@ -86,9 +84,6 @@ if add_gitignore_rule ".hoca-runtime/"; then
 fi
 if add_gitignore_rule ".openhands/"; then
   GITIGNORE_ADDED+=(".openhands/")
-fi
-if add_gitignore_rule ".aider*"; then
-  GITIGNORE_ADDED+=(".aider*")
 fi
 
 echo ""

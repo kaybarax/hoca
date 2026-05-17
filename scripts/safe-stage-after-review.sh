@@ -20,8 +20,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 
-if [ ! -f "$RUN_DIR/aider-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-  echo "Refusing safe staging before an Aider review returns LGTM." >&2
+if [ ! -f "$RUN_DIR/openhands-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+  echo "Refusing safe staging before a review returns LGTM." >&2
   exit 1
 fi
 

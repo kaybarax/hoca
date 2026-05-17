@@ -53,9 +53,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -n "$REQUESTED_MODEL" ]; then
   export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
-  export OLLAMA_MODEL="$REQUESTED_MODEL"
-  export LLM_MODEL="ollama/$REQUESTED_MODEL"
-  export AIDER_MODEL="ollama_chat/$REQUESTED_MODEL"
+  case "$REQUESTED_MODEL" in
+    openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
+      export LLM_MODEL="$REQUESTED_MODEL"
+      ;;
+    ollama/*)
+      export LLM_MODEL="$REQUESTED_MODEL"
+      export OLLAMA_MODEL="${REQUESTED_MODEL#ollama/}"
+      ;;
+    *)
+      export OLLAMA_MODEL="$REQUESTED_MODEL"
+      export LLM_MODEL="ollama/$REQUESTED_MODEL"
+      ;;
+  esac
 fi
 
 cd "$PROJECT_PATH"
@@ -351,9 +361,9 @@ build_repair_task() {
       tail -n 120 "$RUN_DIR/tests-stderr.log"
       echo ""
     fi
-    if [ -f "$RUN_DIR/aider-review.txt" ]; then
-      echo "Aider review feedback:"
-      cat "$RUN_DIR/aider-review.txt"
+    if [ -f "$RUN_DIR/openhands-review.txt" ]; then
+      echo "Review feedback:"
+      cat "$RUN_DIR/openhands-review.txt"
       echo ""
     fi
     echo "Fix only issues needed to make validation and review pass. If the failure is caused by missing local services, missing dependencies, credentials, or another human-only environment problem, explain that clearly and make no unrelated changes."
@@ -395,27 +405,27 @@ while true; do
     continue
   fi
 
-  echo "Running Aider review..."
+  echo "Running OpenHands review..."
   set +e
-  "$SCRIPT_DIR/review-with-aider.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
-  AIDER_EXIT=$?
+  "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  REVIEW_EXIT=$?
   set -e
-  if [ "$AIDER_EXIT" -eq 2 ] || { [ "$AIDER_EXIT" -eq 0 ] && ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; }; then
+  if [ "$REVIEW_EXIT" -eq 2 ] || { [ "$REVIEW_EXIT" -eq 0 ] && ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; }; then
     if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
-      block_run "aider_not_lgtm" "Aider still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/aider-review.txt."
+      block_run "review_not_lgtm" "Review still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/openhands-review.txt."
     fi
     repair_attempt=$((repair_attempt + 1))
-    update_status "repairing" "aider_not_lgtm_attempt_${repair_attempt}"
-    REPAIR_TASK="$(build_repair_task "aider_not_lgtm" "$repair_attempt")"
-    run_openhands_phase "$REPAIR_TASK" "Aider repair attempt $repair_attempt"
+    update_status "repairing" "review_not_lgtm_attempt_${repair_attempt}"
+    REPAIR_TASK="$(build_repair_task "review_not_lgtm" "$repair_attempt")"
+    run_openhands_phase "$REPAIR_TASK" "review repair attempt $repair_attempt"
     check_openhands_changed_files
     continue
-  elif [ "$AIDER_EXIT" -ne 0 ]; then
-    block_run "aider_failed" "Aider failed with exit code $AIDER_EXIT. Human intervention may be needed; see $RUN_DIR/aider-review.txt and aider-stderr.log."
+  elif [ "$REVIEW_EXIT" -ne 0 ]; then
+    block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
   fi
 
-  if ! grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-    block_run "aider_not_lgtm" "Aider did not return LGTM. Stopping before commit."
+  if ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+    block_run "review_not_lgtm" "Review did not return LGTM. Stopping before commit."
   fi
 
   break
@@ -471,6 +481,10 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  if [ -d ".hoca-runtime" ] && [ "${HOCA_KEEP_RUNTIME:-false}" != "true" ]; then
+    echo "Cleaning up .hoca-runtime..."
+    rm -rf ".hoca-runtime"
+  fi
   echo "HOCA run completed through pull request creation."
 else
   echo "HOCA run completed up to review. Human staging required."

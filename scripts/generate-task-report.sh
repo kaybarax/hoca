@@ -48,8 +48,8 @@ append_log_links() {
     "$RUN_DIR/openhands-stderr.log" \
     "$RUN_DIR/tests-output.log" \
     "$RUN_DIR/tests-stderr.log" \
-    "$RUN_DIR/aider-review.txt" \
-    "$RUN_DIR/aider-stderr.log" \
+    "$RUN_DIR/openhands-review.txt" \
+    "$RUN_DIR/openhands-review-stderr.log" \
     "$RUN_DIR/git-status.txt" \
     "$RUN_DIR/git-diff.patch" \
     "$RUN_DIR/staged-diff.patch" \
@@ -104,12 +104,12 @@ else
   MERGE_STATUS="not merged"
 fi
 
-AIDER_REVIEW="Not run"
-if [ -f "$RUN_DIR/aider-review.txt" ]; then
-  if grep -q "LGTM" "$RUN_DIR/aider-review.txt"; then
-    AIDER_REVIEW="LGTM"
+CODE_REVIEW="Not run"
+if [ -f "$RUN_DIR/openhands-review.txt" ]; then
+  if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+    CODE_REVIEW="LGTM"
   else
-    AIDER_REVIEW="required fixes or inconclusive"
+    CODE_REVIEW="required fixes or inconclusive"
   fi
 fi
 
@@ -186,10 +186,10 @@ fi
     echo "- No validation summary recorded."
   fi
   echo ""
-  echo "### Aider Review"
-  echo "- Status: $AIDER_REVIEW"
-  if [ -f "$RUN_DIR/aider-exit-code.txt" ]; then
-    echo "- Exit code: $(head -n 1 "$RUN_DIR/aider-exit-code.txt")"
+  echo "### Code Review"
+  echo "- Status: $CODE_REVIEW"
+  if [ -f "$RUN_DIR/openhands-review-exit-code.txt" ]; then
+    echo "- Exit code: $(head -n 1 "$RUN_DIR/openhands-review-exit-code.txt")"
   fi
   echo ""
   echo "### Merge Status"

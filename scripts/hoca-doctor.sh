@@ -3,8 +3,6 @@ set -euo pipefail
 
 FAILED=0
 WARNED=0
-RECOMMENDED_RAM_GB="${HOCA_RECOMMENDED_RAM_GB:-48}"
-DEFAULT_MODEL="${OLLAMA_MODEL:-qwen-14b-pro}"
 
 ok() {
   printf '[OK] %s\n' "$1"
@@ -96,6 +94,15 @@ detect_ram_gb() {
   esac
 }
 
+RECOMMENDED_RAM_GB="$(config_value HOCA_RECOMMENDED_RAM_GB)"
+RECOMMENDED_RAM_GB="${RECOMMENDED_RAM_GB:-48}"
+DEFAULT_MODEL="$(config_value OLLAMA_MODEL)"
+DEFAULT_MODEL="${DEFAULT_MODEL:-qwen-14b-pro}"
+DOCTOR_LLM_MODEL="$(config_value LLM_MODEL)"
+DOCTOR_LLM_MODEL="${DOCTOR_LLM_MODEL:-ollama/qwen-14b-pro}"
+DOCTOR_LLM_BASE_URL="$(config_value LLM_BASE_URL)"
+DOCTOR_LLM_API_KEY="$(config_value LLM_API_KEY)"
+
 echo "HOCA Doctor"
 echo "==========="
 
@@ -141,10 +148,8 @@ check_command node "Install Node.js."
 check_command jq "Install jq: brew install jq"
 check_command curl "Install curl."
 check_command openssl "Install OpenSSL."
-check_command ollama "Install Ollama."
 check_command docker "Install Docker Desktop or Colima."
 check_command openhands "Install OpenHands CLI."
-check_command aider "Install Aider."
 
 section "GitHub CLI"
 if command -v gh >/dev/null 2>&1; then
@@ -169,32 +174,39 @@ else
 fi
 
 section "Ollama"
-if command -v ollama >/dev/null 2>&1; then
-  if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    ok "Ollama server is reachable at http://127.0.0.1:11434."
-  else
-    fail "Ollama server is not reachable. Start it with: ollama serve"
-  fi
-
-  if OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
-    MODEL_COUNT="$(printf '%s\n' "$OLLAMA_LIST" | awk 'NR > 1 && NF > 0 { count++ } END { print count + 0 }')"
-    if [ "$MODEL_COUNT" -gt 0 ]; then
-      ok "Ollama models available: $MODEL_COUNT"
-      if printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
-        ok "Default Ollama model found: $DEFAULT_MODEL"
+case "$DOCTOR_LLM_MODEL" in
+  ollama/*)
+    if command -v ollama >/dev/null 2>&1; then
+      if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        ok "Ollama server is reachable at http://127.0.0.1:11434."
       else
-        warn "Default Ollama model not found: $DEFAULT_MODEL"
-        warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
+        fail "Ollama server is not reachable. Start it with: ollama serve"
+      fi
+
+      if OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
+        MODEL_COUNT="$(printf '%s\n' "$OLLAMA_LIST" | awk 'NR > 1 && NF > 0 { count++ } END { print count + 0 }')"
+        if [ "$MODEL_COUNT" -gt 0 ]; then
+          ok "Ollama models available: $MODEL_COUNT"
+          if printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
+            ok "Default Ollama model found: $DEFAULT_MODEL"
+          else
+            warn "Default Ollama model not found: $DEFAULT_MODEL"
+            warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
+          fi
+        else
+          warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
+        fi
+      else
+        warn "Could not list Ollama models."
       fi
     else
-      warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
+      warn "Skipping Ollama checks because ollama is missing."
     fi
-  else
-    warn "Could not list Ollama models."
-  fi
-else
-  warn "Skipping Ollama checks because ollama is missing."
-fi
+    ;;
+  *)
+    ok "Skipping Ollama checks (LLM_MODEL is not Ollama-based)."
+    ;;
+esac
 
 section "OpenHands CLI"
 OH_CAPABILITIES=""
@@ -226,22 +238,41 @@ else
   warn "Skipping OpenHands flag checks because openhands is missing."
 fi
 
-section "Aider"
-if command -v aider >/dev/null 2>&1; then
-  if aider --version >/dev/null 2>&1; then
-    ok "Aider can run."
-  else
-    fail "Aider is installed but 'aider --version' failed."
-  fi
-else
-  warn "Skipping Aider runtime check because aider is missing."
-fi
+section "LLM Provider"
+LLM_MODEL_CHECK="$DOCTOR_LLM_MODEL"
+case "$LLM_MODEL_CHECK" in
+  ollama/*)
+    if command -v ollama >/dev/null 2>&1; then
+      ok "Ollama command available (provider: ollama)."
+    else
+      fail "LLM_MODEL uses Ollama but ollama command not found. Install Ollama."
+    fi
+    ;;
+  openai/*)
+    LM_URL="${DOCTOR_LLM_BASE_URL:-http://localhost:1234/v1}"
+    if curl -fsS "$LM_URL/models" >/dev/null 2>&1; then
+      ok "LM Studio reachable at $LM_URL (provider: openai)."
+    else
+      warn "LM Studio not reachable at $LM_URL. Ensure LM Studio is running."
+    fi
+    ;;
+  deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
+    if [ -n "$DOCTOR_LLM_API_KEY" ] && [ "$DOCTOR_LLM_API_KEY" != "ollama" ]; then
+      ok "Cloud provider configured: $LLM_MODEL_CHECK (API key set)."
+    else
+      fail "Cloud provider $LLM_MODEL_CHECK requires LLM_API_KEY to be set."
+    fi
+    ;;
+  *)
+    warn "Unknown LLM provider prefix in LLM_MODEL=$LLM_MODEL_CHECK."
+    ;;
+esac
 
 section "Environment"
 if [ -f ".env" ]; then
   if [ -r ".env" ]; then
     ok ".env exists and is readable."
-    if grep -nEv '^([[:space:]]*#|[[:space:]]*$|[A-Za-z_][A-Za-z0-9_]*=.*)$' ".env" >/dev/null; then
+    if grep -nEv '^([[:space:]]*#.*|[[:space:]]*$|[A-Za-z_][A-Za-z0-9_]*=.*)$' ".env" >/dev/null; then
       warn ".env contains lines that are not simple KEY=value assignments."
     else
       ok ".env uses simple KEY=value syntax."

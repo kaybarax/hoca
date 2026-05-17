@@ -16,10 +16,34 @@ mkdir -p "$RUN_DIR"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SELECTED_MODEL="$("$SCRIPT_DIR/select-model.sh")"
-MODEL="${LLM_MODEL:-ollama/$SELECTED_MODEL}"
-BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:11434}"
-API_KEY="${LLM_API_KEY:-ollama}"
+case "${LLM_MODEL:-}" in
+  deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
+    MODEL="${LLM_MODEL}"
+    BASE_URL="${LLM_BASE_URL:-}"
+    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required for cloud providers}"
+    ;;
+  openai/*)
+    MODEL="${LLM_MODEL}"
+    BASE_URL="${LLM_BASE_URL:-http://localhost:1234/v1}"
+    API_KEY="${LLM_API_KEY:-lm-studio}"
+    ;;
+  ollama/*)
+    MODEL="${LLM_MODEL}"
+    BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:11434}"
+    API_KEY="${LLM_API_KEY:-ollama}"
+    ;;
+  "")
+    SELECTED_MODEL="$("$SCRIPT_DIR/select-model.sh")"
+    MODEL="ollama/$SELECTED_MODEL"
+    BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:11434}"
+    API_KEY="${LLM_API_KEY:-ollama}"
+    ;;
+  *)
+    MODEL="${LLM_MODEL}"
+    BASE_URL="${LLM_BASE_URL:-}"
+    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required}"
+    ;;
+esac
 
 TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
@@ -70,7 +94,7 @@ from openhands_cli.utils import get_default_cli_agent
 model, base_url, api_key, settings_path = sys.argv[1:5]
 llm = LLM(
     model=model,
-    base_url=base_url,
+    base_url=base_url if base_url else None,
     api_key=api_key,
     usage_id="agent",
     reasoning_effort=None,
@@ -147,7 +171,8 @@ oh_args = sys.argv[6:]
 
 env_override = dict(__import__('os').environ)
 env_override['LLM_MODEL'] = '${MODEL}'
-env_override['LLM_BASE_URL'] = '${BASE_URL}'
+if '${BASE_URL}':
+    env_override['LLM_BASE_URL'] = '${BASE_URL}'
 env_override['LLM_API_KEY'] = '${API_KEY}'
 env_override['CI'] = 'true'
 
