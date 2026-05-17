@@ -3,8 +3,9 @@
 **Hermes + OpenHands Computer Automata**
 
 HOCA is a local-first autonomous engineering automation toolkit. It coordinates
-Hermes, OpenHands, Aider, and Ollama to turn a task description or GitHub issue
-into a reviewed pull request — running entirely on your own machine.
+Hermes, OpenHands, and LLMs (Ollama, LM Studio, or cloud APIs) to turn a task
+description or GitHub issue into a reviewed pull request — running entirely on
+your own machine or using cloud LLM providers.
 
 HOCA is **not** an unrestricted self-operating computer agent. It does not
 wander across unrelated folders, commit without inspection, or merge without
@@ -26,7 +27,7 @@ Human or GitHub Issue
   Tests + Diff Check    ← runs project tests, inspects changes
         │
         ▼
-  Aider Reviewer        ← independent code review for quality and security
+  OpenHands Reviewer    ← independent code review for quality and security
         │
         ▼
   Safe Git Staging      ← selective staging, rejects secrets and blind adds
@@ -44,8 +45,8 @@ Human or GitHub Issue
 |-----------|------|
 | **Hermes** | Manager. Plans work, delegates bounded tasks, inspects state, coordinates review, manages the Git and PR lifecycle. |
 | **OpenHands** | Worker. Performs implementation inside the target repository under the Manager's constraints. |
-| **Aider** | Reviewer. Provides independent quality, correctness, security, and unnecessary-edit review before changes are accepted. |
-| **Ollama** | Local LLM runtime. Runs models locally to keep the system local-first. |
+| **OpenHands** (review mode) | Reviewer. Provides independent quality, correctness, security, and unnecessary-edit review before changes are accepted. |
+| **Ollama / LM Studio / Cloud** | LLM runtime. Runs models locally (Ollama, LM Studio) or via cloud APIs (DeepSeek, Gemini, etc.). |
 | **Git + GitHub CLI** | Version control and pull request layer. |
 
 ## Requirements
@@ -62,13 +63,12 @@ Human or GitHub Issue
 |------------|---------|
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [Colima](https://github.com/abiosoft/colima) | OpenHands sandbox backend |
 | [Homebrew](https://brew.sh) | Package manager for macOS dependencies |
-| Python 3.12+ | HOCA runtime and Aider |
+| Python 3.12+ | HOCA runtime |
 | Node.js | Test runner support for JS/TS projects |
 | Git | Version control |
 | [GitHub CLI (`gh`)](https://cli.github.com) | PR creation and authentication |
-| [Ollama](https://ollama.ai) | Local LLM runtime |
-| [OpenHands CLI](https://docs.all-hands.dev) | AI worker agent |
-| [Aider](https://aider.chat) | AI code reviewer |
+| [Ollama](https://ollama.ai) | Local LLM runtime (or LM Studio / cloud API) |
+| [OpenHands CLI](https://docs.all-hands.dev) | AI worker agent and code reviewer |
 | [Hermes Agent](https://github.com/anthropics/hermes) | Manager agent |
 
 ## Model Support
@@ -84,14 +84,43 @@ your machine can comfortably run the 32B model, HOCA also supports it:
 | `qwen-7b-pro` | `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
 
 Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
-be used by setting the `LLM_MODEL`, `AIDER_MODEL`, and `OLLAMA_MODEL`
-environment variables in your `.env` file.
+be used by setting the `LLM_MODEL` and `OLLAMA_MODEL` environment variables in
+your `.env` file.
 
-**Model fallback:** `scripts/select-model.sh` checks which models your Ollama
-instance has loaded. It tries `OLLAMA_MODEL` first (default `qwen-14b-pro`),
-then falls back through `qwen-14b-pro`, `qwen-7b-pro`, and `qwen-32b-pro`. If none are
-available, the run fails with a clear diagnostic. Both the OpenHands runner and
-Aider reviewer use the selected model automatically.
+### LM Studio (Local OpenAI-compatible)
+
+HOCA supports [LM Studio](https://lmstudio.ai) as a local LLM provider via its
+OpenAI-compatible API:
+
+```env
+LLM_MODEL=openai/gpt-oss-20b
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_API_KEY=lm-studio
+```
+
+### Cloud / Enterprise LLMs
+
+HOCA supports cloud LLMs through litellm provider prefixes:
+
+```env
+# DeepSeek
+LLM_MODEL=deepseek/deepseek-chat
+LLM_API_KEY=<your-api-key>
+
+# Gemini
+LLM_MODEL=gemini/gemini-2.0-flash
+LLM_API_KEY=<your-api-key>
+
+# Together AI
+LLM_MODEL=together_ai/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
+LLM_API_KEY=<your-api-key>
+```
+
+**Model fallback:** `scripts/select-model.sh` checks which models are available.
+For Ollama, it tries `OLLAMA_MODEL` first (default `qwen-14b-pro`), then falls
+back through `qwen-14b-pro`, `qwen-7b-pro`, and `qwen-32b-pro`. For LM Studio,
+it queries the `/v1/models` endpoint. For cloud providers, no validation is
+needed. If no provider is available, the run fails with a clear diagnostic.
 
 For a single run, choose the model explicitly:
 
@@ -114,8 +143,8 @@ cp .env.example .env
 ```
 
 The install script handles Homebrew packages, a repo-local `.venv` for Python
-dependencies, Aider, OpenHands, Ollama model pulls, and model alias creation. It
-prints warnings for anything that needs manual follow-up.
+dependencies, OpenHands, Ollama model pulls, and model alias creation. It prints
+warnings for anything that needs manual follow-up.
 
 After installation:
 
@@ -187,13 +216,13 @@ credentials, and local credential stores.
 ### Repair Loop
 
 When OpenHands produces changes but tests fail because of the current task, or
-Aider requests fixes, HOCA gives OpenHands a repair brief containing the
-failure summary, recent logs, review feedback, and current diff. It repeats
+the code review requests fixes, HOCA gives OpenHands a repair brief containing
+the failure summary, recent logs, review feedback, and current diff. It repeats
 validation after each repair pass.
 
 HOCA stops for human intervention when the failure is classified as
-environmental or pre-existing, when Aider itself crashes, or when repair
-attempts are exhausted. Configure the repair limit with
+environmental or pre-existing, when the review tool itself crashes, or when
+repair attempts are exhausted. Configure the repair limit with
 `HOCA_MAX_REPAIR_ATTEMPTS` (default `2`).
 
 ### Docker Sandbox
@@ -230,7 +259,7 @@ The sandbox provides:
 ### Pull Request Creation
 
 When staging and commit succeed, HOCA creates a pull request using the GitHub
-CLI. The PR includes a summary, validation results, Aider review status, and
+CLI. The PR includes a summary, validation results, code review status, and
 risk assessment.
 
 ### Auto-Merge
@@ -239,7 +268,7 @@ Auto-merge is **disabled by default**. When enabled with `--auto-merge`, HOCA
 runs additional guards before merging:
 
 - Tests must pass.
-- Aider must return LGTM.
+- Code review must return LGTM.
 - Risk level must be low.
 - No secret-like files in the changeset.
 - The repository must allow auto-merge in GitHub settings.
@@ -314,12 +343,11 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 | Docker not running | Start Docker Desktop or run `colima start` |
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
-| `aider` not found | Run `brew install pipx && pipx install aider-install && aider-install` |
 | Model not available | Run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases) |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
 | Tests fail | Check `.hoca-runtime/runs/<run-id>/tests.log` for details |
-| Aider not LGTM | Check `.hoca-runtime/runs/<run-id>/aider-review.txt` for required fixes |
+| Review not LGTM | Check `.hoca-runtime/runs/<run-id>/openhands-review.txt` for required fixes |
 
 ## Logs
 
@@ -331,7 +359,7 @@ HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
 │   └── <run-id>/
 │       ├── status.json         # Run state and metadata
 │       ├── openhands-output.*  # Worker output
-│       ├── aider-review.txt    # Reviewer feedback
+│       ├── openhands-review.txt # Reviewer feedback
 │       ├── tests.log           # Test results
 │       ├── git-status.txt      # Changed files
 │       ├── git-diff.patch      # Full diff
@@ -341,7 +369,7 @@ HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
 
 Add `.hoca-runtime/` to the target repository's `.gitignore`.
 `bin/hoca init-project /path/to/repo` adds that ignore rule and copies the
-OpenHands, Aider, and PR templates for you when they are missing.
+OpenHands and PR templates for you when they are missing.
 
 ## Development
 
@@ -372,7 +400,7 @@ constrained:
 
 - **Repository-scoped.** Every run is confined to a single repository working
   tree.
-- **Review before merge.** Aider reviews all changes. Human review is the
+- **Review before merge.** OpenHands reviews all changes. Human review is the
   default before merge.
 - **No blind commits.** Files are staged selectively. Secret-like paths are
   always rejected.

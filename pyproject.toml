@@ -1,7 +1,7 @@
 [project]
 name = "hoca"
 version = "0.1.0"
-description = "Local-first autonomous engineering workflow using Hermes, OpenHands, Aider, Ollama, and GitHub CLI."
+description = "Local-first autonomous engineering workflow using Hermes, OpenHands, multi-provider LLMs, and GitHub CLI."
 requires-python = ">=3.12"
 dependencies = [
   "click>=8.1.0",
