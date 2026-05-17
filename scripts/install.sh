@@ -246,7 +246,7 @@ print_model_fallback_status() {
 
   info ""
   info "Ollama model fallback status:"
-  for alias_name in qwen-32b-pro qwen-14b-pro qwen-7b-pro; do
+  for alias_name in qwen-14b-pro qwen-7b-pro qwen-32b-pro; do
     if ollama_has_model "$alias_name"; then
       info "- $alias_name available"
       if [[ -z "$selected_model" ]]; then

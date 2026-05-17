@@ -4,7 +4,7 @@ set -euo pipefail
 FAILED=0
 WARNED=0
 RECOMMENDED_RAM_GB="${HOCA_RECOMMENDED_RAM_GB:-48}"
-DEFAULT_MODEL="${OLLAMA_MODEL:-qwen-32b-pro}"
+DEFAULT_MODEL="${OLLAMA_MODEL:-qwen-14b-pro}"
 
 ok() {
   printf '[OK] %s\n' "$1"

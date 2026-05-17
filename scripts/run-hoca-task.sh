@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
-  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram]"
+  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--model MODEL]"
   exit 1
 fi
 
@@ -13,10 +13,15 @@ shift 2
 ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
+REQUESTED_MODEL=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --issue-id)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --issue-id"
+        exit 1
+      fi
       ISSUE_ID="$2"
       shift 2
       ;;
@@ -28,6 +33,14 @@ while [ "$#" -gt 0 ]; do
       NOTIFY_TELEGRAM="true"
       shift
       ;;
+    --model)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --model"
+        exit 1
+      fi
+      REQUESTED_MODEL="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1"
       exit 1
@@ -36,6 +49,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -n "$REQUESTED_MODEL" ]; then
+  export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
+  export OLLAMA_MODEL="$REQUESTED_MODEL"
+  export LLM_MODEL="ollama/$REQUESTED_MODEL"
+  export AIDER_MODEL="ollama_chat/$REQUESTED_MODEL"
+fi
 
 cd "$PROJECT_PATH"
 
@@ -188,6 +208,7 @@ cat > "$RUN_DIR/status.json" <<EOF
   "issue_id": "$ISSUE_ID",
   "auto_merge": "$AUTO_MERGE",
   "notify_telegram": "$NOTIFY_TELEGRAM",
+  "requested_model": "$REQUESTED_MODEL",
   "repo_root": $(printf '%s' "$REPO_ROOT" | jq -Rs .),
   "starting_branch": $(printf '%s' "$CURRENT_BRANCH" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

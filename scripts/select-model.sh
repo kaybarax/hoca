@@ -33,10 +33,20 @@ try_model() {
   fi
 }
 
+if [[ -n "${HOCA_REQUESTED_MODEL:-}" ]]; then
+  if model_exists "$HOCA_REQUESTED_MODEL"; then
+    echo "$HOCA_REQUESTED_MODEL"
+    exit 0
+  fi
+  echo "Requested HOCA model not found in Ollama: $HOCA_REQUESTED_MODEL" >&2
+  echo "Build it with scripts/install.sh or create it with: ollama create $HOCA_REQUESTED_MODEL -f ./models/Modelfile.14b" >&2
+  exit 1
+fi
+
 try_model "${OLLAMA_MODEL:-}"
-try_model "qwen-32b-pro"
 try_model "qwen-14b-pro"
 try_model "qwen-7b-pro"
+try_model "qwen-32b-pro"
 
-echo "No HOCA-compatible Ollama model found after trying configured model, qwen-32b-pro, qwen-14b-pro, and qwen-7b-pro. Build one with scripts/install.sh or create qwen-32b-pro, qwen-14b-pro, or qwen-7b-pro." >&2
+echo "No HOCA-compatible Ollama model found after trying configured model, qwen-14b-pro, qwen-7b-pro, and qwen-32b-pro. Build one with scripts/install.sh or create qwen-14b-pro, qwen-7b-pro, or qwen-32b-pro." >&2
 exit 1
