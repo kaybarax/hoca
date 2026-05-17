@@ -39,6 +39,12 @@ is_secret_like() {
   local lower
   lower="$(printf '%s' "$filename" | tr '[:upper:]' '[:lower:]')"
 
+  case "$lower" in
+    *.example|*.sample|*.template)
+      return 1
+      ;;
+  esac
+
   for pattern in "${SECRET_PATTERNS[@]}"; do
     # shellcheck disable=SC2254
     case "$lower" in

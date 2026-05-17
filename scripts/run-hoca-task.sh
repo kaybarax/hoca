@@ -283,6 +283,9 @@ path_is_secret_like() {
   local base
   base="$(basename "$lower")"
   case "$base" in
+    *.example|*.sample|*.template)
+      return 1
+      ;;
     .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
       return 0
       ;;

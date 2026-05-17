@@ -132,6 +132,10 @@ pick_node_runner() {
 
 if [ -f "package.json" ]; then
   runner="$(pick_node_runner)"
+  if [ "$runner" = "pnpm" ] && [ -f "pnpm-lock.yaml" ]; then
+    echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
+    CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
+  fi
   if package_script_exists "test"; then
     TESTS_RUN=1
     if [ "$runner" = "npm" ]; then

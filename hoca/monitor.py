@@ -5,6 +5,7 @@ import os
 import re
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -199,20 +200,57 @@ def monitor_process_stream(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     stall_seconds: int = DEFAULT_STALL_SECONDS,
     output_file=None,
+    cancel_event: threading.Event | None = None,
 ) -> MonitorResult:
-    """Monitor a stream (e.g. stdin piped from docker) for dangerous activity."""
+    """Monitor a stream (e.g. stdin piped from docker) for dangerous activity.
+
+    If *cancel_event* is provided, a watchdog thread periodically checks
+    timeout / stall even when the stream produces no output and sets the
+    event to signal the stream consumer to stop.
+    """
     events: list[MonitorEvent] = []
     start_time = _now()
     last_progress_time = start_time
     stop_reason = "completed"
     exit_code = 0
+    watchdog_reason: list[str] = []
+    lock = threading.Lock()
 
     _record(
         events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
     )
 
+    _cancel = cancel_event or threading.Event()
+
+    def _watchdog() -> None:
+        while not _cancel.is_set():
+            _cancel.wait(STALL_CHECK_INTERVAL)
+            if _cancel.is_set():
+                break
+            elapsed = _now() - start_time
+            if elapsed > timeout_seconds:
+                with lock:
+                    watchdog_reason.append("timeout")
+                    _record(events, "timeout", f"Watchdog: hard timeout after {timeout_seconds}s")
+                _cancel.set()
+                return
+            with lock:
+                idle = _now() - last_progress_time
+            if idle > stall_seconds:
+                with lock:
+                    watchdog_reason.append("stall")
+                    _record(events, "stall", f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)")
+                _cancel.set()
+                return
+
+    watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+    watchdog_thread.start()
+
     try:
         for line in stream:
+            if _cancel.is_set():
+                break
+
             if isinstance(line, bytes):
                 line = line.decode("utf-8", errors="replace")
             line = line.rstrip("\n")
@@ -248,7 +286,8 @@ def monitor_process_stream(
                 break
 
             if _is_progress_line(line):
-                last_progress_time = _now()
+                with lock:
+                    last_progress_time = _now()
             elif _now() - last_progress_time > stall_seconds:
                 _record(events, "stall", f"No meaningful progress for {stall_seconds}s")
                 stop_reason = "stall"
@@ -257,6 +296,13 @@ def monitor_process_stream(
     except Exception as exc:
         _record(events, "error", f"Monitor error: {exc}")
         stop_reason = "monitor_error"
+
+    _cancel.set()
+    watchdog_thread.join(timeout=5)
+
+    with lock:
+        if watchdog_reason and stop_reason == "completed":
+            stop_reason = watchdog_reason[0]
 
     _record(events, "exit", f"Stream ended with stop_reason={stop_reason}")
 
@@ -267,6 +313,18 @@ def monitor_process_stream(
         exit_code = 1
 
     return MonitorResult(exit_code=exit_code, stop_reason=stop_reason, events=events)
+
+
+def _kill_process(process: subprocess.Popen[str]) -> None:
+    try:
+        process.send_signal(signal.SIGINT)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    except OSError:
+        pass
 
 
 def monitor_process(
@@ -281,15 +339,46 @@ def monitor_process(
     start_time = _now()
     last_progress_time = start_time
     stop_reason = "completed"
+    watchdog_reason: list[str] = []
+    lock = threading.Lock()
 
     _record(
         events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
     )
 
+    def _watchdog() -> None:
+        while process.poll() is None:
+            time.sleep(STALL_CHECK_INTERVAL)
+            if process.poll() is not None:
+                break
+            elapsed = _now() - start_time
+            if elapsed > timeout_seconds:
+                with lock:
+                    watchdog_reason.append("timeout")
+                    _record(events, "timeout", f"Watchdog: hard timeout after {timeout_seconds}s")
+                _kill_process(process)
+                return
+            with lock:
+                idle = _now() - last_progress_time
+            if idle > stall_seconds:
+                with lock:
+                    watchdog_reason.append("stall")
+                    _record(events, "stall", f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)")
+                _kill_process(process)
+                return
+
+    watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+    watchdog_thread.start()
+
     try:
         assert process.stdout is not None
         for line in process.stdout:
             line = line.rstrip("\n")
+
+            with lock:
+                if watchdog_reason:
+                    break
+
             elapsed = _now() - start_time
 
             if elapsed > timeout_seconds:
@@ -316,7 +405,8 @@ def monitor_process(
                 break
 
             if _is_progress_line(line):
-                last_progress_time = _now()
+                with lock:
+                    last_progress_time = _now()
             elif _now() - last_progress_time > stall_seconds:
                 _record(events, "stall", f"No meaningful progress for {stall_seconds}s")
                 stop_reason = "stall"
@@ -326,19 +416,16 @@ def monitor_process(
         _record(events, "error", f"Monitor error: {exc}")
         stop_reason = "monitor_error"
 
+    with lock:
+        if watchdog_reason and stop_reason == "completed":
+            stop_reason = watchdog_reason[0]
+
     if stop_reason != "completed":
         _record(events, "kill", f"Terminating OpenHands process (reason: {stop_reason})")
-        try:
-            process.send_signal(signal.SIGINT)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        except OSError:
-            pass
+        _kill_process(process)
 
     exit_code = process.wait()
+    watchdog_thread.join(timeout=5)
     _record(events, "exit", f"Process exited with code {exit_code}")
 
     save_events(run_dir, events)

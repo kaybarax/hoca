@@ -24,6 +24,9 @@ path_is_secret_like() {
   base="$(basename "$path")"
   lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
+    *.example|*.sample|*.template)
+      return 1
+      ;;
     .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
       return 0
       ;;

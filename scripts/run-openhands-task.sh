@@ -76,6 +76,7 @@ llm = LLM(
     reasoning_effort=None,
     enable_encrypted_reasoning=False,
     extended_thinking_budget=None,
+    timeout=600,
 )
 agent = get_default_cli_agent(llm)
 Path(settings_path).write_text(agent.model_dump_json(), encoding="utf-8")
@@ -148,6 +149,7 @@ env_override = dict(__import__('os').environ)
 env_override['LLM_MODEL'] = '${MODEL}'
 env_override['LLM_BASE_URL'] = '${BASE_URL}'
 env_override['LLM_API_KEY'] = '${API_KEY}'
+env_override['CI'] = 'true'
 
 with open(output_file, 'w') as out_f:
     proc = subprocess.Popen(
