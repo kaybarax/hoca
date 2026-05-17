@@ -62,7 +62,14 @@ def init_project(project_path: Path) -> None:
 @click.argument("task")
 @click.option("--auto-merge", is_flag=True, default=False)
 @click.option("--notify-telegram", is_flag=True, default=False)
-def run(project_path: Path, task: str, auto_merge: bool, notify_telegram: bool) -> None:
+@click.option("--model", help="Ollama model alias to use for this run, for example qwen-14b-pro.")
+def run(
+    project_path: Path,
+    task: str,
+    auto_merge: bool,
+    notify_telegram: bool,
+    model: str | None,
+) -> None:
     """Run a HOCA task against a target repository."""
     project_path = require_target_repo(project_path)
     args = [str(project_path), task]
@@ -70,6 +77,8 @@ def run(project_path: Path, task: str, auto_merge: bool, notify_telegram: bool) 
         args.append("--auto-merge")
     if notify_telegram:
         args.append("--notify-telegram")
+    if model:
+        args.extend(["--model", model])
     run_script("run-hoca-task.sh", args)
 
 
@@ -79,12 +88,14 @@ def run(project_path: Path, task: str, auto_merge: bool, notify_telegram: bool) 
 @click.argument("issue_title")
 @click.option("--auto-merge", is_flag=True, default=False)
 @click.option("--notify-telegram", is_flag=True, default=False)
+@click.option("--model", help="Ollama model alias to use for this run, for example qwen-14b-pro.")
 def issue(
     project_path: Path,
     issue_id: str,
     issue_title: str,
     auto_merge: bool,
     notify_telegram: bool,
+    model: str | None,
 ) -> None:
     """Run a HOCA task for a GitHub issue."""
     project_path = require_target_repo(project_path)
@@ -94,6 +105,8 @@ def issue(
         args.append("--auto-merge")
     if notify_telegram:
         args.append("--notify-telegram")
+    if model:
+        args.extend(["--model", model])
     run_script("run-hoca-task.sh", args)
 
 

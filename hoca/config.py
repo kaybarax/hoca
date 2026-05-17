@@ -57,10 +57,10 @@ class HocaConfig:
     workspace_root: Path | None = None
 
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen-32b-pro"
-    llm_model: str = "ollama/qwen-32b-pro"
+    ollama_model: str = "qwen-14b-pro"
+    llm_model: str = "ollama/qwen-14b-pro"
     llm_base_url: str = "http://127.0.0.1:11434"
-    aider_model: str = "ollama_chat/qwen-32b-pro"
+    aider_model: str = "ollama_chat/qwen-14b-pro"
 
     webhook_secret: str = ""
     webhook_url: str = ""
@@ -97,10 +97,10 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         stop_on_dirty_tree=parse_bool(os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True),
         workspace_root=workspace_root,
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-32b-pro"),
-        llm_model=os.environ.get("LLM_MODEL", "ollama/qwen-32b-pro"),
+        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-14b-pro"),
+        llm_model=os.environ.get("LLM_MODEL", "ollama/qwen-14b-pro"),
         llm_base_url=os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434"),
-        aider_model=os.environ.get("AIDER_MODEL", "ollama_chat/qwen-32b-pro"),
+        aider_model=os.environ.get("AIDER_MODEL", "ollama_chat/qwen-14b-pro"),
         webhook_secret=os.environ.get("HOCA_WEBHOOK_SECRET", ""),
         webhook_url=os.environ.get("HOCA_WEBHOOK_URL", ""),
         allowed_repos=os.environ.get("HOCA_ALLOWED_REPOS", ""),
