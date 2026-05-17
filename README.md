@@ -73,9 +73,9 @@ Human or GitHub Issue
 
 ## Model Support
 
-HOCA defaults to the local Ollama alias `qwen-32b-pro`, created from
-`qwen2.5-coder:32b` with a custom Modelfile that sets a 32K context window. If
-your machine cannot run the 32B model, HOCA supports smaller alternatives:
+HOCA defaults to the local Ollama alias `qwen-14b-pro`, created from
+`qwen2.5-coder:14b` with a custom Modelfile that sets a 16K context window. If
+your machine can comfortably run the 32B model, HOCA also supports it:
 
 | HOCA Alias | Base Model | RAM Needed | Context | Modelfile |
 |------------|------------|------------|---------|-----------|
@@ -88,10 +88,17 @@ be used by setting the `LLM_MODEL`, `AIDER_MODEL`, and `OLLAMA_MODEL`
 environment variables in your `.env` file.
 
 **Model fallback:** `scripts/select-model.sh` checks which models your Ollama
-instance has loaded. It tries `OLLAMA_MODEL` first (default `qwen-32b-pro`),
-then falls back through `qwen-14b-pro` and `qwen-7b-pro`. If none are
+instance has loaded. It tries `OLLAMA_MODEL` first (default `qwen-14b-pro`),
+then falls back through `qwen-14b-pro`, `qwen-7b-pro`, and `qwen-32b-pro`. If none are
 available, the run fails with a clear diagnostic. Both the OpenHands runner and
 Aider reviewer use the selected model automatically.
+
+For a single run, choose the model explicitly:
+
+```sh
+bin/hoca run /path/to/repo "Implement feature X" --model qwen-14b-pro
+bin/hoca issue /path/to/repo 123 "Fix the login bug" --model qwen-14b-pro
+```
 
 Smaller models trade capability for speed and lower memory use. For high-risk
 work, human review is recommended regardless of model size.
@@ -264,7 +271,7 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
 | `aider` not found | Run `brew install pipx && pipx install aider-install && aider-install` |
-| Model not available | Run `ollama pull qwen2.5-coder:32b`, then `ollama create qwen-32b-pro -f ./models/Modelfile` (or use the 14B/7B aliases) |
+| Model not available | Run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases) |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
 | Tests fail | Check `.hoca-runtime/runs/<run-id>/tests.log` for details |
