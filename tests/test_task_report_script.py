@@ -44,8 +44,8 @@ def test_task_report_contains_required_run_fields(tmp_path: Path) -> None:
         "# Test Summary\n\n- **Status**: passed\n- **Command**: `pytest`\n",
         encoding="utf-8",
     )
-    (run_dir / "aider-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
-    (run_dir / "aider-exit-code.txt").write_text("0\n", encoding="utf-8")
+    (run_dir / "openhands-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
+    (run_dir / "openhands-review-exit-code.txt").write_text("0\n", encoding="utf-8")
     (run_dir / "commit-hash.txt").write_text("abc123\n", encoding="utf-8")
 
     result = run_report(tmp_path, run_dir)

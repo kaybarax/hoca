@@ -38,7 +38,6 @@ class TestLoadConfigDefaults:
         empty_env.write_text("")
         for key in [
             "HOCA_AUTO_MERGE",
-            "HOCA_REQUIRE_AIDER_LGTM",
             "HOCA_REQUIRE_TESTS",
             "HOCA_STOP_ON_DIRTY_TREE",
             "HOCA_WORKSPACE_ROOT",
@@ -46,7 +45,6 @@ class TestLoadConfigDefaults:
             "OLLAMA_MODEL",
             "LLM_MODEL",
             "LLM_BASE_URL",
-            "AIDER_MODEL",
             "HOCA_WEBHOOK_SECRET",
             "HOCA_WEBHOOK_URL",
             "HOCA_ALLOWED_REPOS",
@@ -60,7 +58,6 @@ class TestLoadConfigDefaults:
         cfg = load_config(dotenv_path=empty_env)
 
         assert cfg.auto_merge is False
-        assert cfg.require_aider_lgtm is True
         assert cfg.require_tests is True
         assert cfg.stop_on_dirty_tree is True
         assert cfg.workspace_root is None

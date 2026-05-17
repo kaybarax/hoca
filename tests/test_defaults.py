@@ -5,7 +5,7 @@ import pytest
 from hoca.config import (
     DEFAULT_POLICY,
     PolicyError,
-    assert_aider_approved,
+    assert_review_approved,
     assert_commit_allowed,
     assert_tests_passed,
     validate_run_options,
@@ -20,7 +20,7 @@ def test_required_defaults_are_safe() -> None:
     assert DEFAULT_POLICY.stop_on_unrelated_changes is True
     assert DEFAULT_POLICY.stop_on_secret_changes is True
     assert DEFAULT_POLICY.stop_on_test_failure is True
-    assert DEFAULT_POLICY.require_aider_approval is True
+    assert DEFAULT_POLICY.require_review_approval is True
     assert DEFAULT_POLICY.stop_before_commit_until_selective_staging is True
     assert DEFAULT_POLICY.allow_high_risk_auto_merge is False
 
@@ -40,10 +40,10 @@ def test_failed_tests_and_unapproved_reviews_stop_runs() -> None:
     with pytest.raises(PolicyError, match="Tests failed"):
         assert_tests_passed(1)
 
-    with pytest.raises(PolicyError, match="Aider review"):
-        assert_aider_approved("needs changes")
+    with pytest.raises(PolicyError, match="Code review"):
+        assert_review_approved("needs changes")
 
-    assert_aider_approved("approved")
+    assert_review_approved("approved")
 
 
 def test_commit_stops_until_selective_staging_is_ready() -> None:

@@ -17,13 +17,6 @@ def test_install_script_uses_repo_virtualenv_for_hoca_dependencies() -> None:
     assert "--break-system-packages" not in install_script
 
 
-def test_install_script_uses_pipx_for_aider_installer() -> None:
-    install_script = (REPO_ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
-
-    assert "pipx" in install_script
-    assert "pipx install aider-install" in install_script
-    assert "pip install --user --upgrade aider-install" not in install_script
-
 
 def test_install_script_accepts_latest_tagged_ollama_aliases() -> None:
     install_script = (REPO_ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")

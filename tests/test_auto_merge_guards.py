@@ -32,7 +32,7 @@ def minimal_auto_merge_run(tmp_path: Path) -> Path:
     run.mkdir()
     (run / "status.json").write_text(json.dumps({"auto_merge": "true"}), encoding="utf-8")
     (run / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
-    (run / "aider-review.txt").write_text("LGTM all good\n", encoding="utf-8")
+    (run / "openhands-review.txt").write_text("LGTM all good\n", encoding="utf-8")
     (run / "risk-level.txt").write_text("low\n", encoding="utf-8")
     (run / "staged-files.txt").write_text("lib/widget.py\n", encoding="utf-8")
     return run
@@ -68,7 +68,7 @@ def test_precheck_fails_without_tests_exit_code(minimal_auto_merge_run: Path):
 
 
 def test_precheck_fails_without_lgtm(minimal_auto_merge_run: Path):
-    (minimal_auto_merge_run / "aider-review.txt").write_text("needs work\n", encoding="utf-8")
+    (minimal_auto_merge_run / "openhands-review.txt").write_text("needs work\n", encoding="utf-8")
     proc = _run_guards(
         "precheck",
         minimal_auto_merge_run,

@@ -22,12 +22,10 @@ def test_init_project_creates_templates_without_overwriting(tmp_path: Path) -> N
     subprocess.run(["git", "init"], cwd=project_path, check=True, capture_output=True, text=True)
 
     existing_openhands = project_path / ".openhands_instructions"
-    existing_aider = project_path / ".aider.conf.yml"
     existing_pr_template = project_path / "templates" / "PR_TEMPLATE.md"
     existing_pr_template.parent.mkdir()
 
     existing_openhands.write_text("custom openhands\n")
-    existing_aider.write_text("custom aider\n")
     existing_pr_template.write_text("custom pr template\n")
     (project_path / ".gitignore").write_text("node_modules")
 
@@ -35,9 +33,7 @@ def test_init_project_creates_templates_without_overwriting(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stderr
     assert existing_openhands.read_text() == "custom openhands\n"
-    assert existing_aider.read_text() == "custom aider\n"
     assert existing_pr_template.read_text() == "custom pr template\n"
-    assert (project_path / ".aider.model.settings.yml").is_file()
     assert (project_path / ".hoca-runtime" / "runs").is_dir()
     assert (project_path / ".hoca-runtime" / "logs").is_dir()
 
@@ -45,7 +41,6 @@ def test_init_project_creates_templates_without_overwriting(tmp_path: Path) -> N
     assert "node_modules" in gitignore_lines
     assert ".hoca-runtime/" in gitignore_lines
     assert ".openhands/" in gitignore_lines
-    assert ".aider*" in gitignore_lines
     assert "node_modules.hoca-runtime/" not in gitignore_lines
 
 
@@ -61,8 +56,6 @@ def test_init_project_is_idempotent(tmp_path: Path) -> None:
 
     tracked_files = [
         ".openhands_instructions",
-        ".aider.conf.yml",
-        ".aider.model.settings.yml",
         "templates/PR_TEMPLATE.md",
         ".gitignore",
     ]

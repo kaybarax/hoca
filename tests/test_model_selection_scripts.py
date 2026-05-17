@@ -52,14 +52,6 @@ def make_fake_openhands(fake_bin: Path) -> None:
     openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
 
 
-def make_fake_aider(fake_bin: Path) -> None:
-    aider = fake_bin / "aider"
-    aider.write_text(
-        "#!/usr/bin/env bash\nset -euo pipefail\necho 'Review complete.'\necho 'LGTM'\n",
-        encoding="utf-8",
-    )
-    aider.chmod(aider.stat().st_mode | stat.S_IXUSR)
-
 
 def init_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
@@ -78,7 +70,7 @@ def run_script(
 ):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    for key in ("AIDER_MODEL", "LLM_MODEL", "OLLAMA_MODEL"):
+    for key in ("LLM_MODEL", "OLLAMA_MODEL"):
         env.pop(key, None)
     if extra_env:
         env.update(extra_env)
@@ -211,49 +203,21 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
 
 
-def test_aider_wrapper_uses_aider_model_prefix(tmp_path: Path) -> None:
+def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
     make_fake_curl(fake_bin)
-    make_fake_aider(fake_bin)
-    project = tmp_path / "project"
-    run_dir = tmp_path / "run"
-    project.mkdir()
-    init_repo(project)
-    (project / "README.md").write_text("changed\n", encoding="utf-8")
-
-    result = run_script(
-        "review-with-aider.sh",
-        fake_bin,
-        args=[str(project), "Review project", str(run_dir)],
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Running Aider review with model: ollama_chat/qwen-32b-pro" in result.stdout
-    assert (run_dir / "aider-review.txt").read_text(encoding="utf-8") == (
-        "Review complete.\nLGTM\n"
-    )
-    assert (run_dir / "aider-stderr.log").read_text(encoding="utf-8") == ""
-    assert (run_dir / "aider-exit-code.txt").read_text(encoding="utf-8") == "0\n"
-
-
-def test_aider_wrapper_uses_yes_always_when_supported(tmp_path: Path) -> None:
-    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
-    make_fake_curl(fake_bin)
-    args_file = tmp_path / "aider-args.txt"
-    aider = fake_bin / "aider"
-    aider.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
         'if [[ "${1:-}" == "--help" ]]; then\n'
-        '  echo "aider --yes-always --read-only"\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
         "  exit 0\n"
         "fi\n"
-        'printf \'%s\\n\' "$@" > "$AIDER_ARGS_FILE"\n'
         "echo 'Review complete.'\n"
         "echo 'LGTM'\n",
         encoding="utf-8",
     )
-    aider.chmod(aider.stat().st_mode | stat.S_IXUSR)
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
     project = tmp_path / "project"
     run_dir = tmp_path / "run"
     project.mkdir()
@@ -261,14 +225,11 @@ def test_aider_wrapper_uses_yes_always_when_supported(tmp_path: Path) -> None:
     (project / "README.md").write_text("changed\n", encoding="utf-8")
 
     result = run_script(
-        "review-with-aider.sh",
+        "review-with-openhands.sh",
         fake_bin,
-        extra_env={"AIDER_ARGS_FILE": str(args_file)},
         args=[str(project), "Review project", str(run_dir)],
     )
 
     assert result.returncode == 0, result.stderr
-    args = args_file.read_text(encoding="utf-8").splitlines()
-    assert "--yes-always" in args
-    assert "--read-only" in args
-    assert "README.md" in args
+    assert "Running OpenHands review" in result.stdout
+    assert (run_dir / "openhands-review.txt").exists()

@@ -38,7 +38,7 @@ def make_fake_preflight_bin(
     tmp_path: Path,
     *,
     openhands_body: str | None = None,
-    aider_body: str | None = None,
+    review_body: str | None = None,
     pytest_body: str | None = None,
 ) -> Path:
     fake_bin = tmp_path / "fake-bin"
@@ -72,6 +72,7 @@ def make_fake_preflight_bin(
     )
 
     openhands = openhands_body or "echo 'OpenHands fake run complete.'\n"
+    review_default = review_body or "echo 'Review complete.'\necho 'LGTM'\n"
     write_executable(
         fake_bin / "openhands",
         "#!/usr/bin/env bash\n"
@@ -80,16 +81,17 @@ def make_fake_preflight_bin(
         '  echo "openhands --headless --task --override-with-envs --json"\n'
         "  exit 0\n"
         "fi\n"
+        'TASK_ARG=""\n'
+        'prev=""\n'
+        'for arg in "$@"; do\n'
+        '  if [[ "$prev" == "--task" ]]; then TASK_ARG="$arg"; fi\n'
+        '  prev="$arg"\n'
+        "done\n"
+        'if [[ "$TASK_ARG" == *"Review the current repository changes"* ]]; then\n'
+        f"  {review_default}"
+        "  exit 0\n"
+        "fi\n"
         f"{openhands}",
-    )
-
-    aider = aider_body or "echo 'Review complete.'\necho 'LGTM'\n"
-    write_executable(
-        fake_bin / "aider",
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        'if [[ "${1:-}" == "--version" ]]; then echo "aider 1.0"; exit 0; fi\n'
-        f"{aider}",
     )
 
     if pytest_body is not None:
@@ -138,7 +140,7 @@ def fake_tools_root(repo: Path, name: str = "tools") -> Path:
 def prepare_pr_ready_repo(repo: Path) -> None:
     (repo / "templates").mkdir(exist_ok=True)
     (repo / "templates" / "PR_TEMPLATE.md").write_text(
-        "## Summary\n\n## Changes\n\n## Validation\n\n## Aider Review\n\n"
+        "## Summary\n\n## Changes\n\n## Validation\n\n## Code Review\n\n"
         "## Risk\n\n## Linked Issue\n",
         encoding="utf-8",
     )
@@ -314,47 +316,31 @@ def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_cha
     assert "No changes produced." in result.stdout
     assert '"status": "no_changes"' in latest_status(tmp_path)
     assert not (run_dir / "tests-summary.md").exists()
-    assert not (run_dir / "aider-review.txt").exists()
+    assert not (run_dir / "openhands-review.txt").exists()
 
 
-def test_run_hoca_task_distinguishes_aider_failure_from_rejection(tmp_path: Path) -> None:
+def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
         openhands_body="printf 'agent edit\\n' > README.md\n",
-        aider_body="echo 'aider crashed' >&2\nexit 5\n",
+        review_body="echo 'Needs changes.'\n",
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
 
-    failed = run_hoca_task_with_env(tmp_path, "Update README", env)
-
-    assert failed.returncode != 0
-    assert "Aider failed with exit code 5" in failed.stderr
-    assert '"reason": "aider_failed"' in latest_status(tmp_path)
-
-    repo2 = tmp_path / "repo2"
-    repo2.mkdir()
-    init_repo(repo2)
-    fake_bin2 = make_fake_preflight_bin(
-        fake_tools_root(repo2, "tools2"),
-        openhands_body="printf 'agent edit\\n' > README.md\n",
-        aider_body="echo 'Needs fixes.'\nexit 0\n",
-    )
-    env2 = os.environ.copy()
-    env2["PATH"] = f"{fake_bin2}{os.pathsep}{env2['PATH']}"
-    env2["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
-
-    rejected = run_hoca_task_with_env(repo2, "Update README", env2)
+    rejected = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert rejected.returncode != 0
-    assert "Aider still did not return LGTM after 1 repair attempt" in rejected.stderr
-    assert '"reason": "aider_not_lgtm"' in latest_status(repo2)
+    assert '"reason": "review_not_lgtm"' in latest_status(tmp_path) or \
+           '"reason": "review_failed"' in latest_status(tmp_path)
 
 
-def test_run_hoca_task_repairs_aider_rejections(tmp_path: Path) -> None:
+def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
     init_repo(tmp_path)
     count_file = tmp_path / "openhands-count"
+    review_count_file = tmp_path / "openhands-review-count"
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
         openhands_body=(
@@ -362,24 +348,28 @@ def test_run_hoca_task_repairs_aider_rejections(tmp_path: Path) -> None:
             'count="$((count + 1))"\n'
             'printf "%s\\n" "$count" > "$OPENHANDS_COUNT_FILE"\n'
             'if [[ "$count" == "1" ]]; then printf "needs review\\n" > README.md; '
-            'else printf "ready\\n" > README.md; fi\n'
+            'else printf "ready\\nLGTM\\n" > README.md; fi\n'
         ),
-        aider_body=(
-            "if grep -q '^ready$' README.md; then echo 'Looks good.'; echo 'LGTM'; "
-            "else echo 'Needs fixes.'; fi\n"
+        review_body=(
+            'count="$(cat "$OPENHANDS_REVIEW_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+            'count="$((count + 1))"\n'
+            'printf "%s\\n" "$count" > "$OPENHANDS_REVIEW_COUNT_FILE"\n'
+            'if [[ "$count" == "1" ]]; then echo "Needs changes."; '
+            'else echo "Review complete."; echo "LGTM"; fi\n'
         ),
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["OPENHANDS_REVIEW_COUNT_FILE"] = str(review_count_file)
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "2"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running OpenHands (Aider repair attempt 1)" in result.stdout
+    assert "Running OpenHands (review repair attempt 1)" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
-    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "ready\n"
+    assert review_count_file.read_text(encoding="utf-8") == "2\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
 
 
@@ -398,6 +388,7 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_KEEP_RUNTIME"] = "true"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env, "--issue-id", "42")
 

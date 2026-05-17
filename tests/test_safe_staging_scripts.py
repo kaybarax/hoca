@@ -21,7 +21,7 @@ def init_repo(path: Path) -> None:
 
 def write_run_files(run_dir: Path, *, producer: str = "reviewer") -> None:
     run_dir.mkdir(parents=True)
-    (run_dir / "aider-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
+    (run_dir / "openhands-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
     (run_dir / "intended-files-source.txt").write_text(f"{producer}\n", encoding="utf-8")
 
 
@@ -97,14 +97,14 @@ def test_safe_stage_requires_lgtm_review(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
     write_run_files(run_dir)
-    (run_dir / "aider-review.txt").write_text("Needs changes.\n", encoding="utf-8")
+    (run_dir / "openhands-review.txt").write_text("Needs changes.\n", encoding="utf-8")
     (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
 
     result = run_safe_stage(tmp_path, "Update README", run_dir)
 
     assert result.returncode != 0
-    assert "before an Aider review returns LGTM" in result.stderr
+    assert "before a review returns LGTM" in result.stderr
     assert staged_files(tmp_path) == []
 
 
