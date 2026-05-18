@@ -179,6 +179,23 @@ def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: 
     assert "Stopping to avoid mixing unrelated human changes" in result.stdout
 
 
+def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Development branch: not configured (HOCA_DEV_BRANCH is unset)" in result.stdout
+    assert "Development branch sync: skipped" in result.stdout
+    assert "Task branch base: current HEAD" in result.stdout
+    assert "Creating branch: feat/update-readme from HEAD" in result.stdout
+
+
 def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
     tmp_path: Path,
 ) -> None:
@@ -209,6 +226,9 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
     ).stdout.strip()
     assert result.returncode == 0, result.stderr
     assert "Switching to development branch: main" in result.stdout
+    assert "Development branch sync: skipped (no origin remote configured)" in result.stdout
+    assert "Task branch base: main" in result.stdout
+    assert "Creating branch: feat/update-readme from main" in result.stdout
     assert branch == "feat/update-readme"
     assert not (tmp_path / "previous.txt").exists()
     assert '"starting_branch": "feat/previous-task"' in latest_status(tmp_path)
@@ -269,8 +289,11 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
         stdout=subprocess.PIPE,
     ).stdout.strip()
     assert result.returncode == 0, result.stderr
+    assert "Development branch sync: enabled" in result.stdout
     assert "Fetching latest development branch from origin: main" in result.stdout
+    assert "Fetched development branch: origin/main" in result.stdout
     assert "Task branch base: origin/main" in result.stdout
+    assert "Creating branch: feat/update-readme from origin/main" in result.stdout
     assert '"task_base_branch": "origin/main"' in latest_status(repo)
     assert branch == "feat/update-readme"
     assert (repo / "origin-only.txt").exists()

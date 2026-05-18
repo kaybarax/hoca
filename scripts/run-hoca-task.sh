@@ -110,6 +110,9 @@ is_dependency_lockfile_path() {
 checkout_dev_branch() {
   if [ -z "$DEV_BRANCH" ]; then
     TASK_BASE_REF="HEAD"
+    echo "Development branch: not configured (HOCA_DEV_BRANCH is unset)"
+    echo "Development branch sync: skipped"
+    echo "Task branch base: current HEAD ($(git rev-parse --short HEAD))"
     return
   fi
   if [ "$CURRENT_BRANCH" = "$DEV_BRANCH" ]; then
@@ -126,6 +129,7 @@ checkout_dev_branch() {
   TASK_BASE_REF="$CURRENT_BRANCH"
   if [ "$SYNC_DEV_BRANCH" = "true" ]; then
     if git remote get-url origin >/dev/null 2>&1; then
+      echo "Development branch sync: enabled"
       echo "Fetching latest development branch from origin: $DEV_BRANCH"
       if ! git fetch origin "$DEV_BRANCH"; then
         echo "Unable to fetch configured development branch from origin: $DEV_BRANCH" >&2
@@ -133,14 +137,20 @@ checkout_dev_branch() {
       fi
       if git rev-parse --verify "origin/${DEV_BRANCH}" >/dev/null 2>&1; then
         TASK_BASE_REF="origin/${DEV_BRANCH}"
+        echo "Fetched development branch: $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
         echo "Task branch base: $TASK_BASE_REF"
       else
         echo "Fetched origin/${DEV_BRANCH}, but the remote ref was not found." >&2
         exit 1
       fi
     else
+      echo "Development branch sync: skipped (no origin remote configured)"
       echo "No origin remote configured; using local development branch: $DEV_BRANCH"
+      echo "Task branch base: $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
     fi
+  else
+    echo "Development branch sync: disabled (HOCA_SYNC_DEV_BRANCH=$SYNC_DEV_BRANCH)"
+    echo "Task branch base: $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
   fi
 }
 
@@ -328,7 +338,7 @@ else
   BRANCH="feat/${SLUG:-hoca-task}"
 fi
 
-echo "Creating branch: $BRANCH"
+echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
 git checkout -b "$BRANCH" "$TASK_BASE_REF"
 
 run_openhands_phase() {
