@@ -26,7 +26,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE_FILE="$PROJECT_PATH/templates/PR_TEMPLATE.md"
+TARGET_TEMPLATE_FILE="$PROJECT_PATH/templates/PR_TEMPLATE.md"
+HOCA_TEMPLATE_FILE="$(cd "$SCRIPT_DIR/.." && pwd)/templates/PR_TEMPLATE.md"
+TEMPLATE_FILE="$TARGET_TEMPLATE_FILE"
 
 cd "$PROJECT_PATH"
 
@@ -36,8 +38,26 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 if [ ! -f "$TEMPLATE_FILE" ]; then
-  echo "Missing PR template: $TEMPLATE_FILE" >&2
-  exit 1
+  if [ -f "$HOCA_TEMPLATE_FILE" ]; then
+    TEMPLATE_FILE="$HOCA_TEMPLATE_FILE"
+    echo "Using bundled HOCA PR template: $TEMPLATE_FILE"
+  else
+    TEMPLATE_FILE="$RUN_DIR/pr-template-fallback.md"
+    cat > "$TEMPLATE_FILE" <<'EOF'
+## Summary
+
+## Changes
+
+## Validation
+
+## Code Review
+
+## Risk
+
+## Linked Issue
+EOF
+    echo "Using generated fallback PR template: $TEMPLATE_FILE"
+  fi
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
@@ -205,10 +225,7 @@ if [ -f "$RUN_DIR/openhands-review.txt" ]; then
       echo "**Status**: LGTM not detected in code review output (human review recommended)."
     fi
     echo ""
-    echo "**Excerpt** (first 80 lines):"
-    echo '```text'
-    head -n 80 "$RUN_DIR/openhands-review.txt"
-    echo '```'
+    echo "Full review output is saved in the HOCA run artifacts."
   } > "$RUN_DIR/pr-fragment-code-review.txt"
 else
   write_fragment "code-review" "_No \`openhands-review.txt\` found in the run directory._"

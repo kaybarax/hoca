@@ -35,17 +35,22 @@ if [ -z "$CHANGED_FILES" ]; then
   exit 0
 fi
 
-DIFF_OUTPUT="$(git diff)"
+REVIEW_DIR="$RUN_DIR/review"
+mkdir -p "$REVIEW_DIR"
+
+CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
+DIFF_FILE="$REVIEW_DIR/git-diff.patch"
+printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_FILE"
+git diff > "$DIFF_FILE"
 
 REVIEW_TASK="Review the current repository changes for the following task: ${TASK}
 
-Here are the changed files:
-${CHANGED_FILES}
+The changed-file list and diff are saved in:
+- ${CHANGED_FILES_FILE}
+- ${DIFF_FILE}
 
-Here is the diff of changes:
-\`\`\`
-${DIFF_OUTPUT}
-\`\`\`
+Inspect those files and the working tree directly. Do not rely on this prompt
+as a complete copy of the diff.
 
 Check:
 - Whether the task was fulfilled.
@@ -58,9 +63,6 @@ Check:
 - Whether the change is safe to commit.
 If the changes are acceptable, end your response with exactly: LGTM
 If not acceptable, list required fixes clearly."
-
-REVIEW_DIR="$RUN_DIR/review"
-mkdir -p "$REVIEW_DIR"
 
 echo "Running OpenHands review..."
 set +e

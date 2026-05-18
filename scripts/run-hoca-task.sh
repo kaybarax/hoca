@@ -16,6 +16,9 @@ NOTIFY_TELEGRAM="false"
 REQUESTED_MODEL=""
 MAX_REPAIR_ATTEMPTS="${HOCA_MAX_REPAIR_ATTEMPTS:-2}"
 DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
+SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
+AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
+TASK_BASE_REF=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -93,21 +96,52 @@ changed_files_for_task() {
   git_status_short_for_task | sed 's/^...//'
 }
 
+is_dependency_lockfile_path() {
+  case "$(basename "$1")" in
+    package-lock.json|npm-shrinkwrap.json|yarn.lock|pnpm-lock.yaml|poetry.lock|Pipfile.lock|uv.lock|Cargo.lock|Gemfile.lock|composer.lock)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 checkout_dev_branch() {
   if [ -z "$DEV_BRANCH" ]; then
+    TASK_BASE_REF="HEAD"
     return
   fi
   if [ "$CURRENT_BRANCH" = "$DEV_BRANCH" ]; then
     echo "Development branch: $DEV_BRANCH"
-    return
+  else
+    echo "Switching to development branch: $DEV_BRANCH"
+    if ! git checkout "$DEV_BRANCH"; then
+      echo "Unable to switch to configured development branch: $DEV_BRANCH" >&2
+      exit 1
+    fi
+    CURRENT_BRANCH="$(git branch --show-current)"
   fi
 
-  echo "Switching to development branch: $DEV_BRANCH"
-  if ! git checkout "$DEV_BRANCH"; then
-    echo "Unable to switch to configured development branch: $DEV_BRANCH" >&2
-    exit 1
+  TASK_BASE_REF="$CURRENT_BRANCH"
+  if [ "$SYNC_DEV_BRANCH" = "true" ]; then
+    if git remote get-url origin >/dev/null 2>&1; then
+      echo "Fetching latest development branch from origin: $DEV_BRANCH"
+      if ! git fetch origin "$DEV_BRANCH"; then
+        echo "Unable to fetch configured development branch from origin: $DEV_BRANCH" >&2
+        exit 1
+      fi
+      if git rev-parse --verify "origin/${DEV_BRANCH}" >/dev/null 2>&1; then
+        TASK_BASE_REF="origin/${DEV_BRANCH}"
+        echo "Task branch base: $TASK_BASE_REF"
+      else
+        echo "Fetched origin/${DEV_BRANCH}, but the remote ref was not found." >&2
+        exit 1
+      fi
+    else
+      echo "No origin remote configured; using local development branch: $DEV_BRANCH"
+    fi
   fi
-  CURRENT_BRANCH="$(git branch --show-current)"
 }
 
 CURRENT_BRANCH="$(git branch --show-current)"
@@ -250,7 +284,7 @@ cat > "$RUN_DIR/status.json" <<EOF
   "requested_model": "$REQUESTED_MODEL",
   "repo_root": $(printf '%s' "$REPO_ROOT" | jq -Rs .),
   "starting_branch": $(printf '%s' "$INITIAL_BRANCH" | jq -Rs .),
-  "task_base_branch": $(printf '%s' "$CURRENT_BRANCH" | jq -Rs .),
+  "task_base_branch": $(printf '%s' "$TASK_BASE_REF" | jq -Rs .),
   "dev_branch": $(printf '%s' "$DEV_BRANCH" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
@@ -295,7 +329,7 @@ else
 fi
 
 echo "Creating branch: $BRANCH"
-git checkout -b "$BRANCH"
+git checkout -b "$BRANCH" "$TASK_BASE_REF"
 
 run_openhands_phase() {
   local phase_task="$1"
@@ -477,6 +511,19 @@ fi
 
 INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
 INTENDED_FILE_SOURCE="$RUN_DIR/intended-files-source.txt"
+
+if [ ! -f "$INTENDED_FILE_LIST" ] && [ ! -f "$INTENDED_FILE_SOURCE" ] && [ "$AUTO_STAGE_REVIEWED_CHANGES" = "true" ]; then
+  echo "Generating manager intended-file list from reviewed changed files..."
+  cp "$RUN_DIR/changed-files.txt" "$INTENDED_FILE_LIST"
+  printf '%s\n' "manager" > "$INTENDED_FILE_SOURCE"
+  : > "$RUN_DIR/staging-justification.txt"
+  while IFS= read -r changed_path || [ -n "$changed_path" ]; do
+    [ -z "$changed_path" ] && continue
+    if is_dependency_lockfile_path "$changed_path"; then
+      printf '%s: dependency lockfile updated by package manager for reviewed dependency changes.\n' "$changed_path" >> "$RUN_DIR/staging-justification.txt"
+    fi
+  done < "$RUN_DIR/changed-files.txt"
+fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."

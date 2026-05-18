@@ -62,7 +62,23 @@ if [ ! -s "$NORMALIZED_LIST" ]; then
   exit 1
 fi
 
-git status --short | awk '{print $NF}' | sort -u > "$CHANGED_LIST"
+while IFS= read -r path || [ -n "$path" ]; do
+  [ -z "$path" ] && continue
+  case "$path" in
+    .hoca-runtime/*|.hoca-runtime|.git/*|.git)
+      echo "Refusing intended path (runtime or git metadata): $path" >&2
+      exit 1
+      ;;
+  esac
+done < "$NORMALIZED_LIST"
+
+git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
+  path="${status_line#???}"
+  case "$path" in
+    .hoca-runtime|.hoca-runtime/*) continue ;;
+  esac
+  printf '%s\n' "$path"
+done | sort -u > "$CHANGED_LIST"
 
 if [ ! -s "$CHANGED_LIST" ]; then
   echo "No changed files to stage."
@@ -82,16 +98,6 @@ if [ -s "$UNEXPECTED_LIST" ]; then
   cat "$UNEXPECTED_LIST" >&2
   exit 1
 fi
-
-while IFS= read -r path || [ -n "$path" ]; do
-  [ -z "$path" ] && continue
-  case "$path" in
-    .hoca-runtime/*|.hoca-runtime|.git/*|.git)
-      echo "Refusing intended path (runtime or git metadata): $path" >&2
-      exit 1
-      ;;
-  esac
-done < "$NORMALIZED_LIST"
 
 echo "=== Pre-stage: git status --short ==="
 git status --short | tee "$RUN_DIR/pre-stage-git-status-short.txt"
