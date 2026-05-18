@@ -215,6 +215,68 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
     assert '"task_base_branch": "main"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_repo(repo)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=repo, check=True)
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo, check=True, stdout=subprocess.PIPE)
+
+    (repo / "local-only.txt").write_text("local main only\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "local-only.txt"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local main only"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+
+    remote_work = tmp_path / "remote-work"
+    subprocess.run(["git", "clone", str(remote), str(remote_work)], check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "checkout", "main"], cwd=remote_work, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "config", "user.email", "hoca@example.test"], cwd=remote_work, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=remote_work, check=True)
+    (remote_work / "origin-only.txt").write_text("origin main only\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "origin-only.txt"], cwd=remote_work, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "origin main only"],
+        cwd=remote_work,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(["git", "push", "origin", "main"], cwd=remote_work, check=True, stdout=subprocess.PIPE)
+
+    subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=repo, check=True)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(repo))
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DEV_BRANCH"] = "main"
+
+    result = run_hoca_task_with_env(repo, "Update README", env)
+
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert "Fetching latest development branch from origin: main" in result.stdout
+    assert "Task branch base: origin/main" in result.stdout
+    assert '"task_base_branch": "origin/main"' in latest_status(repo)
+    assert branch == "feat/update-readme"
+    assert (repo / "origin-only.txt").exists()
+    assert not (repo / "local-only.txt").exists()
+
+
 def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
@@ -327,6 +389,7 @@ def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> Non
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
     env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
@@ -399,6 +462,7 @@ def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
     env["OPENHANDS_REVIEW_COUNT_FILE"] = str(review_count_file)
     env["HOCA_MAX_REPAIR_ATTEMPTS"] = "2"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
@@ -448,6 +512,28 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     )
 
 
+def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Generating manager intended-file list from reviewed changed files" in result.stdout
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert '"status": "pr_created"' in latest_status(tmp_path)
+    assert '"reason": "pull_request_created"' in latest_status(tmp_path)
+
+
 def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     tmp_path: Path,
 ) -> None:
@@ -458,6 +544,7 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
@@ -494,6 +581,7 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
     )
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 

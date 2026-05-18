@@ -233,3 +233,5 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "Running OpenHands review" in result.stdout
     assert (run_dir / "openhands-review.txt").exists()
+    assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (run_dir / "review" / "git-diff.patch").is_file()

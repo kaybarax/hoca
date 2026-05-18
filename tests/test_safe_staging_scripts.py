@@ -229,3 +229,24 @@ def test_safe_stage_stages_reviewed_accounted_files(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert staged_files(tmp_path) == ["README.md"]
     assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+
+
+def test_safe_stage_ignores_untracked_hoca_runtime_artifacts(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "stop ignoring hoca runtime"],
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+
+    result = run_safe_stage(tmp_path, "Update README", run_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert staged_files(tmp_path) == ["README.md"]

@@ -15,6 +15,7 @@ from hoca.monitor import (
     monitor_process_stream,
     save_events,
     save_stop_reason,
+    should_scan_line_for_policy,
 )
 
 
@@ -123,6 +124,31 @@ class TestCheckUnrelatedDirectory:
     def test_no_path(self):
         result = check_unrelated_directory("echo hello", "/project")
         assert result is None
+
+
+class TestShouldScanLineForPolicy:
+    def test_plain_output_is_scanned(self):
+        assert should_scan_line_for_policy("rm -rf /") is True
+
+    def test_agent_action_is_scanned(self):
+        line = json.dumps(
+            {
+                "kind": "ActionEvent",
+                "source": "agent",
+                "action": {"command": "rm -rf /"},
+            }
+        )
+        assert should_scan_line_for_policy(line) is True
+
+    def test_environment_observation_is_not_scanned(self):
+        line = json.dumps(
+            {
+                "kind": "ObservationEvent",
+                "source": "environment",
+                "observation": {"content": "package script contains rm -rf build/"},
+            }
+        )
+        assert should_scan_line_for_policy(line) is False
 
 
 class TestMonitorEvent:
@@ -350,3 +376,43 @@ class TestMonitorProcessStream:
         )
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
+
+    def test_dangerous_text_in_observation_stream_is_ignored(self, tmp_path: Path):
+        import io
+        observation = json.dumps(
+            {
+                "kind": "ObservationEvent",
+                "source": "environment",
+                "observation": {"content": "existing package script: rm -rf build/"},
+            }
+        )
+        stream = io.StringIO(f"reading\n{observation}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_action_stream_still_stops(self, tmp_path: Path):
+        import io
+        action = json.dumps(
+            {
+                "kind": "ActionEvent",
+                "source": "agent",
+                "action": {"command": "rm -rf /"},
+            }
+        )
+        stream = io.StringIO(f"working\n{action}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "dangerous_command"
+        assert result.exit_code == 1
