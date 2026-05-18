@@ -40,6 +40,7 @@ class TestLoadConfigDefaults:
             "HOCA_AUTO_MERGE",
             "HOCA_REQUIRE_TESTS",
             "HOCA_STOP_ON_DIRTY_TREE",
+            "HOCA_DEV_BRANCH",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_BASE_URL",
             "OLLAMA_MODEL",
@@ -60,6 +61,7 @@ class TestLoadConfigDefaults:
         assert cfg.auto_merge is False
         assert cfg.require_tests is True
         assert cfg.stop_on_dirty_tree is True
+        assert cfg.dev_branch == "main"
         assert cfg.workspace_root is None
         assert cfg.ollama_base_url == "http://127.0.0.1:11434"
         assert cfg.ollama_model == "qwen-14b-pro"
@@ -72,12 +74,14 @@ class TestLoadConfigDefaults:
             "HOCA_AUTO_MERGE=true\n"
             "HOCA_REQUIRE_TESTS=false\n"
             "OLLAMA_MODEL=custom-model\n"
+            "HOCA_DEV_BRANCH=develop\n"
             "HOCA_WORKSPACE_ROOT=~/projects\n"
         )
         for key in [
             "HOCA_AUTO_MERGE",
             "HOCA_REQUIRE_TESTS",
             "OLLAMA_MODEL",
+            "HOCA_DEV_BRANCH",
             "HOCA_WORKSPACE_ROOT",
         ]:
             monkeypatch.delenv(key, raising=False)
@@ -87,6 +91,7 @@ class TestLoadConfigDefaults:
         assert cfg.auto_merge is True
         assert cfg.require_tests is False
         assert cfg.ollama_model == "custom-model"
+        assert cfg.dev_branch == "develop"
         assert cfg.workspace_root is not None
         assert "~" not in str(cfg.workspace_root)
 

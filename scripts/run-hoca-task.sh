@@ -15,6 +15,7 @@ AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 REQUESTED_MODEL=""
 MAX_REPAIR_ATTEMPTS="${HOCA_MAX_REPAIR_ATTEMPTS:-2}"
+DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -92,7 +93,25 @@ changed_files_for_task() {
   git_status_short_for_task | sed 's/^...//'
 }
 
+checkout_dev_branch() {
+  if [ -z "$DEV_BRANCH" ]; then
+    return
+  fi
+  if [ "$CURRENT_BRANCH" = "$DEV_BRANCH" ]; then
+    echo "Development branch: $DEV_BRANCH"
+    return
+  fi
+
+  echo "Switching to development branch: $DEV_BRANCH"
+  if ! git checkout "$DEV_BRANCH"; then
+    echo "Unable to switch to configured development branch: $DEV_BRANCH" >&2
+    exit 1
+  fi
+  CURRENT_BRANCH="$(git branch --show-current)"
+}
+
 CURRENT_BRANCH="$(git branch --show-current)"
+INITIAL_BRANCH="$CURRENT_BRANCH"
 PRE_RUN_STATUS="$(git_status_short_for_task)"
 
 echo "Repository root: $REPO_ROOT"
@@ -111,6 +130,15 @@ if [ -n "$PRE_RUN_STATUS" ]; then
   exit 1
 else
   echo "  clean"
+fi
+
+checkout_dev_branch
+PRE_RUN_STATUS="$(git_status_short_for_task)"
+if [ -n "$PRE_RUN_STATUS" ]; then
+  echo "Working tree has existing changes after switching branches:"
+  printf '%s\n' "$PRE_RUN_STATUS"
+  echo "Stopping to avoid mixing unrelated human changes with agent changes."
+  exit 1
 fi
 
 mkdir -p .hoca-runtime/runs .hoca-runtime/logs
@@ -221,7 +249,9 @@ cat > "$RUN_DIR/status.json" <<EOF
   "notify_telegram": "$NOTIFY_TELEGRAM",
   "requested_model": "$REQUESTED_MODEL",
   "repo_root": $(printf '%s' "$REPO_ROOT" | jq -Rs .),
-  "starting_branch": $(printf '%s' "$CURRENT_BRANCH" | jq -Rs .),
+  "starting_branch": $(printf '%s' "$INITIAL_BRANCH" | jq -Rs .),
+  "task_base_branch": $(printf '%s' "$CURRENT_BRANCH" | jq -Rs .),
+  "dev_branch": $(printf '%s' "$DEV_BRANCH" | jq -Rs .),
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
@@ -231,6 +261,9 @@ echo "HOCA run started: $RUN_ID"
 {
   echo "Repository root: $REPO_ROOT"
   echo "Current branch: $CURRENT_BRANCH"
+  if [ -n "$DEV_BRANCH" ]; then
+    echo "Development branch: $DEV_BRANCH"
+  fi
   echo "Working tree status before run:"
   echo "clean"
 } > "$RUN_DIR/workspace-validation.txt"

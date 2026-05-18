@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
@@ -52,6 +52,7 @@ class HocaConfig:
     auto_merge: bool = False
     require_tests: bool = True
     stop_on_dirty_tree: bool = True
+    dev_branch: str = "main"
 
     workspace_root: Path | None = None
 
@@ -81,14 +82,20 @@ class HocaConfig:
 
 
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
+    dotenv: dict[str, str] = {}
     if dotenv_path is not None:
-        load_dotenv(dotenv_path)
+        dotenv = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
     else:
-        load_dotenv()
+        default_dotenv = Path(".env")
+        if default_dotenv.exists():
+            dotenv = {k: v for k, v in dotenv_values(default_dotenv).items() if v is not None}
 
-    workspace_root = _resolve_path(os.environ.get("HOCA_WORKSPACE_ROOT"))
+    def config_value(name: str, default: str = "") -> str:
+        return os.environ.get(name, dotenv.get(name, default))
 
-    llm_model = os.environ.get("LLM_MODEL", "ollama/qwen-14b-pro")
+    workspace_root = _resolve_path(config_value("HOCA_WORKSPACE_ROOT") or None)
+
+    llm_model = config_value("LLM_MODEL", "ollama/qwen-14b-pro")
     if llm_model.startswith("ollama/"):
         default_base_url = "http://127.0.0.1:11434"
     elif llm_model.startswith("openai/"):
@@ -97,21 +104,24 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         default_base_url = ""
 
     return HocaConfig(
-        auto_merge=parse_bool(os.environ.get("HOCA_AUTO_MERGE"), default=False),
-        require_tests=parse_bool(os.environ.get("HOCA_REQUIRE_TESTS"), default=True),
-        stop_on_dirty_tree=parse_bool(os.environ.get("HOCA_STOP_ON_DIRTY_TREE"), default=True),
+        auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
+        require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
+        stop_on_dirty_tree=parse_bool(
+            config_value("HOCA_STOP_ON_DIRTY_TREE") or None, default=True
+        ),
+        dev_branch=config_value("HOCA_DEV_BRANCH", "main"),
         workspace_root=workspace_root,
-        ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen-14b-pro"),
+        ollama_base_url=config_value("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+        ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
         llm_model=llm_model,
-        llm_base_url=os.environ.get("LLM_BASE_URL", default_base_url),
-        webhook_secret=os.environ.get("HOCA_WEBHOOK_SECRET", ""),
-        webhook_url=os.environ.get("HOCA_WEBHOOK_URL", ""),
-        allowed_repos=os.environ.get("HOCA_ALLOWED_REPOS", ""),
-        max_webhook_bytes=int(os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536")),
-        notify_telegram=parse_bool(os.environ.get("HOCA_NOTIFY_TELEGRAM"), default=False),
-        telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
-        telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
+        llm_base_url=config_value("LLM_BASE_URL", default_base_url),
+        webhook_secret=config_value("HOCA_WEBHOOK_SECRET"),
+        webhook_url=config_value("HOCA_WEBHOOK_URL"),
+        allowed_repos=config_value("HOCA_ALLOWED_REPOS"),
+        max_webhook_bytes=int(config_value("HOCA_MAX_WEBHOOK_BYTES", "65536")),
+        notify_telegram=parse_bool(config_value("HOCA_NOTIFY_TELEGRAM") or None, default=False),
+        telegram_bot_token=config_value("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=config_value("TELEGRAM_CHAT_ID"),
     )
 
 

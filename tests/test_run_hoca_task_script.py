@@ -179,6 +179,42 @@ def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: 
     assert "Stopping to avoid mixing unrelated human changes" in result.stdout
 
 
+def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=tmp_path, check=True)
+    (tmp_path / "previous.txt").write_text("previous branch only\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "previous.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "previous task"],
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DEV_BRANCH"] = "main"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert "Switching to development branch: main" in result.stdout
+    assert branch == "feat/update-readme"
+    assert not (tmp_path / "previous.txt").exists()
+    assert '"starting_branch": "feat/previous-task"' in latest_status(tmp_path)
+    assert '"task_base_branch": "main"' in latest_status(tmp_path)
+
+
 def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
