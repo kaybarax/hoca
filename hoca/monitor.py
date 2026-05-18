@@ -156,6 +156,22 @@ def check_unrelated_directory(line: str, project_path: str) -> str | None:
     return None
 
 
+def should_scan_line_for_policy(line: str) -> bool:
+    """Skip passive OpenHands observations; scan agent actions and plain output."""
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return True
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return True
+    kind = str(event.get("kind", ""))
+    source = str(event.get("source", ""))
+    if source == "environment" or kind.endswith("ObservationEvent"):
+        return False
+    return True
+
+
 def _is_progress_line(line: str) -> bool:
     if not line.strip():
         return False
@@ -267,23 +283,24 @@ def monitor_process_stream(
                 stop_reason = "timeout"
                 break
 
-            dangerous = check_dangerous_command(line)
-            if dangerous:
-                _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
-                stop_reason = "dangerous_command"
-                break
+            if should_scan_line_for_policy(line):
+                dangerous = check_dangerous_command(line)
+                if dangerous:
+                    _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
+                    stop_reason = "dangerous_command"
+                    break
 
-            secret = check_secret_access(line, project_path)
-            if secret:
-                _record(events, "secret_access", f"Secret-like file access: {secret}")
-                stop_reason = "secret_access"
-                break
+                secret = check_secret_access(line, project_path)
+                if secret:
+                    _record(events, "secret_access", f"Secret-like file access: {secret}")
+                    stop_reason = "secret_access"
+                    break
 
-            unrelated = check_unrelated_directory(line, project_path)
-            if unrelated:
-                _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
-                stop_reason = "unrelated_directory"
-                break
+                unrelated = check_unrelated_directory(line, project_path)
+                if unrelated:
+                    _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
+                    stop_reason = "unrelated_directory"
+                    break
 
             if _is_progress_line(line):
                 with lock:
@@ -386,23 +403,24 @@ def monitor_process(
                 stop_reason = "timeout"
                 break
 
-            dangerous = check_dangerous_command(line)
-            if dangerous:
-                _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
-                stop_reason = "dangerous_command"
-                break
+            if should_scan_line_for_policy(line):
+                dangerous = check_dangerous_command(line)
+                if dangerous:
+                    _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
+                    stop_reason = "dangerous_command"
+                    break
 
-            secret = check_secret_access(line, project_path)
-            if secret:
-                _record(events, "secret_access", f"Secret-like file access: {secret}")
-                stop_reason = "secret_access"
-                break
+                secret = check_secret_access(line, project_path)
+                if secret:
+                    _record(events, "secret_access", f"Secret-like file access: {secret}")
+                    stop_reason = "secret_access"
+                    break
 
-            unrelated = check_unrelated_directory(line, project_path)
-            if unrelated:
-                _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
-                stop_reason = "unrelated_directory"
-                break
+                unrelated = check_unrelated_directory(line, project_path)
+                if unrelated:
+                    _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
+                    stop_reason = "unrelated_directory"
+                    break
 
             if _is_progress_line(line):
                 with lock:

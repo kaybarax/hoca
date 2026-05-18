@@ -53,6 +53,8 @@ class HocaConfig:
     require_tests: bool = True
     stop_on_dirty_tree: bool = True
     dev_branch: str = "main"
+    sync_dev_branch: bool = True
+    auto_stage_reviewed_changes: bool = True
 
     workspace_root: Path | None = None
 
@@ -110,6 +112,10 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
             config_value("HOCA_STOP_ON_DIRTY_TREE") or None, default=True
         ),
         dev_branch=config_value("HOCA_DEV_BRANCH", "main"),
+        sync_dev_branch=parse_bool(config_value("HOCA_SYNC_DEV_BRANCH") or None, default=True),
+        auto_stage_reviewed_changes=parse_bool(
+            config_value("HOCA_AUTO_STAGE_REVIEWED_CHANGES") or None, default=True
+        ),
         workspace_root=workspace_root,
         ollama_base_url=config_value("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
         ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
