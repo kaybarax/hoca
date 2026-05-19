@@ -152,6 +152,10 @@ class HocaModelConfig(JsonContract):
 
     _required_fields: ClassVar[tuple[str, ...]] = ("name", "model")
 
+    @property
+    def is_active(self) -> bool:
+        return bool(self.name.strip() and self.model.strip())
+
     def safe_dict(self) -> dict[str, Any]:
         data = self.to_dict()
         data["api_key"] = "***" if self.api_key else "(unset)"
@@ -205,24 +209,34 @@ class HocaModelPool(JsonContract):
 
     _required_fields: ClassVar[tuple[str, ...]] = ("models", "roles")
 
+    def active_models(self) -> list[HocaModelConfig]:
+        return [model for model in self.models if model.is_active]
+
     def safe_dict(self) -> dict[str, Any]:
         return {
             "schema_version": self.schema_version,
-            "models": [model.safe_dict() for model in self.models],
+            "models": [model.safe_dict() for model in self.active_models()],
             "roles": self.roles.to_dict(),
         }
 
+    def to_safe_json(self) -> str:
+        return _json_dumps(self.safe_dict())
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
+        from hoca.model_pool import validate_model_pool
+
         cls._validate_required(data)
         roles = _required(data, "roles")
         if not isinstance(roles, dict):
             raise ValueError("Contract field must be an object: roles")
-        return cls(
+        pool = cls(
             schema_version=int(data.get("schema_version", 1)),
             models=[HocaModelConfig.from_dict(item) for item in _object_list(data, "models")],
             roles=HocaRoleModelSelection.from_dict(roles),
         )
+        validate_model_pool(pool)
+        return pool
 
     @classmethod
     def from_json(cls, raw: str) -> Self:

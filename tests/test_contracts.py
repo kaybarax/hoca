@@ -774,13 +774,54 @@ def test_model_pool_serializes_with_safe_redaction() -> None:
                 model="ollama/qwen-14b-pro",
                 base_url="http://127.0.0.1:11434",
                 api_key="secret",
-            )
+            ),
+            HocaModelConfig(
+                name="local-fast",
+                model="ollama/qwen-7b-pro",
+            ),
+            HocaModelConfig(
+                name="reviewer-strong",
+                model="openai/gpt-oss-20b",
+            ),
         ],
         roles=sample_role_selection(),
     )
 
     assert HocaModelPool.from_json(pool.to_json()) == pool
     assert pool.safe_dict()["models"][0]["api_key"] == "***"
+    assert "secret" not in pool.to_safe_json()
+
+
+def test_model_pool_ignores_inactive_models_in_safe_dict() -> None:
+    pool = HocaModelPool(
+        models=[
+            HocaModelConfig(name="local-coder", model="ollama/qwen-14b-pro"),
+            HocaModelConfig(name="", model=""),
+        ],
+        roles=HocaRoleModelSelection(
+            manager="local-coder",
+            worker="local-coder",
+            reviewer="local-coder",
+            fallback="local-coder",
+        ),
+    )
+
+    assert len(pool.safe_dict()["models"]) == 1
+
+
+def test_model_pool_rejects_unknown_role_reference() -> None:
+    with pytest.raises(ValueError, match="must reference a configured model name"):
+        HocaModelPool.from_dict(
+            {
+                "models": [{"name": "local-coder", "model": "ollama/qwen-14b-pro"}],
+                "roles": {
+                    "manager": "local-coder",
+                    "worker": "local-coder",
+                    "reviewer": "missing",
+                    "fallback": "local-coder",
+                },
+            }
+        )
 
 
 def test_run_final_state_round_trips_json() -> None:

@@ -228,6 +228,23 @@ class TestModelPoolConfig:
         with pytest.raises(ValueError, match="active model pool"):
             pool.resolve_role("worker")
 
+    def test_duplicate_model_names_fail_config_load(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "HOCA_MODEL_1_NAME=local-coder\n"
+            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_MODEL_2_NAME=local-coder\n"
+            "HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro\n"
+        )
+        for index in range(1, 6):
+            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+
+        with pytest.raises(ValueError, match="Duplicate model pool names"):
+            load_config(dotenv_path=env_file)
+
 
 class TestSafeRepr:
     def test_secrets_are_masked(self) -> None:

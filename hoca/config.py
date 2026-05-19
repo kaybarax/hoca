@@ -164,6 +164,8 @@ class HocaConfig:
 
 
 def _load_model_pool(config_value) -> ModelPoolConfig:
+    from hoca.model_pool import validate_model_pool_config
+
     slots = tuple(
         ModelSlot(
             name=config_value(f"HOCA_MODEL_{index}_NAME"),
@@ -173,13 +175,15 @@ def _load_model_pool(config_value) -> ModelPoolConfig:
         )
         for index in range(1, 6)
     )
-    return ModelPoolConfig(
+    pool = ModelPoolConfig(
         slots=slots,
         manager_model=config_value("HOCA_MANAGER_MODEL"),
         worker_model=config_value("HOCA_WORKER_MODEL"),
         reviewer_model=config_value("HOCA_REVIEWER_MODEL"),
         fallback_model=config_value("HOCA_FALLBACK_MODEL"),
     )
+    validate_model_pool_config(pool)
+    return pool
 
 
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
