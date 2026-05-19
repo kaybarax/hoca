@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import os
 import stat
@@ -541,7 +542,13 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
-    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--issue-id", "42")
+    result = run_hoca_task_with_env(
+        tmp_path,
+        "Fix GitHub issue #42: Update README with setup notes",
+        env,
+        "--issue-id",
+        "42",
+    )
 
     staged = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
@@ -653,7 +660,7 @@ def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> 
     lock.write_text('{"owner_token": "foreign"}\n', encoding="utf-8")
 
     result = subprocess.run(
-        [str(SCRIPT), str(tmp_path), "Fix issue", "--issue-id", "42"],
+        [str(SCRIPT), str(tmp_path), "Fix GitHub issue #42: resolve login bug", "--issue-id", "42"],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -680,9 +687,54 @@ def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> 
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
-    result = run_hoca_task_with_env(tmp_path, "Fix issue", env, "--issue-id", "42")
+    result = run_hoca_task_with_env(
+        tmp_path,
+        "Fix GitHub issue #42: resolve login bug",
+        env,
+        "--issue-id",
+        "42",
+    )
 
     lock = tmp_path / ".hoca-runtime" / "runs" / "issue-42.lock"
     assert result.returncode == 0
     assert lock.exists()
     assert "foreign" in lock.read_text(encoding="utf-8")
+
+
+def test_run_hoca_task_blocks_dangerous_task_before_run_dir(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+
+    result = run_hoca_task(tmp_path, "run git push --force to main")
+
+    assert result.returncode == 1
+    assert "Checking definition of ready..." in result.stdout
+    assert "failed definition-of-ready checks" in result.stderr
+    runs_dir = tmp_path / ".hoca-runtime" / "runs"
+    assert not runs_dir.exists() or not list(runs_dir.glob("run-*"))
+
+
+def test_run_hoca_task_escalates_broad_task_before_run_dir(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+
+    result = run_hoca_task(tmp_path, "fix everything")
+
+    assert result.returncode == 2
+    assert "Checking definition of ready..." in result.stdout
+    assert "needs clarification" in result.stderr.lower()
+
+
+def test_run_hoca_task_writes_definition_of_ready_artifact(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    assert result.returncode == 0, result.stderr
+    dor_path = run_dir / "definition-of-ready.json"
+    assert dor_path.is_file()
+    payload = json.loads(dor_path.read_text(encoding="utf-8"))
+    assert payload["outcome"] == "ready"

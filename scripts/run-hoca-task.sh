@@ -6,7 +6,7 @@ if [ "$#" -lt 2 ]; then
   exit 1
 fi
 
-PROJECT_PATH="$(cd "$1" && pwd)"
+RAW_PROJECT_PATH="$1"
 TASK="$2"
 shift 2
 
@@ -55,6 +55,38 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+run_definition_of_ready_check() {
+  local dor_args=(
+    "$SCRIPT_DIR/check-definition-of-ready.sh"
+    "$1"
+    "$2"
+  )
+  if [ -n "${3:-}" ]; then
+    dor_args+=(--issue-id "$3")
+  fi
+  if [ -n "${4:-}" ]; then
+    dor_args+=(--run-dir "$4")
+  fi
+  "${dor_args[@]}"
+}
+
+echo "Checking definition of ready..."
+set +e
+DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID")"
+DOR_EXIT=$?
+set -e
+printf '%s\n' "$DOR_OUTPUT"
+if [ "$DOR_EXIT" -ne 0 ]; then
+  if [ "$DOR_EXIT" -eq 2 ]; then
+    echo "Stopping because the task needs clarification before HOCA can proceed safely." >&2
+  else
+    echo "Stopping because the task failed definition-of-ready checks." >&2
+  fi
+  exit "$DOR_EXIT"
+fi
+
+PROJECT_PATH="$(cd "$RAW_PROJECT_PATH" && pwd)"
 
 record_run_artifact() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.run_artifacts "$@"
@@ -246,6 +278,9 @@ RUN_DIR=".hoca-runtime/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
 printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
 
+echo "Recording definition-of-ready artifact..."
+run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$PROJECT_PATH/$RUN_DIR" >/dev/null
+
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
 cat > "$LOCK_METADATA_FILE" <<EOF
@@ -278,6 +313,25 @@ trap cleanup EXIT
 trap 'cleanup; exit 129' HUP
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
+
+EARLY_INIT_STATUS_ARGS=(
+  init-status "$RUN_DIR"
+  --run-id "$RUN_ID"
+  --task "$TASK"
+  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  --auto-merge "$AUTO_MERGE"
+  --notify-telegram "$NOTIFY_TELEGRAM"
+  --requested-model "$REQUESTED_MODEL"
+  --repo-root "$REPO_ROOT"
+  --starting-branch "$INITIAL_BRANCH"
+  --task-base-branch "$TASK_BASE_REF"
+  --dev-branch "$DEV_BRANCH"
+  --started-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+)
+if [ -n "$ISSUE_ID" ]; then
+  EARLY_INIT_STATUS_ARGS+=(--issue-id "$ISSUE_ID")
+fi
+record_run_artifact "${EARLY_INIT_STATUS_ARGS[@]}" >/dev/null 2>&1 || true
 
 update_status() {
   local new_status="$1"

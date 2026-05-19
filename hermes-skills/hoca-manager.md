@@ -138,6 +138,7 @@ Run deterministic preflight before creating a task branch:
 
 ```bash
 cd "$project_path"
+scripts/check-definition-of-ready.sh "$project_path" "$task" [--issue-id "$issue_id"]
 scripts/hoca-doctor.sh
 git rev-parse --is-inside-work-tree
 git rev-parse --show-toplevel
