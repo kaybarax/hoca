@@ -287,6 +287,57 @@ def test_pr_publisher_is_manager_only() -> None:
     assert "hoca-reviewer" in content
 
 
+def test_pr_publisher_defines_manual_procedures() -> None:
+    content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
+    required_sections = (
+        "### 1. Confirm publication decision",
+        "### 2. Build intended-file list",
+        "### 3. Safe stage",
+        "### 4. Commit",
+        "### 5. Create pull request",
+        "### 6. Merge policy",
+        "### 7. Cleanup and branch restoration",
+    )
+    for section in required_sections:
+        assert section in content
+
+
+def test_pr_publisher_defines_safe_staging_prerequisites() -> None:
+    content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
+    assert "## Prerequisites (safe staging)" in content
+    assert "intended-files.txt" in content
+    assert "intended-files-source.txt" in content
+    assert "git add ." in content
+    assert "hoca.review_gate" in content
+    assert "require_tests=true" in content
+    assert "require_review_lgtm=true" in content
+
+
+def test_pr_publisher_defines_pr_body_requirements() -> None:
+    content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
+    assert "## PR body requirements" in content
+    for section in ("Summary", "Changes", "Validation", "Code Review", "Risk", "Linked Issue"):
+        assert section in content
+    assert "tests-summary.md" in content
+    assert "known_followups" in content or "tech debt" in content.lower()
+
+
+def test_pr_publisher_defines_token_handling() -> None:
+    content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
+    assert "## Token handling" in content
+    assert "GITHUB_TOKEN" in content
+    lowered = content.lower()
+    assert "never include tokens" in lowered or "must not receive" in lowered
+
+
+def test_pr_publisher_defines_cleanup_and_branch_restoration() -> None:
+    content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
+    assert "branch restoration" in content.lower()
+    assert "HOCA_DEV_BRANCH" in content
+    assert "record-final" in content
+    assert "HOCA_KEEP_RUNTIME" in content
+
+
 def test_sandbox_policy_documents_isolation() -> None:
     content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
     assert "HOCA_USE_SANDBOX" in content or "sandbox" in content.lower()
