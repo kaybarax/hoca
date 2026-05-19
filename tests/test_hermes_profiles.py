@@ -176,6 +176,49 @@ def test_worker_soul_documents_worker_role_contract() -> None:
     assert "hoca-manager" in content
 
 
+REVIEWER_SOUL_REQUIRED_SECTIONS = (
+    "## Review discipline",
+    "## Severity classification",
+    "## Review report obligations",
+    "## PR follow-up notes",
+    "## Hard limits",
+)
+
+REVIEWER_SOUL_REQUIRED_PHRASES = (
+    "principal reviewer",
+    "qa engineer",
+    "release",
+    "correctness",
+    "safety",
+    "test adequacy",
+    "scope control",
+    "severity",
+    "pedantic",
+    "hocareviewreport",
+    "stage, commit, push, merge",
+    "known_followups",
+    "required_fix",
+    "non-blocking",
+    "repair review pass",
+)
+
+
+def test_reviewer_soul_documents_reviewer_role_contract() -> None:
+    content = (PROFILES_DIR / "hoca-reviewer" / "SOUL.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    for section in REVIEWER_SOUL_REQUIRED_SECTIONS:
+        assert section in content, (
+            f"hoca-reviewer/SOUL.md is missing section {section!r}"
+        )
+    for phrase in REVIEWER_SOUL_REQUIRED_PHRASES:
+        assert phrase in lowered, (
+            f"hoca-reviewer/SOUL.md should mention {phrase!r}"
+        )
+    assert "hoca-worker" in content
+    assert "hoca-manager" in content
+    assert "quality signals" in lowered or "signal provider" in lowered
+
+
 def test_profiles_readme_lists_all_profiles() -> None:
     content = (PROFILES_DIR / "README.md").read_text(encoding="utf-8")
     for profile_name in PROFILE_NAMES:
