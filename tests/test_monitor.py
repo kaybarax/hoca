@@ -8,6 +8,7 @@ from pathlib import Path
 from hoca.monitor import (
     MonitorEvent,
     MonitorResult,
+    check_manager_only_git_lifecycle_command,
     check_dangerous_command,
     check_secret_access,
     check_unrelated_directory,
@@ -82,6 +83,20 @@ class TestCheckDangerousCommand:
 
     def test_safe_git_push_u(self):
         assert check_dangerous_command("git push -u origin HEAD") is None
+
+
+class TestManagerOnlyGitLifecyclePolicy:
+    def test_worker_cannot_stage_files(self):
+        assert check_manager_only_git_lifecycle_command("git add src/main.py", "worker") is not None
+
+    def test_reviewer_cannot_create_prs(self):
+        assert check_manager_only_git_lifecycle_command("gh pr create --fill", "reviewer") is not None
+
+    def test_manager_can_use_git_lifecycle(self):
+        assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "manager") is None
+
+    def test_unrelated_command_is_allowed_for_worker(self):
+        assert check_manager_only_git_lifecycle_command("npm test", "worker") is None
 
 
 class TestCheckSecretAccess:
@@ -263,6 +278,23 @@ class TestMonitorProcess:
         assert result.stop_reason == "timeout"
         assert any(e.kind == "timeout" for e in result.events)
 
+    def test_worker_git_add_stops(self, tmp_path: Path):
+        proc = subprocess.Popen(
+            ["printf", "editing files\ngit add src/main.py\n"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        result = monitor_process(
+            proc,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+            actor_role="worker",
+        )
+        assert result.stop_reason == "manager_only_git_lifecycle"
+
 
 class TestRmRfSafeTargets:
     def test_rm_rf_dist_allowed(self):
@@ -415,4 +447,18 @@ class TestMonitorProcessStream:
             stall_seconds=10,
         )
         assert result.stop_reason == "dangerous_command"
+        assert result.exit_code == 1
+
+    def test_reviewer_pr_create_in_stream_stops(self, tmp_path: Path):
+        import io
+        stream = io.StringIO("reviewing\ngh pr create --fill\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+            actor_role="reviewer",
+        )
+        assert result.stop_reason == "manager_only_git_lifecycle"
         assert result.exit_code == 1

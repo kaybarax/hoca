@@ -29,6 +29,16 @@ DANGEROUS_COMMANDS: list[re.Pattern[str]] = [
     re.compile(r"\bgit\s+merge\b"),
 ]
 
+GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS: list[re.Pattern[str]] = [
+    re.compile(r"\bgit\s+add\b"),
+    re.compile(r"\bgit\s+commit\b"),
+    re.compile(r"\bgit\s+push\b"),
+    re.compile(r"\bgh\s+pr\s+create\b"),
+    re.compile(r"\bgh\s+pr\s+merge\b"),
+]
+
+MANAGER_ONLY_GIT_LIFECYCLE_ROLES = frozenset({"worker", "reviewer", "openhands"})
+
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset({
     "dist", "dist/", "./dist", "./dist/",
@@ -107,7 +117,6 @@ def _is_safe_rm_target(line: str) -> bool:
         # e.g., "apps/api-gateway/dist" is safe because basename is "dist"
         parts = base.split("/")
         leaf = parts[-1] if parts else ""
-        normalized = target.rstrip("/") + "/"
         if target in _SAFE_RM_TARGETS:
             continue
         if leaf in {t.rstrip("/") for t in _SAFE_RM_TARGETS}:
@@ -124,6 +133,16 @@ def check_dangerous_command(line: str) -> str | None:
             return _RM_RF_BARE.pattern
 
     for pattern in DANGEROUS_COMMANDS:
+        if pattern.search(line):
+            return pattern.pattern
+    return None
+
+
+def check_manager_only_git_lifecycle_command(line: str, actor_role: str) -> str | None:
+    role = actor_role.strip().lower()
+    if role not in MANAGER_ONLY_GIT_LIFECYCLE_ROLES:
+        return None
+    for pattern in GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS:
         if pattern.search(line):
             return pattern.pattern
     return None
@@ -217,6 +236,7 @@ def monitor_process_stream(
     stall_seconds: int = DEFAULT_STALL_SECONDS,
     output_file=None,
     cancel_event: threading.Event | None = None,
+    actor_role: str = "worker",
 ) -> MonitorResult:
     """Monitor a stream (e.g. stdin piped from docker) for dangerous activity.
 
@@ -233,7 +253,9 @@ def monitor_process_stream(
     lock = threading.Lock()
 
     _record(
-        events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
+        events,
+        "info",
+        f"Monitoring started, role={actor_role}, timeout={timeout_seconds}s, stall={stall_seconds}s",
     )
 
     _cancel = cancel_event or threading.Event()
@@ -288,6 +310,17 @@ def monitor_process_stream(
                 if dangerous:
                     _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
                     stop_reason = "dangerous_command"
+                    break
+
+                manager_only = check_manager_only_git_lifecycle_command(line, actor_role)
+                if manager_only:
+                    _record(
+                        events,
+                        "manager_only_git_lifecycle",
+                        f"Detected manager-only Git lifecycle command for {actor_role}: "
+                        f"{manager_only} in: {line[:200]}",
+                    )
+                    stop_reason = "manager_only_git_lifecycle"
                     break
 
                 secret = check_secret_access(line, project_path)
@@ -351,6 +384,7 @@ def monitor_process(
     run_dir: Path,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     stall_seconds: int = DEFAULT_STALL_SECONDS,
+    actor_role: str = "worker",
 ) -> MonitorResult:
     events: list[MonitorEvent] = []
     start_time = _now()
@@ -360,7 +394,9 @@ def monitor_process(
     lock = threading.Lock()
 
     _record(
-        events, "info", f"Monitoring started, timeout={timeout_seconds}s, stall={stall_seconds}s"
+        events,
+        "info",
+        f"Monitoring started, role={actor_role}, timeout={timeout_seconds}s, stall={stall_seconds}s",
     )
 
     def _watchdog() -> None:
@@ -408,6 +444,17 @@ def monitor_process(
                 if dangerous:
                     _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
                     stop_reason = "dangerous_command"
+                    break
+
+                manager_only = check_manager_only_git_lifecycle_command(line, actor_role)
+                if manager_only:
+                    _record(
+                        events,
+                        "manager_only_git_lifecycle",
+                        f"Detected manager-only Git lifecycle command for {actor_role}: "
+                        f"{manager_only} in: {line[:200]}",
+                    )
+                    stop_reason = "manager_only_git_lifecycle"
                     break
 
                 secret = check_secret_access(line, project_path)

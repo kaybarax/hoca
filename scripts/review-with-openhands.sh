@@ -66,7 +66,7 @@ If not acceptable, list required fixes clearly."
 
 echo "Running OpenHands review..."
 set +e
-"$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$REVIEW_TASK" "$REVIEW_DIR"
+HOCA_AGENT_ROLE=reviewer "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$REVIEW_TASK" "$REVIEW_DIR"
 REVIEW_EXIT=$?
 set -e
 

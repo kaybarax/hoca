@@ -48,6 +48,7 @@ esac
 TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
 USE_SANDBOX="${HOCA_USE_SANDBOX:-false}"
+AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
 
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
@@ -56,12 +57,24 @@ echo "  PROJECT_PATH=$PROJECT_PATH"
 echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
 echo "  SANDBOX=$USE_SANDBOX"
+echo "  ROLE=$AGENT_ROLE"
+
+cat > "$RUN_DIR/agent-role-policy.txt" <<EOF
+role: $AGENT_ROLE
+manager_owned_git_lifecycle: true
+forbidden_for_worker_and_reviewer:
+- git add
+- git commit
+- git push
+- gh pr create
+- gh pr merge
+EOF
 
 # --- Sandbox mode: run everything inside a Docker container ---
 if [ "$USE_SANDBOX" = "true" ] && command -v docker >/dev/null 2>&1; then
   SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
   if [ -x "$SANDBOX_SCRIPT" ]; then
-    exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL"
+    exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
   fi
   echo "Warning: HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found. Falling back to host execution."
 fi
@@ -167,7 +180,8 @@ run_dir = Path(sys.argv[2])
 output_file = sys.argv[3]
 timeout = int(sys.argv[4])
 stall = int(sys.argv[5])
-oh_args = sys.argv[6:]
+actor_role = sys.argv[6]
+oh_args = sys.argv[7:]
 
 env_override = dict(__import__('os').environ)
 env_override['LLM_MODEL'] = '${MODEL}'
@@ -207,6 +221,7 @@ with open(output_file, 'w') as out_f:
         run_dir=run_dir,
         timeout_seconds=timeout,
         stall_seconds=stall,
+        actor_role=actor_role,
     )
 
 with open(str(run_dir / 'openhands-exit-code.txt'), 'w') as f:
@@ -224,7 +239,7 @@ if result.stop_reason != 'completed':
     sys.exit(1)
 
 sys.exit(result.exit_code)
-" "$PROJECT_PATH" "$RUN_DIR" "$OUTPUT_FILE" "$TIMEOUT" "$STALL" "${OH_FLAGS[@]}"
+" "$PROJECT_PATH" "$RUN_DIR" "$OUTPUT_FILE" "$TIMEOUT" "$STALL" "$AGENT_ROLE" "${OH_FLAGS[@]}"
 EXIT_CODE=$?
 set -e
 

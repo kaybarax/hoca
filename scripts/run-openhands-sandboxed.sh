@@ -6,7 +6,7 @@ set -euo pipefail
 # The project is mounted at /workspace and HOCA's monitor watches stdout.
 
 if [ "$#" -lt 8 ]; then
-  echo "Usage: run-openhands-sandboxed.sh <project-path> <task> <run-dir> <model> <base-url> <api-key> <timeout> <stall>"
+  echo "Usage: run-openhands-sandboxed.sh <project-path> <task> <run-dir> <model> <base-url> <api-key> <timeout> <stall> [agent-role]"
   exit 1
 fi
 
@@ -18,6 +18,7 @@ BASE_URL="$5"
 API_KEY="$6"
 TIMEOUT="$7"
 STALL="$8"
+AGENT_ROLE="${9:-worker}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -150,6 +151,7 @@ run_dir = Path(sys.argv[2])
 output_file = sys.argv[3]
 timeout = int(sys.argv[4])
 stall = int(sys.argv[5])
+actor_role = sys.argv[6]
 
 with open(output_file, 'w') as out_f:
     result = monitor_process_stream(
@@ -159,6 +161,7 @@ with open(output_file, 'w') as out_f:
         timeout_seconds=timeout,
         stall_seconds=stall,
         output_file=out_f,
+        actor_role=actor_role,
     )
 
 with open(str(run_dir / 'openhands-exit-code.txt'), 'w') as f:
@@ -176,7 +179,7 @@ if result.stop_reason != 'completed':
     sys.exit(1)
 
 sys.exit(result.exit_code)
-" "$PROJECT_PATH" "$RUN_DIR" "$RUN_DIR/openhands-output.jsonl" "$TIMEOUT" "$STALL"
+" "$PROJECT_PATH" "$RUN_DIR" "$RUN_DIR/openhands-output.jsonl" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
 EXIT_CODE=$?
 set -e
 

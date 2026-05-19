@@ -175,7 +175,9 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-14b-pro" in result.stdout
+    assert "ROLE=worker" in result.stdout
     assert "OpenHands fake run complete." in result.stdout
+    assert "git add" in (run_dir / "agent-role-policy.txt").read_text(encoding="utf-8")
 
 
 def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
@@ -232,6 +234,10 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Running OpenHands review" in result.stdout
+    assert "ROLE=reviewer" in result.stdout
     assert (run_dir / "openhands-review.txt").exists()
+    assert "role: reviewer" in (run_dir / "review" / "agent-role-policy.txt").read_text(
+        encoding="utf-8"
+    )
     assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert (run_dir / "review" / "git-diff.patch").is_file()
