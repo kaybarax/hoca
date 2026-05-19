@@ -75,6 +75,63 @@ def _load_structured_report(path: Path) -> HocaReviewReport:
         raise ReviewGateError(f"Malformed HocaReviewReport at {path}: {exc}") from exc
 
 
+def has_review_artifacts(run_dir: Path, *, round_number: int = 1) -> bool:
+    run_dir = run_dir.resolve()
+    return (run_dir / "openhands-review.txt").exists() or default_report_path(
+        run_dir, round_number
+    ).exists()
+
+
+def code_review_pr_fragment(result: ReviewGateResult) -> str:
+    footer = "Full review output is saved in the HOCA run artifacts."
+    if result.approved:
+        return f"**Status**: Review gate approved (LGTM).\n\n{footer}"
+    if result.report.verdict == "blocked":
+        return f"**Status**: Review blocked.\n\n{footer}"
+    return (
+        "**Status**: Review requires fixes "
+        "(human review recommended).\n\n"
+        f"{footer}"
+    )
+
+
+def code_review_error_fragment() -> str:
+    return (
+        "**Status**: Review gate could not evaluate review artifacts "
+        "(human review recommended).\n\n"
+        "Full review output is saved in the HOCA run artifacts."
+    )
+
+
+def task_report_review_status(result: ReviewGateResult) -> str:
+    if result.approved:
+        return "LGTM"
+    if result.report.verdict == "blocked":
+        return "blocked"
+    return "required fixes or inconclusive"
+
+
+def try_resolve_review_gate(
+    run_dir: Path,
+    *,
+    review_text_path: Path | None = None,
+    run_id: str | None = None,
+    round_number: int = 1,
+    structured_report_path: Path | None = None,
+) -> ReviewGateResult | None:
+    run_dir = run_dir.resolve()
+    if not has_review_artifacts(run_dir, round_number=round_number):
+        return None
+    resolved_review_text = review_text_path or (run_dir / "openhands-review.txt")
+    return evaluate_review_gate(
+        run_dir,
+        review_text_path=resolved_review_text,
+        run_id=run_id,
+        round_number=round_number,
+        structured_report_path=structured_report_path,
+    )
+
+
 def evaluate_review_gate(
     run_dir: Path,
     *,
@@ -113,18 +170,31 @@ def evaluate_review_gate(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate a HOCA review gate.")
     parser.add_argument("run_dir")
-    parser.add_argument("--review-text", required=True)
+    parser.add_argument("--review-text")
     parser.add_argument("--run-id")
     parser.add_argument("--round", type=int, default=1, dest="round_number")
     parser.add_argument("--structured-report")
+    parser.add_argument(
+        "--print",
+        choices=("verdict", "status", "pr-fragment"),
+        help="Print only the verdict, task-report status label, or PR fragment text.",
+    )
     args = parser.parse_args(argv)
 
+    run_dir = Path(args.run_dir)
+    round_number = args.round_number
+    review_text_path = (
+        Path(args.review_text)
+        if args.review_text
+        else run_dir / "openhands-review.txt"
+    )
+
     try:
-        result = evaluate_review_gate(
-            Path(args.run_dir),
-            review_text_path=Path(args.review_text),
+        result = try_resolve_review_gate(
+            run_dir,
+            review_text_path=review_text_path,
             run_id=args.run_id,
-            round_number=args.round_number,
+            round_number=round_number,
             structured_report_path=(
                 Path(args.structured_report) if args.structured_report else None
             ),
@@ -133,10 +203,21 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 3
 
-    print(
-        f"Review gate verdict: {result.report.verdict} "
-        f"(source: {result.source}, report: {result.report_path})"
-    )
+    if result is None:
+        print("Review artifacts were not found.", file=sys.stderr)
+        return 3
+
+    if args.print == "verdict":
+        print(result.report.verdict)
+    elif args.print == "status":
+        print(task_report_review_status(result))
+    elif args.print == "pr-fragment":
+        print(code_review_pr_fragment(result), end="")
+    else:
+        print(
+            f"Review gate verdict: {result.report.verdict} "
+            f"(source: {result.source}, report: {result.report_path})"
+        )
     if result.report.verdict == "LGTM":
         return 0
     if result.report.verdict == "fix_required":

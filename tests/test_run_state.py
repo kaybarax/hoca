@@ -425,7 +425,7 @@ def test_summarize_run_for_pr_body_from_legacy_files(tmp_path: Path) -> None:
     assert fragments["summary"] == "Add feature with details"
     assert "src/app.py" in fragments["changes"]
     assert "passed" in fragments["validation"]
-    assert "LGTM present" in fragments["code-review"]
+    assert "Review gate approved" in fragments["code-review"]
     assert fragments["risk"] == "Low rollout risk."
     assert fragments["linked-issue"] == "Issue #99"
 
@@ -468,8 +468,31 @@ def test_summarize_run_for_pr_body_uses_structured_reports(tmp_path: Path) -> No
 
     assert "Tests passed" in fragments["validation"]
     assert "tests_failed" in fragments["validation"]
-    assert "LGTM not detected" in fragments["code-review"]
+    assert "Review requires fixes" in fragments["code-review"]
     assert "Needs another pass" not in fragments["code-review"]
+
+
+def test_summarize_run_for_pr_body_prefers_structured_lgtm_over_legacy_text(
+    tmp_path: Path,
+) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-structured-lgtm")
+    (run_dir / "openhands-review.txt").write_text("Please fix tests.\n", encoding="utf-8")
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=1),
+        {
+            "schema_version": 1,
+            "run_id": "run-structured-lgtm",
+            "round": 1,
+            "role": "reviewer",
+            "verdict": "LGTM",
+            "findings": [],
+            "pr_notes": {"summary": ["Approved after fixes"], "known_followups": []},
+        },
+    )
+
+    fragments = summarize_run_for_pr_body(run_dir, task="Ship change")
+
+    assert "Review gate approved" in fragments["code-review"]
 
 
 def test_workflow_fields_from_config_defaults() -> None:

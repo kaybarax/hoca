@@ -217,16 +217,19 @@ else
   write_fragment "validation" "_No \`tests-summary.md\` found in the run directory._"
 fi
 
-if [ -f "$RUN_DIR/openhands-review.txt" ]; then
-  {
-    if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-      echo "**Status**: LGTM present in code review output."
-    else
-      echo "**Status**: LGTM not detected in code review output (human review recommended)."
-    fi
-    echo ""
-    echo "Full review output is saved in the HOCA run artifacts."
-  } > "$RUN_DIR/pr-fragment-code-review.txt"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REVIEW_ROUND="${HOCA_REVIEW_ROUND:-1}"
+STRUCTURED_REVIEW="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
+if [ -f "$RUN_DIR/openhands-review.txt" ] || [ -f "$STRUCTURED_REVIEW" ]; then
+  if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+    --review-text "$RUN_DIR/openhands-review.txt" \
+    --run-id "$(basename "$RUN_DIR")" \
+    --round "$REVIEW_ROUND" \
+    --print pr-fragment > "$RUN_DIR/pr-fragment-code-review.txt" 2>/dev/null; then
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+      'from hoca.review_gate import code_review_error_fragment; print(code_review_error_fragment(), end="")' \
+      > "$RUN_DIR/pr-fragment-code-review.txt"
+  fi
 else
   write_fragment "code-review" "_No \`openhands-review.txt\` found in the run directory._"
 fi

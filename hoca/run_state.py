@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from hoca.config import HocaConfig, load_config
+from hoca.review_gate import (
+    ReviewGateError,
+    code_review_error_fragment,
+    code_review_pr_fragment,
+    try_resolve_review_gate,
+)
 from hoca.run_layout import (
     ensure_run_layout,
     final_state_path,
@@ -247,37 +253,22 @@ def summarize_run_for_pr_body(
         validation_text or "_No `tests-summary.md` found in the run directory._"
     )
 
-    review_text = _read_text_artifact(run_dir / "openhands-review.txt")
-    if not review_text:
-        review_round = current_round(run_dir, prefix="review-report-", subdir="reviews")
-        if review_round:
-            report = read_optional_report(
-                run_dir, "review_report", round_number=review_round
-            )
-            if report:
-                verdict = report.get("verdict", "unknown")
-                pr_notes = report.get("pr_notes") or {}
-                notes = pr_notes.get("summary") or []
-                review_lines = [f"**Verdict**: {verdict}"]
-                review_lines.extend(f"- {note}" for note in notes)
-                review_text = "\n".join(review_lines)
+    review_round = current_round(run_dir, prefix="review-report-", subdir="reviews") or 1
+    review_gate_error = False
+    review_result = None
+    try:
+        review_result = try_resolve_review_gate(run_dir, round_number=review_round)
+    except ReviewGateError:
+        review_gate_error = True
 
-    if review_text:
-        if "LGTM" in review_text.upper():
-            fragments["code-review"] = (
-                "**Status**: LGTM present in code review output.\n\n"
-                "Full review output is saved in the HOCA run artifacts."
-            )
-        else:
-            fragments["code-review"] = (
-                "**Status**: LGTM not detected in code review output "
-                "(human review recommended).\n\n"
-                "Full review output is saved in the HOCA run artifacts."
-            )
-    else:
+    if review_gate_error:
+        fragments["code-review"] = code_review_error_fragment()
+    elif review_result is None:
         fragments["code-review"] = (
             "_No `openhands-review.txt` found in the run directory._"
         )
+    else:
+        fragments["code-review"] = code_review_pr_fragment(review_result)
 
     fragments["risk"] = _read_text_artifact(run_dir / "risk-notes.txt") or (
         "None noted in run metadata."

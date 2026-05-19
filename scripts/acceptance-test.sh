@@ -221,6 +221,8 @@ assert_file_exists "$RUN_DIR/pr-url.txt" "pull request URL"
 assert_file_contains "$RUN_DIR/openhands-exit-code.txt" '^0$' "OpenHands exit code"
 assert_file_contains "$RUN_DIR/tests-summary.md" 'no-tests-detected' "no-test project summary"
 assert_file_contains "$RUN_DIR/openhands-review.txt" 'LGTM' "Code review"
+assert_file_exists "$RUN_DIR/reviews/review-report-1.json" "structured review report"
+assert_file_contains "$RUN_DIR/reviews/review-report-1.json" '"verdict": "LGTM"' "structured review verdict"
 assert_file_contains "$RUN_DIR/pr-url.txt" '^https://github.com/example/disposable/pull/1$' "pull request URL"
 assert_file_contains "$TEST_REPO/README.md" 'Local Development' "README update"
 

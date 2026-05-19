@@ -10,6 +10,8 @@ PROJECT_PATH="$(cd "$1" && pwd)"
 RUN_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
 REPORT_FILE="$RUN_DIR/task-report.md"
 STATUS_FILE="$RUN_DIR/status.json"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_PATH"
 
@@ -131,11 +133,18 @@ else
 fi
 
 CODE_REVIEW="Not run"
-if [ -f "$RUN_DIR/openhands-review.txt" ]; then
-  if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-    CODE_REVIEW="LGTM"
-  else
-    CODE_REVIEW="required fixes or inconclusive"
+REVIEW_ROUND="${HOCA_REVIEW_ROUND:-1}"
+STRUCTURED_REVIEW="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
+if [ -f "$RUN_DIR/openhands-review.txt" ] || [ -f "$STRUCTURED_REVIEW" ]; then
+  CODE_REVIEW="$(
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+      --review-text "$RUN_DIR/openhands-review.txt" \
+      --run-id "$(basename "$RUN_DIR")" \
+      --round "$REVIEW_ROUND" \
+      --print status 2>/dev/null || true
+  )"
+  if [ -z "$CODE_REVIEW" ]; then
+    CODE_REVIEW="review gate error"
   fi
 fi
 

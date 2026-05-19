@@ -5,7 +5,16 @@ from pathlib import Path
 import pytest
 
 from hoca.contracts import HocaReviewReport
-from hoca.review_gate import ReviewGateError, evaluate_review_gate, legacy_text_to_report, main
+from hoca.review_gate import (
+    ReviewGateError,
+    ReviewGateResult,
+    code_review_pr_fragment,
+    evaluate_review_gate,
+    legacy_text_to_report,
+    main,
+    task_report_review_status,
+    try_resolve_review_gate,
+)
 
 
 def test_legacy_lgtm_converts_to_approved_structured_report(tmp_path: Path) -> None:
@@ -88,3 +97,48 @@ def test_cli_returns_distinct_exit_for_blocked_report(tmp_path: Path) -> None:
     (reports / "review-report-1.json").write_text(blocked.to_json(), encoding="utf-8")
 
     assert main([str(run_dir), "--review-text", str(review_text), "--run-id", "run-1"]) == 4
+
+
+def test_try_resolve_review_gate_returns_none_without_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+
+    assert try_resolve_review_gate(run_dir, run_id="run-1") is None
+
+
+def test_cli_print_status_for_legacy_lgtm(tmp_path: Path, capsys) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    review_text = run_dir / "openhands-review.txt"
+    review_text.write_text("LGTM\n", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                str(run_dir),
+                "--review-text",
+                str(review_text),
+                "--run-id",
+                "run-1",
+                "--print",
+                "status",
+            ]
+        )
+        == 0
+    )
+    assert capsys.readouterr().out.strip() == "LGTM"
+
+
+def test_code_review_pr_fragment_reflects_blocked_verdict() -> None:
+    report = HocaReviewReport(
+        run_id="run-1",
+        round=1,
+        role="reviewer",
+        verdict="blocked",
+        findings=[],
+        pr_notes={"summary": ["Reviewer could not complete review."], "known_followups": []},
+    )
+    result = ReviewGateResult(report=report, report_path=Path("review.json"), source="structured")
+
+    assert "Review blocked" in code_review_pr_fragment(result)
+    assert task_report_review_status(result) == "blocked"

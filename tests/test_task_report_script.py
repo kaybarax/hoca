@@ -67,6 +67,49 @@ def test_task_report_contains_required_run_fields(tmp_path: Path) -> None:
     assert "`abc123`" in report
 
 
+def test_task_report_prefers_structured_review_gate_over_legacy_text(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-structured-review"
+    run_dir.mkdir(parents=True)
+    (run_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-structured-review",
+                "task": "Structured review gate",
+                "status": "committed",
+                "started_at": "2026-05-13T01:02:03Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "openhands-review.txt").write_text("LGTM\n", encoding="utf-8")
+    reviews = run_dir / "reviews"
+    reviews.mkdir(parents=True)
+    (reviews / "review-report-1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_id": "run-structured-review",
+                "round": 1,
+                "role": "reviewer",
+                "verdict": "blocked",
+                "findings": [],
+                "pr_notes": {
+                    "summary": ["Reviewer could not complete review."],
+                    "known_followups": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_report(tmp_path, run_dir)
+
+    assert result.returncode == 0, result.stderr
+    report = (run_dir / "task-report.md").read_text(encoding="utf-8")
+    assert "- Status: blocked" in report
+
+
 def test_task_report_links_logs_without_dumping_large_log_content(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-2"
