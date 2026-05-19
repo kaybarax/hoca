@@ -4,6 +4,7 @@ import pytest
 
 from hoca.config import (
     DEFAULT_POLICY,
+    HocaConfig,
     PolicyError,
     assert_review_approved,
     assert_commit_allowed,
@@ -13,6 +14,13 @@ from hoca.config import (
 
 
 def test_required_defaults_are_safe() -> None:
+    cfg = HocaConfig()
+    assert cfg.use_hermes_profiles is False
+    assert cfg.use_structured_reports is True
+    assert cfg.use_kanban is False
+    assert cfg.use_sandbox is True
+    assert cfg.max_total_rounds == 3
+    assert cfg.model_pool.is_active is False
     assert DEFAULT_POLICY.auto_merge is False
     assert DEFAULT_POLICY.require_pull_request is True
     assert DEFAULT_POLICY.forbid_direct_push_to_main is True

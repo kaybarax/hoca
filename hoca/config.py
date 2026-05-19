@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from dotenv import dotenv_values
 
@@ -11,6 +12,7 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
 _SECRET_PATTERN = re.compile(r"(token|secret|password|api_key|private_key)", re.IGNORECASE)
+RoleName = Literal["manager", "worker", "reviewer", "fallback"]
 
 
 def parse_bool(value: str | None, *, default: bool) -> bool:
@@ -48,7 +50,82 @@ DEFAULT_POLICY = SafetyPolicy()
 
 
 @dataclass(frozen=True)
+class ModelSlot:
+    name: str = ""
+    model: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.name and self.model)
+
+    def safe_repr(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "model": self.model,
+            "base_url": self.base_url,
+            "api_key": "***" if self.api_key else "(unset)",
+        }
+
+
+@dataclass(frozen=True)
+class ModelPoolConfig:
+    slots: tuple[ModelSlot, ...] = ()
+    manager_model: str = ""
+    worker_model: str = ""
+    reviewer_model: str = ""
+    fallback_model: str = ""
+
+    @property
+    def active_slots(self) -> tuple[ModelSlot, ...]:
+        return tuple(slot for slot in self.slots if slot.is_active)
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.active_slots)
+
+    def slot_by_name(self) -> dict[str, ModelSlot]:
+        return {slot.name: slot for slot in self.active_slots}
+
+    def resolve_role(self, role: RoleName) -> ModelSlot | None:
+        if not self.is_active:
+            return None
+        requested = {
+            "manager": self.manager_model,
+            "worker": self.worker_model,
+            "reviewer": self.reviewer_model,
+            "fallback": self.fallback_model,
+        }[role]
+        selected_name = requested or self.fallback_model
+        if not selected_name:
+            raise ValueError(
+                f"HOCA_{role.upper()}_MODEL is unset and HOCA_FALLBACK_MODEL is not configured"
+            )
+        slots = self.slot_by_name()
+        try:
+            return slots[selected_name]
+        except KeyError as exc:
+            raise ValueError(f"Configured model name is not in the active model pool: {selected_name}") from exc
+
+    def safe_repr(self) -> dict[str, object]:
+        return {
+            "slots": [slot.safe_repr() for slot in self.slots],
+            "manager_model": self.manager_model,
+            "worker_model": self.worker_model,
+            "reviewer_model": self.reviewer_model,
+            "fallback_model": self.fallback_model,
+        }
+
+
+@dataclass(frozen=True)
 class HocaConfig:
+    use_hermes_profiles: bool = False
+    use_structured_reports: bool = True
+    use_kanban: bool = False
+    use_sandbox: bool = True
+    max_total_rounds: int = 3
+
     auto_merge: bool = False
     require_tests: bool = True
     stop_on_dirty_tree: bool = True
@@ -62,6 +139,7 @@ class HocaConfig:
     ollama_model: str = "qwen-14b-pro"
     llm_model: str = "ollama/qwen-14b-pro"
     llm_base_url: str = "http://127.0.0.1:11434"
+    model_pool: ModelPoolConfig = ModelPoolConfig()
 
     webhook_secret: str = ""
     webhook_url: str = ""
@@ -72,15 +150,36 @@ class HocaConfig:
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
-    def safe_repr(self) -> dict[str, str]:
-        out: dict[str, str] = {}
+    def safe_repr(self) -> dict[str, object]:
+        out: dict[str, object] = {}
         for field_name in self.__dataclass_fields__:
             value = getattr(self, field_name)
             if _SECRET_PATTERN.search(field_name):
                 out[field_name] = "***" if value else "(unset)"
+            elif hasattr(value, "safe_repr"):
+                out[field_name] = value.safe_repr()
             else:
                 out[field_name] = str(value)
         return out
+
+
+def _load_model_pool(config_value) -> ModelPoolConfig:
+    slots = tuple(
+        ModelSlot(
+            name=config_value(f"HOCA_MODEL_{index}_NAME"),
+            model=config_value(f"HOCA_MODEL_{index}_MODEL"),
+            base_url=config_value(f"HOCA_MODEL_{index}_BASE_URL"),
+            api_key=config_value(f"HOCA_MODEL_{index}_API_KEY"),
+        )
+        for index in range(1, 6)
+    )
+    return ModelPoolConfig(
+        slots=slots,
+        manager_model=config_value("HOCA_MANAGER_MODEL"),
+        worker_model=config_value("HOCA_WORKER_MODEL"),
+        reviewer_model=config_value("HOCA_REVIEWER_MODEL"),
+        fallback_model=config_value("HOCA_FALLBACK_MODEL"),
+    )
 
 
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
@@ -106,6 +205,15 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         default_base_url = ""
 
     return HocaConfig(
+        use_hermes_profiles=parse_bool(
+            config_value("HOCA_USE_HERMES_PROFILES") or None, default=False
+        ),
+        use_structured_reports=parse_bool(
+            config_value("HOCA_USE_STRUCTURED_REPORTS") or None, default=True
+        ),
+        use_kanban=parse_bool(config_value("HOCA_USE_KANBAN") or None, default=False),
+        use_sandbox=parse_bool(config_value("HOCA_USE_SANDBOX") or None, default=True),
+        max_total_rounds=int(config_value("HOCA_MAX_TOTAL_ROUNDS", "3")),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
         stop_on_dirty_tree=parse_bool(
@@ -121,6 +229,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
         llm_model=llm_model,
         llm_base_url=config_value("LLM_BASE_URL", default_base_url),
+        model_pool=_load_model_pool(config_value),
         webhook_secret=config_value("HOCA_WEBHOOK_SECRET"),
         webhook_url=config_value("HOCA_WEBHOOK_URL"),
         allowed_repos=config_value("HOCA_ALLOWED_REPOS"),

@@ -9,6 +9,13 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-hoca-task.sh"
 
 
+def base_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("HOCA_DEV_BRANCH", None)
+    env["HOCA_USE_SANDBOX"] = "false"
+    return env
+
+
 def init_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)
@@ -26,6 +33,7 @@ def run_hoca_task(repo: Path, task: str) -> subprocess.CompletedProcess[str]:
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=base_env(),
     )
 
 
@@ -108,13 +116,15 @@ def run_hoca_task_with_env(
     env: dict[str, str],
     *extra_args: str,
 ) -> subprocess.CompletedProcess[str]:
+    run_env = env.copy()
+    run_env.setdefault("HOCA_DEV_BRANCH", "")
     return subprocess.run(
         [str(SCRIPT), str(repo), task, *extra_args],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=env,
+        env=run_env,
     )
 
 
@@ -184,7 +194,7 @@ def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
 ) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -211,7 +221,7 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
         stdout=subprocess.PIPE,
     )
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_DEV_BRANCH"] = "main"
 
@@ -275,7 +285,7 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
 
     subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=repo, check=True)
     fake_bin = make_fake_preflight_bin(fake_tools_root(repo))
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_DEV_BRANCH"] = "main"
 
@@ -304,7 +314,7 @@ def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
     (fake_bin / "docker").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -321,7 +331,7 @@ def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) ->
         fake_tools_root(tmp_path),
         openhands_body="echo 'boom' >&2\nexit 42\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -339,7 +349,7 @@ def test_run_hoca_task_marks_openhands_conversation_error_as_failure(
         fake_tools_root(tmp_path),
         openhands_body='echo \'{"kind": "ConversationErrorEvent", "code": "LLMServiceUnavailableError"}\'\n',
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -356,7 +366,7 @@ def test_run_hoca_task_stops_immediately_on_secret_changed_by_openhands(tmp_path
         fake_tools_root(tmp_path),
         openhands_body="echo 'TOKEN=value' > .env\necho 'created secret-like file'\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -378,7 +388,7 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
         openhands_body="printf 'agent edit\\n' > README.md\n",
         pytest_body="echo 'tests failed'\nexit 3\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
 
@@ -408,7 +418,7 @@ def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> Non
         ),
         pytest_body="grep -q '^fixed$' README.md\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
     env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
@@ -428,7 +438,7 @@ def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_cha
 ) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
@@ -448,7 +458,7 @@ def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Pat
         openhands_body="printf 'agent edit\\n' > README.md\n",
         review_body="echo 'Needs changes.'\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
 
@@ -480,7 +490,7 @@ def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
             'else echo "Review complete."; echo "LGTM"; fi\n'
         ),
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
     env["OPENHANDS_REVIEW_COUNT_FILE"] = str(review_count_file)
@@ -509,7 +519,7 @@ def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
         fake_tools_root(tmp_path),
         openhands_body="printf 'agent edit\\n' > README.md\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
@@ -544,7 +554,7 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
         fake_tools_root(tmp_path),
         openhands_body="printf 'agent edit\\n' > README.md\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
@@ -565,7 +575,7 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
         fake_tools_root(tmp_path),
         openhands_body="printf 'agent edit\\n' > README.md\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
@@ -602,7 +612,7 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
         fake_tools_root(tmp_path),
         openhands_body="printf 'agent edit\\n' > README.md\n",
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
@@ -630,6 +640,7 @@ def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> 
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=base_env(),
     )
 
     assert result.returncode == 0
@@ -648,7 +659,7 @@ def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> 
             "EOF\n"
         ),
     )
-    env = os.environ.copy()
+    env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
 
     result = run_hoca_task_with_env(tmp_path, "Fix issue", env, "--issue-id", "42")

@@ -170,6 +170,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false"},
         args=[str(project), "Summarize project", str(run_dir)],
     )
 
@@ -197,6 +198,7 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
             "HOCA_REQUESTED_MODEL": "qwen-7b-pro",
             "OLLAMA_MODEL": "qwen-7b-pro",
             "LLM_MODEL": "ollama/qwen-7b-pro",
+            "HOCA_USE_SANDBOX": "false",
         },
         args=[str(project), "Summarize project", str(run_dir)],
     )
@@ -229,6 +231,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     result = run_script(
         "review-with-openhands.sh",
         fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false"},
         args=[str(project), "Review project", str(run_dir)],
     )
 

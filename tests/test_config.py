@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from hoca.config import HocaConfig, load_config, parse_bool
+from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config, parse_bool
 
 
 class TestParseBool:
@@ -43,6 +43,15 @@ class TestLoadConfigDefaults:
             "HOCA_DEV_BRANCH",
             "HOCA_SYNC_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
+            "HOCA_USE_HERMES_PROFILES",
+            "HOCA_USE_STRUCTURED_REPORTS",
+            "HOCA_USE_KANBAN",
+            "HOCA_USE_SANDBOX",
+            "HOCA_MAX_TOTAL_ROUNDS",
+            "HOCA_MANAGER_MODEL",
+            "HOCA_WORKER_MODEL",
+            "HOCA_REVIEWER_MODEL",
+            "HOCA_FALLBACK_MODEL",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_BASE_URL",
             "OLLAMA_MODEL",
@@ -57,9 +66,18 @@ class TestLoadConfigDefaults:
             "TELEGRAM_CHAT_ID",
         ]:
             monkeypatch.delenv(key, raising=False)
+        for index in range(1, 6):
+            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
 
         cfg = load_config(dotenv_path=empty_env)
 
+        assert cfg.use_hermes_profiles is False
+        assert cfg.use_structured_reports is True
+        assert cfg.use_kanban is False
+        assert cfg.use_sandbox is True
+        assert cfg.max_total_rounds == 3
+        assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
         assert cfg.require_tests is True
         assert cfg.stop_on_dirty_tree is True
@@ -82,6 +100,11 @@ class TestLoadConfigDefaults:
             "HOCA_SYNC_DEV_BRANCH=false\n"
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES=false\n"
             "HOCA_WORKSPACE_ROOT=~/projects\n"
+            "HOCA_USE_HERMES_PROFILES=true\n"
+            "HOCA_USE_STRUCTURED_REPORTS=false\n"
+            "HOCA_USE_KANBAN=true\n"
+            "HOCA_USE_SANDBOX=false\n"
+            "HOCA_MAX_TOTAL_ROUNDS=5\n"
         )
         for key in [
             "HOCA_AUTO_MERGE",
@@ -91,6 +114,11 @@ class TestLoadConfigDefaults:
             "HOCA_SYNC_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
             "HOCA_WORKSPACE_ROOT",
+            "HOCA_USE_HERMES_PROFILES",
+            "HOCA_USE_STRUCTURED_REPORTS",
+            "HOCA_USE_KANBAN",
+            "HOCA_USE_SANDBOX",
+            "HOCA_MAX_TOTAL_ROUNDS",
         ]:
             monkeypatch.delenv(key, raising=False)
 
@@ -104,6 +132,11 @@ class TestLoadConfigDefaults:
         assert cfg.auto_stage_reviewed_changes is False
         assert cfg.workspace_root is not None
         assert "~" not in str(cfg.workspace_root)
+        assert cfg.use_hermes_profiles is True
+        assert cfg.use_structured_reports is False
+        assert cfg.use_kanban is True
+        assert cfg.use_sandbox is False
+        assert cfg.max_total_rounds == 5
 
     def test_env_var_overrides_dotenv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -117,15 +150,104 @@ class TestLoadConfigDefaults:
         assert cfg.auto_merge is True
 
 
+class TestModelPoolConfig:
+    def test_empty_model_pool_preserves_legacy_single_model_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "LLM_MODEL=openai/gpt-oss-20b\n"
+            "LLM_BASE_URL=http://localhost:1234/v1\n"
+            "LLM_API_KEY=lm-studio\n"
+        )
+        for key in [
+            "LLM_MODEL",
+            "LLM_BASE_URL",
+            "LLM_API_KEY",
+            "HOCA_MANAGER_MODEL",
+            "HOCA_WORKER_MODEL",
+            "HOCA_REVIEWER_MODEL",
+            "HOCA_FALLBACK_MODEL",
+        ]:
+            monkeypatch.delenv(key, raising=False)
+
+        cfg = load_config(dotenv_path=env_file)
+
+        assert cfg.llm_model == "openai/gpt-oss-20b"
+        assert cfg.llm_base_url == "http://localhost:1234/v1"
+        assert cfg.model_pool.is_active is False
+        assert cfg.model_pool.resolve_role("worker") is None
+
+    def test_loads_active_model_pool_from_dotenv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "HOCA_MODEL_1_NAME=local-coder\n"
+            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_MODEL_1_BASE_URL=http://127.0.0.1:11434\n"
+            "HOCA_MODEL_1_API_KEY=ollama\n"
+            "HOCA_MODEL_2_NAME=local-fast\n"
+            "HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro\n"
+            "HOCA_WORKER_MODEL=local-coder\n"
+            "HOCA_FALLBACK_MODEL=local-fast\n"
+        )
+        for index in range(1, 6):
+            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+        for key in [
+            "HOCA_WORKER_MODEL",
+            "HOCA_FALLBACK_MODEL",
+        ]:
+            monkeypatch.delenv(key, raising=False)
+
+        cfg = load_config(dotenv_path=env_file)
+
+        assert cfg.model_pool.is_active is True
+        assert [slot.name for slot in cfg.model_pool.active_slots] == [
+            "local-coder",
+            "local-fast",
+        ]
+        assert cfg.model_pool.resolve_role("worker").model == "ollama/qwen-14b-pro"
+        assert cfg.model_pool.resolve_role("reviewer").model == "ollama/qwen-7b-pro"
+
+    def test_active_pool_requires_fallback_for_unset_roles(self) -> None:
+        pool = ModelPoolConfig(
+            slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
+        )
+
+        with pytest.raises(ValueError, match="HOCA_MANAGER_MODEL"):
+            pool.resolve_role("manager")
+
+    def test_active_pool_requires_role_name_to_exist(self) -> None:
+        pool = ModelPoolConfig(
+            slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
+            worker_model="missing",
+        )
+
+        with pytest.raises(ValueError, match="active model pool"):
+            pool.resolve_role("worker")
+
+
 class TestSafeRepr:
     def test_secrets_are_masked(self) -> None:
         cfg = HocaConfig(
             webhook_secret="super-secret-value",
             telegram_bot_token="tok123",
+            model_pool=ModelPoolConfig(
+                slots=(
+                    ModelSlot(
+                        name="local-coder",
+                        model="ollama/qwen-14b-pro",
+                        api_key="secret-key",
+                    ),
+                )
+            ),
         )
         safe = cfg.safe_repr()
         assert safe["webhook_secret"] == "***"
         assert safe["telegram_bot_token"] == "***"
+        assert safe["model_pool"]["slots"][0]["api_key"] == "***"
 
     def test_empty_secrets_show_unset(self) -> None:
         cfg = HocaConfig()
