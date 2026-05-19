@@ -1,0 +1,33 @@
+# Structured review report from the reviewer role.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/reviews/review-report-<round>.json
+
+schema_version: 1
+
+run_id: example-run-20260519-001
+round: 1  # Review round number (must be >= 1)
+role: reviewer  # Must be "reviewer"
+
+verdict: fix_required  # LGTM | fix_required | blocked
+
+findings:
+  - id: F1
+    schema_version: 1
+    severity: medium  # critical | high | medium | low | nit
+    category: test  # correctness | security | test | scope | maintainability | style | tooling | environment
+    file: tests/test_module.py
+    summary: Missing coverage for the error path
+    required_fix: Add a test for invalid input handling
+
+  - id: F2
+    schema_version: 1
+    severity: nit
+    category: style
+    file: src/feature/module.py
+    summary: Variable name could be clearer
+    required_fix: null  # null for non-blocking observations
+
+pr_notes:
+  summary:
+    - One medium test finding requires repair before approval
+  known_followups:
+    - Consider renaming the helper for readability (F2)

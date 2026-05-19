@@ -1,0 +1,49 @@
+# HOCA task specification produced by the manager after refining a human request.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/task-spec.json
+
+schema_version: 1  # Contract version; increment only when the schema changes
+
+run_id: example-run-20260519-001  # Unique identifier for this HOCA run
+repo_root: .  # Repository root at task start (relative or absolute)
+base_branch: main  # Branch the task started from
+task_branch: hoca/example-task  # Working branch for implementation
+issue_id: null  # Optional linked issue id, or null when not applicable
+
+raw_request: |
+  Original human request before manager refinement.
+
+goal: |
+  Manager-refined implementation goal in clear, actionable language.
+
+non_goals:
+  - Do not refactor unrelated modules
+  - Do not change deployment configuration
+
+expected_areas:
+  - src/feature/module.py
+  - tests/test_module.py
+
+acceptance_criteria:
+  - Feature behaves as specified
+  - Tests pass for the changed scope
+
+test_commands:
+  - pytest tests/test_module.py
+
+risk_level: low  # One of: low, medium, high
+
+requires_human_approval: true  # Whether a human must approve before merge
+
+max_total_rounds: 3  # Total worker/review/fix rounds (default: 3)
+
+models:
+  schema_version: 1
+  manager: local-coder  # Model slot name for manager reasoning
+  worker: local-coder  # Model slot name for worker implementation
+  reviewer: reviewer-strong  # Model slot name for reviewer QA
+  fallback: local-fast  # Fallback model slot when a role model is unset
+
+sandbox:
+  schema_version: 1
+  enabled: true  # Prefer sandboxed OpenHands execution
+  network_mode: offline  # offline | package-install | github-only | full

@@ -1,0 +1,34 @@
+# Worker attempt report written after each OpenHands implementation round.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/attempts/worker-attempt-<round>.json
+
+schema_version: 1
+
+run_id: example-run-20260519-001
+round: 1  # Attempt round number (must be >= 1)
+role: worker  # Must be "worker"
+
+status: completed  # completed | failed | blocked
+
+changed_files:
+  - src/feature/module.py
+  - tests/test_module.py
+
+summary:
+  - Implemented the requested feature
+  - Added unit tests for the happy path
+
+commands_run:
+  - openhands --headless --task "..."
+
+tests_run:
+  - pytest tests/test_module.py
+
+known_risks:
+  - Edge case for empty input not yet covered
+
+blocked_reason: null  # Reason when status is blocked or failed; null otherwise
+
+artifact_paths:
+  # Paths to raw logs and monitor output — never embed secret contents here
+  openhands_output: .hoca-runtime/runs/example-run-20260519-001/logs/openhands-output.jsonl
+  monitor_result: .hoca-runtime/runs/example-run-20260519-001/monitor-result.json

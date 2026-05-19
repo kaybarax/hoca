@@ -1,0 +1,29 @@
+# Manager arbitration decision after reviewing validation and reviewer output.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/decisions/manager-decision-<round>.json
+
+schema_version: 1
+
+run_id: example-run-20260519-001
+round: 1  # Decision round number (must be >= 1)
+
+decision: repair_required  # proceed_to_pr | repair_required | blocked | draft_pr_with_blockers
+
+accepted_findings:
+  - F1
+
+rejected_findings:
+  - F2
+
+downgraded_to_pr_notes:
+  - F3
+
+reasoning:
+  - F1 affects test correctness and must be fixed before PR
+  - F2 is a style preference, not blocking
+  - F3 is low-priority cleanup deferred to PR notes
+
+next_worker_brief: |
+  Fix only F1. Add a test for invalid input handling.
+  Do not address F2 or F3 in the next attempt.
+
+human_attention_required: false
