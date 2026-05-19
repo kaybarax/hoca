@@ -29,6 +29,9 @@ FindingCategory = Literal[
     "correctness", "security", "test", "scope", "maintainability", "style", "tooling", "environment"
 ]
 ManagerDecision = Literal["proceed_to_pr", "repair_required", "blocked", "draft_pr_with_blockers"]
+VALID_MANAGER_DECISIONS: frozenset[str] = frozenset(
+    ("proceed_to_pr", "repair_required", "blocked", "draft_pr_with_blockers")
+)
 NetworkMode = Literal["offline", "package-install", "github-only", "full"]
 FinalStatus = Literal["completed", "failed", "blocked", "draft_pr_opened", "pr_opened"]
 
@@ -505,18 +508,31 @@ class HocaManagerDecision(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        round_number = int(_required(data, "round"))
+        if round_number < 1:
+            raise ValueError("round must be greater than or equal to 1")
+        decision = _required(data, "decision")
+        if decision not in VALID_MANAGER_DECISIONS:
+            raise ValueError(
+                f"decision must be one of {sorted(VALID_MANAGER_DECISIONS)}, got: {decision!r}"
+            )
+        next_worker_brief = (
+            None if data["next_worker_brief"] is None else str(data["next_worker_brief"])
+        )
+        if decision == "repair_required" and not next_worker_brief:
+            raise ValueError(
+                "next_worker_brief is required when decision is 'repair_required'"
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
-            round=int(_required(data, "round")),
-            decision=_required(data, "decision"),
+            round=round_number,
+            decision=decision,
             accepted_findings=_string_list(data, "accepted_findings"),
             rejected_findings=_string_list(data, "rejected_findings"),
             downgraded_to_pr_notes=_string_list(data, "downgraded_to_pr_notes"),
             reasoning=_string_list(data, "reasoning"),
-            next_worker_brief=None
-            if data["next_worker_brief"] is None
-            else str(data["next_worker_brief"]),
+            next_worker_brief=next_worker_brief,
             human_attention_required=bool(_required(data, "human_attention_required")),
         )
 

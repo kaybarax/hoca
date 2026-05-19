@@ -333,6 +333,23 @@ def test_review_report_round_trips_json() -> None:
     assert parsed.findings[0].required_fix == "Add round-trip tests"
 
 
+def _manager_decision(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "schema_version": 1,
+        "run_id": "run-123",
+        "round": 1,
+        "decision": "repair_required",
+        "accepted_findings": ["F1"],
+        "rejected_findings": [],
+        "downgraded_to_pr_notes": [],
+        "reasoning": ["F1 affects correctness and must be fixed"],
+        "next_worker_brief": "Fix only F1",
+        "human_attention_required": False,
+    }
+    defaults.update(overrides)
+    return defaults
+
+
 def test_manager_decision_round_trips_json() -> None:
     decision = HocaManagerDecision(
         run_id="run-123",
@@ -347,6 +364,183 @@ def test_manager_decision_round_trips_json() -> None:
     )
 
     assert HocaManagerDecision.from_json(decision.to_json()) == decision
+
+
+# --- HocaManagerDecision acceptance criteria ---
+
+
+def test_manager_decision_reject_inconsequential_findings() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="proceed_to_pr",
+            accepted_findings=[],
+            rejected_findings=["F2"],
+            downgraded_to_pr_notes=["F3"],
+            reasoning=[
+                "F2 is a style preference, not a correctness issue",
+                "F3 is low-priority cleanup, moved to PR notes",
+            ],
+            next_worker_brief=None,
+        )
+    )
+
+    assert decision.decision == "proceed_to_pr"
+    assert "F2" in decision.rejected_findings
+    assert "F3" in decision.downgraded_to_pr_notes
+
+
+def test_manager_decision_accept_required_findings() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="repair_required",
+            accepted_findings=["F1", "F2"],
+            rejected_findings=[],
+            reasoning=["F1 is a correctness bug", "F2 is a missing test"],
+            next_worker_brief="Fix F1: correct the UTC comparison. Fix F2: add expiry test.",
+        )
+    )
+
+    assert decision.decision == "repair_required"
+    assert decision.accepted_findings == ["F1", "F2"]
+    assert decision.next_worker_brief is not None
+    assert "F1" in decision.next_worker_brief
+
+
+def test_manager_decision_focused_repair_brief() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="repair_required",
+            accepted_findings=["R1"],
+            rejected_findings=["R2"],
+            downgraded_to_pr_notes=[],
+            reasoning=[
+                "R1 affects correctness and must be fixed",
+                "R2 does not affect quality enough to block this PR",
+            ],
+            next_worker_brief="Fix only R1. Do not rename tests for R2. Leave R2 as PR follow-up.",
+        )
+    )
+
+    assert decision.next_worker_brief is not None
+    assert "R1" in decision.next_worker_brief
+    assert "R2" in decision.next_worker_brief
+
+
+def test_manager_decision_block_on_hard_blockers() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="blocked",
+            accepted_findings=["F1"],
+            rejected_findings=[],
+            reasoning=["F1 is a critical security regression that cannot be shipped"],
+            next_worker_brief=None,
+            human_attention_required=True,
+        )
+    )
+
+    assert decision.decision == "blocked"
+    assert decision.human_attention_required is True
+    assert decision.next_worker_brief is None
+
+
+def test_manager_decision_proceed_to_pr() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="proceed_to_pr",
+            accepted_findings=[],
+            rejected_findings=[],
+            downgraded_to_pr_notes=[],
+            reasoning=["All findings resolved, tests pass"],
+            next_worker_brief=None,
+            human_attention_required=False,
+        )
+    )
+
+    assert decision.decision == "proceed_to_pr"
+    assert decision.human_attention_required is False
+
+
+def test_manager_decision_draft_pr_with_blockers() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="draft_pr_with_blockers",
+            accepted_findings=["F1"],
+            rejected_findings=[],
+            downgraded_to_pr_notes=["F2"],
+            reasoning=[
+                "Round 3 reached with medium residual findings",
+                "No hard blockers remain",
+                "F2 moved to PR notes as low-priority cleanup",
+            ],
+            next_worker_brief=None,
+            human_attention_required=True,
+        )
+    )
+
+    assert decision.decision == "draft_pr_with_blockers"
+    assert decision.human_attention_required is True
+
+
+def test_manager_decision_rejects_invalid_decision() -> None:
+    with pytest.raises(ValueError, match="decision must be one of"):
+        HocaManagerDecision.from_dict(
+            _manager_decision(decision="auto_merge")
+        )
+
+
+def test_manager_decision_rejects_invalid_round() -> None:
+    with pytest.raises(ValueError, match="round must be greater than or equal to 1"):
+        HocaManagerDecision.from_dict(
+            _manager_decision(round=0)
+        )
+
+
+def test_manager_decision_repair_required_needs_worker_brief() -> None:
+    with pytest.raises(ValueError, match="next_worker_brief is required"):
+        HocaManagerDecision.from_dict(
+            _manager_decision(
+                decision="repair_required",
+                next_worker_brief=None,
+            )
+        )
+
+
+def test_manager_decision_mixed_finding_disposition() -> None:
+    decision = HocaManagerDecision.from_dict(
+        _manager_decision(
+            decision="repair_required",
+            accepted_findings=["F1"],
+            rejected_findings=["F2"],
+            downgraded_to_pr_notes=["F3"],
+            reasoning=[
+                "F1 is a correctness bug that must be fixed",
+                "F2 is an inconsequential style preference",
+                "F3 is low-priority cleanup for a future PR",
+            ],
+            next_worker_brief="Fix F1 only. Do not address F2 or F3.",
+        )
+    )
+
+    assert len(decision.accepted_findings) == 1
+    assert len(decision.rejected_findings) == 1
+    assert len(decision.downgraded_to_pr_notes) == 1
+    assert len(decision.reasoning) == 3
+
+
+def test_manager_decision_missing_required_field() -> None:
+    data = _manager_decision()
+    del data["reasoning"]
+
+    with pytest.raises(ValueError, match="reasoning"):
+        HocaManagerDecision.from_dict(data)
+
+
+def test_manager_decision_unknown_fields_do_not_crash() -> None:
+    data = _manager_decision()
+    data["future_manager_field"] = "some_value"
+
+    decision = HocaManagerDecision.from_dict(data)
+    assert decision.decision == "repair_required"
 
 
 def _finding(**overrides: Any) -> dict[str, Any]:
