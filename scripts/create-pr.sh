@@ -303,6 +303,14 @@ fi
 
 printf '%s\n' "$PR_URL" > "$RUN_DIR/pr-url.txt"
 echo "PR URL saved to $RUN_DIR/pr-url.txt"
+if [ -f "$RUN_DIR/status.json" ] && command -v jq >/dev/null 2>&1; then
+  jq --arg url "$PR_URL" '.pr_url = $url' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
+  mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+fi
+if PYTHONPATH="$(cd "$SCRIPT_DIR/.." && pwd)${PYTHONPATH:+:$PYTHONPATH}" \
+  python3 -m hoca.run_artifacts sync-status "$RUN_DIR" >/dev/null 2>&1; then
+  :
+fi
 
 MERGE_OUTCOME="open_for_review"
 if [ "$AUTO_MERGE_PRECHECK_RC" -eq 0 ]; then

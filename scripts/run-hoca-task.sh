@@ -247,6 +247,11 @@ update_status() {
     fi
     mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
   fi
+  record_run_artifact sync-status "$RUN_DIR" >/dev/null 2>&1 || true
+}
+
+sync_run_status() {
+  record_run_artifact sync-status "$RUN_DIR" >/dev/null 2>&1 || true
 }
 
 write_failure_reason() {
@@ -288,27 +293,6 @@ record_failed_command() {
   fi
 }
 trap record_failed_command ERR
-
-cat > "$RUN_DIR/status.json" <<EOF
-{
-  "run_id": "$RUN_ID",
-  "status": "started",
-  "workflow_version": 2,
-  "structured_reports": true,
-  "max_total_rounds": $((MAX_REPAIR_ATTEMPTS + 1)),
-  "current_round": 0,
-  "task": $(printf '%s' "$TASK" | jq -Rs .),
-  "issue_id": "$ISSUE_ID",
-  "auto_merge": "$AUTO_MERGE",
-  "notify_telegram": "$NOTIFY_TELEGRAM",
-  "requested_model": "$REQUESTED_MODEL",
-  "repo_root": $(printf '%s' "$REPO_ROOT" | jq -Rs .),
-  "starting_branch": $(printf '%s' "$INITIAL_BRANCH" | jq -Rs .),
-  "task_base_branch": $(printf '%s' "$TASK_BASE_REF" | jq -Rs .),
-  "dev_branch": $(printf '%s' "$DEV_BRANCH" | jq -Rs .),
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
 
 echo "HOCA run started: $RUN_ID"
 
@@ -365,15 +349,36 @@ if [ -n "$ISSUE_ID" ]; then
 fi
 record_run_artifact "${INIT_ARGS[@]}"
 
+INIT_STATUS_ARGS=(
+  init-status "$RUN_DIR"
+  --run-id "$RUN_ID"
+  --task "$TASK"
+  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  --auto-merge "$AUTO_MERGE"
+  --notify-telegram "$NOTIFY_TELEGRAM"
+  --requested-model "$REQUESTED_MODEL"
+  --repo-root "$REPO_ROOT"
+  --starting-branch "$INITIAL_BRANCH"
+  --task-base-branch "$TASK_BASE_REF"
+  --dev-branch "$DEV_BRANCH"
+  --started-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+)
+if [ -n "$ISSUE_ID" ]; then
+  INIT_STATUS_ARGS+=(--issue-id "$ISSUE_ID")
+fi
+record_run_artifact "${INIT_STATUS_ARGS[@]}"
+
 record_worker_attempt() {
   local round_number="$1"
   local status="${2:-completed}"
   record_run_artifact record-worker "$RUN_DIR" --round "$round_number" --status "$status" >/dev/null 2>&1 || true
+  sync_run_status
 }
 
 record_validation_artifact() {
   local round_number="$1"
   record_run_artifact record-validation "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
+  sync_run_status
 }
 
 record_manager_decision_artifact() {

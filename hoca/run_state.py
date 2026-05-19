@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from hoca.config import HocaConfig, load_config
 from hoca.run_layout import (
     ensure_run_layout,
     final_state_path,
@@ -21,6 +22,8 @@ from hoca.run_layout import (
     validation_report_path,
     worker_attempt_path,
 )
+
+WORKFLOW_VERSION = 2
 
 ReportKind = Literal[
     "status",
@@ -301,16 +304,106 @@ def list_round_artifact_paths(run_dir: Path, subdir: str, prefix: str) -> list[s
     return paths
 
 
+def workflow_fields_from_config(cfg: HocaConfig | None = None) -> dict[str, Any]:
+    """Return workflow metadata fields stored on ``status.json``."""
+    cfg = cfg or load_config()
+    return {
+        "workflow_version": WORKFLOW_VERSION,
+        "use_hermes_profiles": cfg.use_hermes_profiles,
+        "structured_reports": cfg.use_structured_reports,
+        "max_total_rounds": cfg.max_total_rounds,
+        "sandbox_mode": "docker" if cfg.use_sandbox else "host",
+    }
+
+
+def sandbox_mode_for_run(run_dir: Path, *, cfg: HocaConfig | None = None) -> str:
+    policy = read_optional_report(run_dir, "sandbox_policy")
+    if policy is not None:
+        return "docker" if bool(policy.get("enabled", True)) else "host"
+    cfg = cfg or load_config()
+    return "docker" if cfg.use_sandbox else "host"
+
+
+def derived_status_fields(run_dir: Path) -> dict[str, Any]:
+    """Compute artifact-backed status fields from the run directory."""
+    pr_url = None
+    pr_url_path = run_dir / "pr-url.txt"
+    if pr_url_path.is_file():
+        pr_url = pr_url_path.read_text(encoding="utf-8").strip() or None
+
+    final_state = None
+    final_report = read_optional_report(run_dir, "final_state")
+    if final_report:
+        final_state = final_report.get("status")
+
+    return {
+        "current_round": current_run_round(run_dir),
+        "final_state": final_state,
+        "pr_url": pr_url,
+        "sandbox_mode": sandbox_mode_for_run(run_dir),
+    }
+
+
+def merge_status_snapshot(
+    run_dir: Path,
+    updates: dict[str, Any],
+    *,
+    include_workflow_fields: bool = False,
+    cfg: HocaConfig | None = None,
+) -> dict[str, Any]:
+    path = status_path(run_dir)
+    data = read_optional_json(path) or {}
+    data.update(updates)
+    if include_workflow_fields:
+        data.update(workflow_fields_from_config(cfg))
+    data.update(derived_status_fields(run_dir))
+    return data
+
+
+def write_initial_status(
+    run_dir: Path,
+    *,
+    status: str = "started",
+    max_total_rounds: int | None = None,
+    cfg: HocaConfig | None = None,
+    **fields: Any,
+) -> Path:
+    """Create ``status.json`` with workflow metadata and run-start fields."""
+    ensure_run_layout(run_dir)
+    cfg = cfg or load_config()
+    data = workflow_fields_from_config(cfg)
+    if max_total_rounds is not None:
+        data["max_total_rounds"] = max_total_rounds
+    data.update(
+        {
+            "status": status,
+            "current_round": 0,
+            "final_state": None,
+            "pr_url": None,
+            **fields,
+        }
+    )
+    data.update(derived_status_fields(run_dir))
+    path = status_path(run_dir)
+    write_json_atomic(path, data)
+    return path
+
+
+def sync_status_fields(run_dir: Path) -> Path | None:
+    """Refresh artifact-backed fields on an existing ``status.json``."""
+    path = status_path(run_dir)
+    if not path.is_file():
+        return None
+    data = merge_status_snapshot(run_dir, {})
+    write_json_atomic(path, data)
+    return path
+
+
 def write_status(run_dir: Path, status: str, **fields: Any) -> Path:
-    data: dict[str, Any] = {"status": status}
-    data.update(fields)
-    status_path = run_dir / "status.json"
-    if status_path.exists():
-        existing = read_json(status_path)
-        existing.update(data)
-        data = existing
-    write_json(status_path, data)
-    return status_path
+    data = merge_status_snapshot(run_dir, {"status": status, **fields})
+    path = status_path(run_dir)
+    write_json_atomic(path, data)
+    return path
 
 
 def mark_failed(run_dir: Path, reason: str) -> Path:

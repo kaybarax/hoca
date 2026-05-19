@@ -33,7 +33,9 @@ from hoca.run_state import (
     list_round_artifact_paths,
     read_json,
     read_optional_json,
+    sync_status_fields,
     write_final_state,
+    write_initial_status,
     write_json_atomic,
 )
 
@@ -312,7 +314,9 @@ def record_final_state(run_dir: Path) -> Path:
         completed_at=status_data.get("ended_at") or status_data.get("started_at"),
         blocked_reason=str(reason) if status in ("blocked", "failed") and reason else None,
     )
-    return write_final_state(run_dir, state.to_dict())
+    path = write_final_state(run_dir, state.to_dict())
+    sync_status_fields(run_dir)
+    return path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -345,6 +349,29 @@ def main(argv: list[str] | None = None) -> int:
     final_parser = subparsers.add_parser("record-final", help="Write final-state.json.")
     final_parser.add_argument("run_dir")
 
+    init_status_parser = subparsers.add_parser(
+        "init-status", help="Create status.json with workflow metadata."
+    )
+    init_status_parser.add_argument("run_dir")
+    init_status_parser.add_argument("--run-id", required=True)
+    init_status_parser.add_argument("--task", required=True)
+    init_status_parser.add_argument("--status", default="started")
+    init_status_parser.add_argument("--max-total-rounds", type=int)
+    init_status_parser.add_argument("--issue-id", default="")
+    init_status_parser.add_argument("--auto-merge", default="false")
+    init_status_parser.add_argument("--notify-telegram", default="false")
+    init_status_parser.add_argument("--requested-model", default="")
+    init_status_parser.add_argument("--repo-root", required=True)
+    init_status_parser.add_argument("--starting-branch", default="")
+    init_status_parser.add_argument("--task-base-branch", default="")
+    init_status_parser.add_argument("--dev-branch", default="")
+    init_status_parser.add_argument("--started-at", required=True)
+
+    sync_status_parser = subparsers.add_parser(
+        "sync-status", help="Refresh artifact-backed status.json fields."
+    )
+    sync_status_parser.add_argument("run_dir")
+
     args = parser.parse_args(argv)
     run_dir = Path(args.run_dir).resolve()
 
@@ -374,6 +401,30 @@ def main(argv: list[str] | None = None) -> int:
             print(path)
         elif args.command == "record-final":
             path = record_final_state(run_dir)
+            print(path)
+        elif args.command == "init-status":
+            path = write_initial_status(
+                run_dir,
+                status=args.status,
+                max_total_rounds=args.max_total_rounds,
+                run_id=args.run_id,
+                task=args.task,
+                issue_id=args.issue_id,
+                auto_merge=args.auto_merge,
+                notify_telegram=args.notify_telegram,
+                requested_model=args.requested_model or None,
+                repo_root=args.repo_root,
+                starting_branch=args.starting_branch or None,
+                task_base_branch=args.task_base_branch or None,
+                dev_branch=args.dev_branch or None,
+                started_at=args.started_at,
+            )
+            print(path)
+        elif args.command == "sync-status":
+            path = sync_status_fields(run_dir)
+            if path is None:
+                print("status.json not found", file=sys.stderr)
+                return 1
             print(path)
     except Exception as exc:
         print(str(exc), file=sys.stderr)

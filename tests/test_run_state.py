@@ -5,8 +5,10 @@ import os
 from pathlib import Path
 
 
-from hoca.contracts import HocaRunFinalState
+from hoca.config import HocaConfig
+from hoca.contracts import HocaRunFinalState, HocaSandboxPolicy
 from hoca.run_state import (
+    WORKFLOW_VERSION,
     RUN_STATE_DIRNAME,
     _held_locks,
     acquire_lock,
@@ -28,7 +30,10 @@ from hoca.run_state import (
     read_optional_report,
     release_lock,
     summarize_run_for_pr_body,
+    sync_status_fields,
+    workflow_fields_from_config,
     write_final_state,
+    write_initial_status,
     write_json,
     write_json_atomic,
     write_status,
@@ -465,3 +470,99 @@ def test_summarize_run_for_pr_body_uses_structured_reports(tmp_path: Path) -> No
     assert "tests_failed" in fragments["validation"]
     assert "LGTM not detected" in fragments["code-review"]
     assert "Needs another pass" not in fragments["code-review"]
+
+
+def test_workflow_fields_from_config_defaults() -> None:
+    cfg = HocaConfig()
+    fields = workflow_fields_from_config(cfg)
+    assert fields == {
+        "workflow_version": WORKFLOW_VERSION,
+        "use_hermes_profiles": False,
+        "structured_reports": True,
+        "max_total_rounds": 3,
+        "sandbox_mode": "docker",
+    }
+
+
+def test_write_initial_status_includes_workflow_metadata(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-status-init")
+    write_initial_status(
+        run_dir,
+        run_id="run-status-init",
+        task="Fix status metadata",
+        max_total_rounds=5,
+        cfg=HocaConfig(use_hermes_profiles=True, use_structured_reports=False, use_sandbox=False),
+    )
+    data = read_json(run_dir / "status.json")
+    assert data["workflow_version"] == WORKFLOW_VERSION
+    assert data["use_hermes_profiles"] is True
+    assert data["structured_reports"] is False
+    assert data["max_total_rounds"] == 5
+    assert data["current_round"] == 0
+    assert data["final_state"] is None
+    assert data["pr_url"] is None
+    assert data["sandbox_mode"] == "host"
+
+
+def test_sync_status_fields_updates_artifact_backed_values(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-status-sync")
+    write_initial_status(
+        run_dir,
+        run_id="run-status-sync",
+        task="Sync status",
+        cfg=HocaConfig(),
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "worker_attempt", round_number=1),
+        {"round": 1},
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=2),
+        {"round": 2},
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "sandbox_policy"),
+        HocaSandboxPolicy(enabled=True, network_mode="offline").to_dict(),
+    )
+    (run_dir / "pr-url.txt").write_text("https://example.test/pr/9\n", encoding="utf-8")
+    write_final_state(
+        run_dir,
+        HocaRunFinalState(
+            run_id="run-status-sync",
+            status="pr_opened",
+            summary=["done"],
+            changed_files=[],
+            tests_run=[],
+            attempt_reports=[],
+            review_reports=[],
+            manager_decisions=[],
+            pr_url="https://example.test/pr/9",
+            completed_at="2026-05-19T00:00:00Z",
+            blocked_reason=None,
+        ).to_dict(),
+    )
+
+    sync_status_fields(run_dir)
+    data = read_json(run_dir / "status.json")
+    assert data["current_round"] == 2
+    assert data["pr_url"] == "https://example.test/pr/9"
+    assert data["final_state"] == "pr_opened"
+    assert data["sandbox_mode"] == "docker"
+
+
+def test_write_status_preserves_existing_fields_and_syncs(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-status-update")
+    write_initial_status(
+        run_dir,
+        run_id="run-status-update",
+        task="Keep legacy consumers working",
+        auto_merge="true",
+        cfg=HocaConfig(),
+    )
+    write_status(run_dir, "running")
+    data = read_json(run_dir / "status.json")
+    assert data["status"] == "running"
+    assert data["run_id"] == "run-status-update"
+    assert data["task"] == "Keep legacy consumers working"
+    assert data["auto_merge"] == "true"
+    assert data["workflow_version"] == WORKFLOW_VERSION
