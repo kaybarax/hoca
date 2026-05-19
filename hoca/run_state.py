@@ -8,9 +8,34 @@ import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from hoca.run_layout import ensure_run_layout
+from hoca.run_layout import (
+    ensure_run_layout,
+    final_state_path,
+    manager_decision_path,
+    review_report_path,
+    sandbox_policy_path,
+    status_path,
+    task_spec_path,
+    validation_report_path,
+    worker_attempt_path,
+)
+
+ReportKind = Literal[
+    "status",
+    "task_spec",
+    "sandbox_policy",
+    "final_state",
+    "worker_attempt",
+    "review_report",
+    "manager_decision",
+    "validation_report",
+]
+
+_ROUND_REPORT_KINDS = frozenset(
+    {"worker_attempt", "review_report", "manager_decision", "validation_report"}
+)
 
 RUN_STATE_DIRNAME = ".hoca-runtime"
 
@@ -34,6 +59,11 @@ def ensure_run_dir(project_path: Path, run_id: str) -> Path:
     run_dir = project_path / RUN_STATE_DIRNAME / "runs" / run_id
     ensure_run_layout(run_dir)
     return run_dir
+
+
+def create_run_layout(project_path: Path, run_id: str) -> Path:
+    """Create the standard run directory layout for a new run."""
+    return ensure_run_dir(project_path, run_id)
 
 
 def ensure_runtime_dirs(project_path: Path) -> Path:
@@ -90,6 +120,167 @@ def current_round(run_dir: Path, *, prefix: str, subdir: str) -> int:
         if path.is_file() and (match := pattern.match(path.name))
     ]
     return max(rounds, default=0)
+
+
+def optional_report_path(
+    run_dir: Path,
+    kind: ReportKind,
+    *,
+    round_number: int | None = None,
+) -> Path:
+    if kind == "status":
+        return status_path(run_dir)
+    if kind == "task_spec":
+        return task_spec_path(run_dir)
+    if kind == "sandbox_policy":
+        return sandbox_policy_path(run_dir)
+    if kind == "final_state":
+        return final_state_path(run_dir)
+    if kind not in _ROUND_REPORT_KINDS:
+        raise ValueError(f"Unknown report kind: {kind}")
+    if round_number is None:
+        raise ValueError(f"{kind} requires round_number")
+    if kind == "worker_attempt":
+        return worker_attempt_path(run_dir, round_number)
+    if kind == "review_report":
+        return review_report_path(run_dir, round_number)
+    if kind == "manager_decision":
+        return manager_decision_path(run_dir, round_number)
+    return validation_report_path(run_dir, round_number)
+
+
+def read_optional_report(
+    run_dir: Path,
+    kind: ReportKind,
+    *,
+    round_number: int | None = None,
+) -> dict[str, Any] | None:
+    """Read a structured report from the run directory when present."""
+    return read_optional_json(optional_report_path(run_dir, kind, round_number=round_number))
+
+
+def current_run_round(run_dir: Path) -> int:
+    """Return the highest round number present across structured artifacts."""
+    return max(
+        current_round(run_dir, prefix="worker-attempt-", subdir="attempts"),
+        current_round(run_dir, prefix="review-report-", subdir="reviews"),
+        current_round(run_dir, prefix="manager-decision-", subdir="decisions"),
+        current_round(run_dir, prefix="validation-report-", subdir="validation"),
+    )
+
+
+def write_final_state(run_dir: Path, state: dict[str, Any]) -> Path:
+    """Write ``final-state.json`` atomically."""
+    ensure_run_layout(run_dir)
+    path = final_state_path(run_dir)
+    write_json_atomic(path, state)
+    return path
+
+
+def _read_text_artifact(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def _read_line_artifact(path: Path) -> list[str]:
+    text = _read_text_artifact(path)
+    if not text:
+        return []
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def summarize_run_for_pr_body(
+    run_dir: Path,
+    *,
+    task: str,
+    issue_id: str | None = None,
+) -> dict[str, str]:
+    """Build PR body section fragments keyed by template slug."""
+    task_oneline = " ".join(task.split())
+    fragments: dict[str, str] = {"summary": task_oneline}
+
+    changed_files = _read_line_artifact(run_dir / "changed-files.txt")
+    if not changed_files:
+        final_state = read_optional_report(run_dir, "final_state")
+        if final_state:
+            changed_files = [str(path) for path in final_state.get("changed_files", []) if path]
+
+    changes_parts: list[str] = []
+    if changed_files:
+        changes_parts.append("Changed files:")
+        changes_parts.extend(f"- {path}" for path in changed_files)
+    commit_log = _read_text_artifact(run_dir / "commit-log.txt")
+    if commit_log:
+        if changes_parts:
+            changes_parts.append("")
+        changes_parts.extend(["```text", commit_log, "```"])
+    fragments["changes"] = (
+        "\n".join(changes_parts)
+        if changes_parts
+        else "_No change list recorded in run artifacts._"
+    )
+
+    validation_text = _read_text_artifact(run_dir / "tests-summary.md")
+    if not validation_text:
+        validation_round = current_round(
+            run_dir, prefix="validation-report-", subdir="validation"
+        )
+        if validation_round:
+            report = read_optional_report(
+                run_dir, "validation_report", round_number=validation_round
+            )
+            if report:
+                lines = [f"- **Tests passed**: {report.get('tests_passed')}"]
+                blockers = report.get("hard_blockers") or []
+                if blockers:
+                    lines.append(f"- **Hard blockers**: {', '.join(blockers)}")
+                validation_text = "\n".join(lines)
+    fragments["validation"] = (
+        validation_text or "_No `tests-summary.md` found in the run directory._"
+    )
+
+    review_text = _read_text_artifact(run_dir / "openhands-review.txt")
+    if not review_text:
+        review_round = current_round(run_dir, prefix="review-report-", subdir="reviews")
+        if review_round:
+            report = read_optional_report(
+                run_dir, "review_report", round_number=review_round
+            )
+            if report:
+                verdict = report.get("verdict", "unknown")
+                pr_notes = report.get("pr_notes") or {}
+                notes = pr_notes.get("summary") or []
+                review_lines = [f"**Verdict**: {verdict}"]
+                review_lines.extend(f"- {note}" for note in notes)
+                review_text = "\n".join(review_lines)
+
+    if review_text:
+        if "LGTM" in review_text.upper():
+            fragments["code-review"] = (
+                "**Status**: LGTM present in code review output.\n\n"
+                "Full review output is saved in the HOCA run artifacts."
+            )
+        else:
+            fragments["code-review"] = (
+                "**Status**: LGTM not detected in code review output "
+                "(human review recommended).\n\n"
+                "Full review output is saved in the HOCA run artifacts."
+            )
+    else:
+        fragments["code-review"] = (
+            "_No `openhands-review.txt` found in the run directory._"
+        )
+
+    fragments["risk"] = _read_text_artifact(run_dir / "risk-notes.txt") or (
+        "None noted in run metadata."
+    )
+    fragments["linked-issue"] = f"Issue #{issue_id}" if issue_id else "None"
+    return fragments
 
 
 def list_round_artifact_paths(run_dir: Path, subdir: str, prefix: str) -> list[str]:

@@ -5,12 +5,15 @@ import os
 from pathlib import Path
 
 
+from hoca.contracts import HocaRunFinalState
 from hoca.run_state import (
     RUN_STATE_DIRNAME,
     _held_locks,
     acquire_lock,
     create_run_id,
+    create_run_layout,
     current_round,
+    current_run_round,
     ensure_gitignore,
     ensure_run_dir,
     ensure_runtime_dirs,
@@ -19,9 +22,13 @@ from hoca.run_state import (
     mark_failed,
     now_epoch,
     now_iso,
+    optional_report_path,
     read_json,
     read_optional_json,
+    read_optional_report,
     release_lock,
+    summarize_run_for_pr_body,
+    write_final_state,
     write_json,
     write_json_atomic,
     write_status,
@@ -335,3 +342,126 @@ def test_is_duplicate_issue_run_true(tmp_path: Path) -> None:
     lock = tmp_path / RUN_STATE_DIRNAME / "runs" / "issue-42.lock"
     lock.write_text(json.dumps({"run_id": "issue-42"}))
     assert is_duplicate_issue_run(tmp_path, "42") is True
+
+
+def test_create_run_layout_matches_ensure_run_dir(tmp_path: Path) -> None:
+    run_dir = create_run_layout(tmp_path, "run-layout")
+    assert run_dir == tmp_path / RUN_STATE_DIRNAME / "runs" / "run-layout"
+    assert (run_dir / "attempts").is_dir()
+
+
+def test_read_optional_report_missing_returns_none(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-missing")
+    assert read_optional_report(run_dir, "task_spec") is None
+
+
+def test_read_optional_report_reads_structured_artifact(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-spec")
+    payload = {"run_id": "run-spec", "goal": "Fix tests"}
+    write_json_atomic(optional_report_path(run_dir, "task_spec"), payload)
+    loaded = read_optional_report(run_dir, "task_spec")
+    assert loaded == payload
+
+
+def test_read_optional_report_invalid_json_returns_none(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-bad-json")
+    path = optional_report_path(run_dir, "task_spec")
+    path.write_text("{not-json", encoding="utf-8")
+    assert read_optional_report(run_dir, "task_spec") is None
+
+
+def test_current_run_round_uses_highest_round(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-round-max")
+    write_json_atomic(
+        optional_report_path(run_dir, "worker_attempt", round_number=1),
+        {"round": 1},
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=3),
+        {"round": 3},
+    )
+    assert current_run_round(run_dir) == 3
+
+
+def test_write_final_state_writes_atomic_json(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-final")
+    state = HocaRunFinalState(
+        run_id="run-final",
+        status="completed",
+        summary=["done"],
+        changed_files=["README.md"],
+        tests_run=[],
+        attempt_reports=[],
+        review_reports=[],
+        manager_decisions=[],
+        pr_url=None,
+        completed_at="2026-05-19T00:00:00Z",
+        blocked_reason=None,
+    )
+    path = write_final_state(run_dir, state.to_dict())
+    assert path.name == "final-state.json"
+    assert read_optional_report(run_dir, "final_state") == state.to_dict()
+    assert not path.with_suffix(".json.tmp").exists()
+
+
+def test_summarize_run_for_pr_body_from_legacy_files(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-pr")
+    (run_dir / "changed-files.txt").write_text("src/app.py\n", encoding="utf-8")
+    (run_dir / "tests-summary.md").write_text("# Tests\n\npassed\n", encoding="utf-8")
+    (run_dir / "openhands-review.txt").write_text("LGTM\n", encoding="utf-8")
+    (run_dir / "risk-notes.txt").write_text("Low rollout risk.\n", encoding="utf-8")
+
+    fragments = summarize_run_for_pr_body(
+        run_dir,
+        task="Add feature\nwith details",
+        issue_id="99",
+    )
+
+    assert fragments["summary"] == "Add feature with details"
+    assert "src/app.py" in fragments["changes"]
+    assert "passed" in fragments["validation"]
+    assert "LGTM present" in fragments["code-review"]
+    assert fragments["risk"] == "Low rollout risk."
+    assert fragments["linked-issue"] == "Issue #99"
+
+
+def test_summarize_run_for_pr_body_uses_structured_reports(tmp_path: Path) -> None:
+    run_dir = ensure_run_dir(tmp_path, "run-structured-pr")
+    write_json_atomic(
+        optional_report_path(run_dir, "validation_report", round_number=1),
+        {
+            "schema_version": 1,
+            "run_id": "run-structured-pr",
+            "round": 1,
+            "tests_passed": False,
+            "test_failure_type": "unit",
+            "git_status": [],
+            "changed_files": [],
+            "secret_scan_clean": True,
+            "monitor_clean": True,
+            "monitor_stop_reason": None,
+            "hard_blockers": ["tests_failed"],
+            "scope_risk": False,
+            "staging_risk": False,
+            "artifact_paths": {},
+        },
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=1),
+        {
+            "schema_version": 1,
+            "run_id": "run-structured-pr",
+            "round": 1,
+            "role": "reviewer",
+            "verdict": "fix_required",
+            "findings": [],
+            "pr_notes": {"summary": ["Needs another pass"], "known_followups": []},
+        },
+    )
+
+    fragments = summarize_run_for_pr_body(run_dir, task="Repair flow")
+
+    assert "Tests passed" in fragments["validation"]
+    assert "tests_failed" in fragments["validation"]
+    assert "LGTM not detected" in fragments["code-review"]
+    assert "Needs another pass" not in fragments["code-review"]

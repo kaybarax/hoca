@@ -22,7 +22,6 @@ from hoca.contracts import (
 from hoca.hard_blockers import ValidationStatus, validation_blocker_from_monitor_stop_reason
 from hoca.run_layout import (
     ensure_run_layout,
-    final_state_path,
     manager_decision_path,
     review_report_path,
     sandbox_policy_path,
@@ -34,6 +33,7 @@ from hoca.run_state import (
     list_round_artifact_paths,
     read_json,
     read_optional_json,
+    write_final_state,
     write_json_atomic,
 )
 
@@ -312,9 +312,7 @@ def record_final_state(run_dir: Path) -> Path:
         completed_at=status_data.get("ended_at") or status_data.get("started_at"),
         blocked_reason=str(reason) if status in ("blocked", "failed") and reason else None,
     )
-    path = final_state_path(run_dir)
-    write_json_atomic(path, state.to_dict())
-    return path
+    return write_final_state(run_dir, state.to_dict())
 
 
 def main(argv: list[str] | None = None) -> int:
