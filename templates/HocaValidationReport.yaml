@@ -1,0 +1,31 @@
+# Structured validation report written after deterministic test and safety checks.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/validation/validation-report-<round>.json
+
+schema_version: 1
+
+run_id: example-run-20260519-001
+round: 1  # Validation round number (must be >= 1)
+
+tests_passed: true
+test_failure_type: null  # current-task | environment | pre-existing | null when passed
+
+git_status:
+  - " M src/feature/module.py"
+
+changed_files:
+  - src/feature/module.py
+  - tests/test_module.py
+
+secret_scan_clean: true
+monitor_clean: true
+monitor_stop_reason: null
+
+hard_blockers: []
+
+scope_risk: false
+staging_risk: false
+
+artifact_paths:
+  tests_summary: .hoca-runtime/runs/example-run-20260519-001/tests-summary.md
+  tests_output: .hoca-runtime/runs/example-run-20260519-001/tests-output.log
+  monitor_result: .hoca-runtime/runs/example-run-20260519-001/monitor-result.json

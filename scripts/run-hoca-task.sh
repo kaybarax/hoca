@@ -54,6 +54,11 @@ while [ "$#" -gt 0 ]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+record_run_artifact() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.run_artifacts "$@"
+}
 
 if [ -n "$REQUESTED_MODEL" ]; then
   export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
@@ -218,6 +223,7 @@ fi
 
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
+    record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
@@ -287,6 +293,10 @@ cat > "$RUN_DIR/status.json" <<EOF
 {
   "run_id": "$RUN_ID",
   "status": "started",
+  "workflow_version": 2,
+  "structured_reports": true,
+  "max_total_rounds": $((MAX_REPAIR_ATTEMPTS + 1)),
+  "current_round": 0,
   "task": $(printf '%s' "$TASK" | jq -Rs .),
   "issue_id": "$ISSUE_ID",
   "auto_merge": "$AUTO_MERGE",
@@ -341,6 +351,36 @@ fi
 echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
 git checkout -b "$BRANCH" "$TASK_BASE_REF"
 
+INIT_ARGS=(
+  init "$RUN_DIR"
+  --run-id "$RUN_ID"
+  --repo-root "$REPO_ROOT"
+  --base-branch "$TASK_BASE_REF"
+  --task-branch "$BRANCH"
+  --task "$TASK"
+  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+)
+if [ -n "$ISSUE_ID" ]; then
+  INIT_ARGS+=(--issue-id "$ISSUE_ID")
+fi
+record_run_artifact "${INIT_ARGS[@]}"
+
+record_worker_attempt() {
+  local round_number="$1"
+  local status="${2:-completed}"
+  record_run_artifact record-worker "$RUN_DIR" --round "$round_number" --status "$status" >/dev/null 2>&1 || true
+}
+
+record_validation_artifact() {
+  local round_number="$1"
+  record_run_artifact record-validation "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
+}
+
+record_manager_decision_artifact() {
+  local round_number="$1"
+  record_run_artifact record-decision "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
+}
+
 run_openhands_phase() {
   local phase_task="$1"
   local phase_label="${2:-implementation}"
@@ -361,7 +401,9 @@ run_openhands_phase() {
   fi
 }
 
+WORKER_ROUND=1
 run_openhands_phase "$TASK" "implementation"
+record_worker_attempt "$WORKER_ROUND" "completed"
 
 path_is_secret_like() {
   local path="$1"
@@ -458,11 +500,13 @@ while true; do
     exit 0
   fi
 
+  VALIDATION_ROUND="$((repair_attempt + 1))"
   echo "Running tests..."
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
+  record_validation_artifact "$VALIDATION_ROUND"
   if [ "$TESTS_EXIT" -ne 0 ]; then
     FAILURE_TYPE=""
     if [ -f "$RUN_DIR/tests-summary.md" ]; then
@@ -477,16 +521,19 @@ while true; do
     repair_attempt=$((repair_attempt + 1))
     update_status "repairing" "tests_failed_attempt_${repair_attempt}"
     REPAIR_TASK="$(build_repair_task "tests_failed" "$repair_attempt")"
+    WORKER_ROUND="$((repair_attempt + 1))"
     run_openhands_phase "$REPAIR_TASK" "test repair attempt $repair_attempt"
+    record_worker_attempt "$WORKER_ROUND" "completed"
     check_openhands_changed_files
     continue
   fi
 
   echo "Running OpenHands review..."
   set +e
-  HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  HOCA_REVIEW_ROUND="$VALIDATION_ROUND" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
   REVIEW_EXIT=$?
   set -e
+  record_manager_decision_artifact "$VALIDATION_ROUND"
   if [ "$REVIEW_EXIT" -eq 2 ]; then
     if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
       block_run "review_not_lgtm" "Review still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/openhands-review.txt."
@@ -494,7 +541,9 @@ while true; do
     repair_attempt=$((repair_attempt + 1))
     update_status "repairing" "review_not_lgtm_attempt_${repair_attempt}"
     REPAIR_TASK="$(build_repair_task "review_not_lgtm" "$repair_attempt")"
+    WORKER_ROUND="$((repair_attempt + 1))"
     run_openhands_phase "$REPAIR_TASK" "review repair attempt $repair_attempt"
+    record_worker_attempt "$WORKER_ROUND" "completed"
     check_openhands_changed_files
     continue
   elif [ "$REVIEW_EXIT" -ne 0 ]; then
@@ -550,6 +599,7 @@ else
   update_status "needs_human_staging" "selective_staging_required"
 fi
 
+record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
 "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
 
 if [ -s "$RUN_DIR/staged-files.txt" ]; then

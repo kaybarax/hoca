@@ -1,0 +1,7 @@
+# Sandbox policy snapshot for a HOCA run (also embedded in task-spec.json).
+# Runtime artifact: .hoca-runtime/runs/<run_id>/sandbox-policy.json
+
+schema_version: 1
+
+enabled: true  # Prefer sandboxed OpenHands execution when available
+network_mode: offline  # offline | package-install | github-only | full

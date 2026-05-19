@@ -10,6 +10,7 @@ from hoca.run_state import (
     _held_locks,
     acquire_lock,
     create_run_id,
+    current_round,
     ensure_gitignore,
     ensure_run_dir,
     ensure_runtime_dirs,
@@ -19,8 +20,10 @@ from hoca.run_state import (
     now_epoch,
     now_iso,
     read_json,
+    read_optional_json,
     release_lock,
     write_json,
+    write_json_atomic,
     write_status,
 )
 
@@ -51,6 +54,8 @@ def test_ensure_run_dir(tmp_path: Path) -> None:
     run_dir = ensure_run_dir(tmp_path, "run-001")
     assert run_dir == tmp_path / RUN_STATE_DIRNAME / "runs" / "run-001"
     assert run_dir.is_dir()
+    for subdir in ("attempts", "reviews", "decisions", "validation", "logs"):
+        assert (run_dir / subdir).is_dir()
 
 
 def test_ensure_run_dir_idempotent(tmp_path: Path) -> None:
@@ -74,6 +79,28 @@ def test_write_json_sorted_keys(tmp_path: Path) -> None:
     write_json(p, {"z": 1, "a": 2})
     raw = p.read_text(encoding="utf-8")
     assert raw.index('"a"') < raw.index('"z"')
+
+
+def test_write_json_atomic_writes_readable_json(tmp_path: Path) -> None:
+    path = tmp_path / "atomic.json"
+    write_json_atomic(path, {"status": "running"})
+    assert path.is_file()
+    assert not (tmp_path / "atomic.json.tmp").exists()
+    assert read_json(path)["status"] == "running"
+
+
+def test_read_optional_json_missing_file(tmp_path: Path) -> None:
+    assert read_optional_json(tmp_path / "missing.json") is None
+
+
+def test_current_round_counts_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-rounds"
+    run_dir.mkdir()
+    attempts = run_dir / "attempts"
+    attempts.mkdir()
+    (attempts / "worker-attempt-1.json").write_text("{}", encoding="utf-8")
+    (attempts / "worker-attempt-2.json").write_text("{}", encoding="utf-8")
+    assert current_round(run_dir, prefix="worker-attempt-", subdir="attempts") == 2
 
 
 def test_write_json_trailing_newline(tmp_path: Path) -> None:

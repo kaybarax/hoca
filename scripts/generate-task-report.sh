@@ -41,9 +41,30 @@ append_file_list() {
   fi
 }
 
+append_structured_artifact() {
+  local label="$1"
+  local file="$2"
+  if [ -f "$file" ] && command -v jq >/dev/null 2>&1; then
+    echo "### $label"
+    jq -r '
+      if type == "object" then
+        to_entries
+        | map("- \(.key): \(if (.value|type) == "array" then (.value|join(", ")) else (.value|tostring) end)")
+        | .[]
+      else
+        "- (unstructured)"
+      end
+    ' "$file" 2>/dev/null | sed -n '1,24p'
+    echo ""
+  fi
+}
+
 append_log_links() {
   local found=0
   for file in \
+    "$RUN_DIR/task-spec.json" \
+    "$RUN_DIR/sandbox-policy.json" \
+    "$RUN_DIR/final-state.json" \
     "$RUN_DIR/openhands-output.log" \
     "$RUN_DIR/openhands-stderr.log" \
     "$RUN_DIR/tests-output.log" \
@@ -56,7 +77,11 @@ append_log_links() {
     "$RUN_DIR/gh-pr-create.log" \
     "$RUN_DIR/gh-pr-merge.log" \
     "$RUN_DIR/research-sources.txt" \
-    "$RUN_DIR/merge-policy.txt"; do
+    "$RUN_DIR/merge-policy.txt" \
+    "$RUN_DIR"/attempts/worker-attempt-*.json \
+    "$RUN_DIR"/reviews/review-report-*.json \
+    "$RUN_DIR"/decisions/manager-decision-*.json \
+    "$RUN_DIR"/validation/validation-report-*.json; do
     if [ -f "$file" ]; then
       printf -- "- %s\n" "$file"
       found=1
@@ -176,6 +201,23 @@ fi
       echo "- Run status recorded as: $STATUS"
       ;;
   esac
+  echo ""
+  echo "### Structured Artifacts"
+  append_structured_artifact "Task Spec" "$RUN_DIR/task-spec.json"
+  append_structured_artifact "Sandbox Policy" "$RUN_DIR/sandbox-policy.json"
+  latest_validation="$(ls -1 "$RUN_DIR"/validation/validation-report-*.json 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [ -n "$latest_validation" ]; then
+    append_structured_artifact "Validation Report" "$latest_validation"
+  fi
+  latest_review="$(ls -1 "$RUN_DIR"/reviews/review-report-*.json 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [ -n "$latest_review" ]; then
+    append_structured_artifact "Review Report" "$latest_review"
+  fi
+  latest_decision="$(ls -1 "$RUN_DIR"/decisions/manager-decision-*.json 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [ -n "$latest_decision" ]; then
+    append_structured_artifact "Manager Decision" "$latest_decision"
+  fi
+  append_structured_artifact "Final State" "$RUN_DIR/final-state.json"
   echo ""
   echo "### Validation"
   if [ -f "$RUN_DIR/tests-summary.md" ]; then

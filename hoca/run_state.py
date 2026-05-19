@@ -3,11 +3,14 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from hoca.run_layout import ensure_run_layout
 
 RUN_STATE_DIRNAME = ".hoca-runtime"
 
@@ -29,7 +32,7 @@ def create_run_id(prefix: str = "run") -> str:
 
 def ensure_run_dir(project_path: Path, run_id: str) -> Path:
     run_dir = project_path / RUN_STATE_DIRNAME / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    ensure_run_layout(run_dir)
     return run_dir
 
 
@@ -56,8 +59,55 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    write_json(temp_path, data)
+    temp_path.replace(path)
+
+
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        return read_json(path)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def current_round(run_dir: Path, *, prefix: str, subdir: str) -> int:
+    artifact_dir = run_dir / subdir
+    if not artifact_dir.is_dir():
+        return 0
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)\.json$")
+    rounds = [
+        int(match.group(1))
+        for path in artifact_dir.iterdir()
+        if path.is_file() and (match := pattern.match(path.name))
+    ]
+    return max(rounds, default=0)
+
+
+def list_round_artifact_paths(run_dir: Path, subdir: str, prefix: str) -> list[str]:
+    artifact_dir = run_dir / subdir
+    if not artifact_dir.is_dir():
+        return []
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)\.json$")
+    paths = [
+        str(path)
+        for path in sorted(
+            artifact_dir.iterdir(),
+            key=lambda item: int(pattern.match(item.name).group(1))
+            if pattern.match(item.name)
+            else 0,
+        )
+        if path.is_file() and pattern.match(path.name)
+    ]
+    return paths
 
 
 def write_status(run_dir: Path, status: str, **fields: Any) -> Path:

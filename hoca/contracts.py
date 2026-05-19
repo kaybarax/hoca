@@ -496,6 +496,70 @@ class HocaReviewReport(JsonContract):
 
 
 @dataclass(frozen=True)
+class HocaValidationReport(JsonContract):
+    run_id: str
+    round: int
+    tests_passed: bool
+    test_failure_type: str | None
+    git_status: list[str]
+    changed_files: list[str]
+    secret_scan_clean: bool
+    monitor_clean: bool
+    monitor_stop_reason: str | None
+    hard_blockers: list[str]
+    scope_risk: bool
+    staging_risk: bool
+    artifact_paths: dict[str, str]
+
+    _required_fields: ClassVar[tuple[str, ...]] = (
+        "run_id",
+        "round",
+        "tests_passed",
+        "test_failure_type",
+        "git_status",
+        "changed_files",
+        "secret_scan_clean",
+        "monitor_clean",
+        "monitor_stop_reason",
+        "hard_blockers",
+        "scope_risk",
+        "staging_risk",
+        "artifact_paths",
+    )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        cls._validate_required(data)
+        round_number = int(_required(data, "round"))
+        if round_number < 1:
+            raise ValueError("round must be greater than or equal to 1")
+        return cls(
+            schema_version=int(data.get("schema_version", 1)),
+            run_id=_single_line_string(_required(data, "run_id"), "run_id"),
+            round=round_number,
+            tests_passed=bool(_required(data, "tests_passed")),
+            test_failure_type=None
+            if data["test_failure_type"] is None
+            else _single_line_string(data["test_failure_type"], "test_failure_type"),
+            git_status=_single_line_string_list(data, "git_status"),
+            changed_files=_single_line_string_list(data, "changed_files"),
+            secret_scan_clean=bool(_required(data, "secret_scan_clean")),
+            monitor_clean=bool(_required(data, "monitor_clean")),
+            monitor_stop_reason=None
+            if data["monitor_stop_reason"] is None
+            else _single_line_string(data["monitor_stop_reason"], "monitor_stop_reason"),
+            hard_blockers=_single_line_string_list(data, "hard_blockers"),
+            scope_risk=bool(_required(data, "scope_risk")),
+            staging_risk=bool(_required(data, "staging_risk")),
+            artifact_paths=_string_map(data, "artifact_paths"),
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> Self:
+        return cls.from_dict(_json_loads(raw))
+
+
+@dataclass(frozen=True)
 class HocaManagerDecision(JsonContract):
     run_id: str
     round: int

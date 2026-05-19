@@ -9,7 +9,9 @@ from hoca.contracts import (
     HocaAttemptReport,
     HocaManagerDecision,
     HocaReviewReport,
+    HocaSandboxPolicy,
     HocaTaskSpec,
+    HocaValidationReport,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +49,16 @@ CONTRACT_TEMPLATES: tuple[tuple[type, str, tuple[str, ...]], ...] = (
         HocaManagerDecision,
         "HocaManagerDecision.yaml",
         (*HocaManagerDecision._required_fields, "schema_version"),
+    ),
+    (
+        HocaValidationReport,
+        "HocaValidationReport.yaml",
+        (*HocaValidationReport._required_fields, "schema_version"),
+    ),
+    (
+        HocaSandboxPolicy,
+        "HocaSandboxPolicy.yaml",
+        (*HocaSandboxPolicy._required_fields, "schema_version"),
     ),
 )
 
