@@ -15,8 +15,19 @@ REQUIRED_ATTEMPT_ARTIFACT_PATHS: frozenset[str] = frozenset(
 )
 AttemptStatus = Literal["completed", "failed", "blocked"]
 ReviewVerdict = Literal["LGTM", "fix_required", "blocked"]
+VALID_REVIEW_VERDICTS: frozenset[str] = frozenset(("LGTM", "fix_required", "blocked"))
+VALID_REVIEW_ROLES: frozenset[str] = frozenset(("reviewer",))
 FindingSeverity = Literal["critical", "high", "medium", "low", "nit"]
-FindingCategory = Literal["correctness", "security", "test", "scope", "maintainability", "style"]
+VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
+    ("critical", "high", "medium", "low", "nit")
+)
+VALID_FINDING_CATEGORIES: frozenset[str] = frozenset(
+    ("correctness", "security", "test", "scope", "maintainability", "style", "tooling", "environment")
+)
+SECURITY_CRITICAL_SEVERITIES: frozenset[str] = frozenset(("critical", "high"))
+FindingCategory = Literal[
+    "correctness", "security", "test", "scope", "maintainability", "style", "tooling", "environment"
+]
 ManagerDecision = Literal["proceed_to_pr", "repair_required", "blocked", "draft_pr_with_blockers"]
 NetworkMode = Literal["offline", "package-install", "github-only", "full"]
 FinalStatus = Literal["completed", "failed", "blocked", "draft_pr_opened", "pr_opened"]
@@ -378,11 +389,31 @@ class HocaReviewFinding(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        severity = _required(data, "severity")
+        if severity not in VALID_FINDING_SEVERITIES:
+            raise ValueError(
+                f"severity must be one of {sorted(VALID_FINDING_SEVERITIES)}, got: {severity!r}"
+            )
+        category = _required(data, "category")
+        if category not in VALID_FINDING_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {sorted(VALID_FINDING_CATEGORIES)}, got: {category!r}"
+            )
+        if category == "security" and severity in ("low", "nit"):
+            raise ValueError(
+                f"Security findings must have severity critical, high, or medium — "
+                f"got {severity!r}. Use a non-security category for low-priority observations."
+            )
+        if category == "correctness" and severity == "nit":
+            raise ValueError(
+                "Correctness findings cannot have severity 'nit'. "
+                "Use 'low' or higher, or a different category."
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             id=str(_required(data, "id")),
-            severity=_required(data, "severity"),
-            category=_required(data, "category"),
+            severity=severity,
+            category=category,
             file=None if data["file"] is None else str(data["file"]),
             summary=str(_required(data, "summary")),
             required_fix=None if data["required_fix"] is None else str(data["required_fix"]),
@@ -414,15 +445,28 @@ class HocaReviewReport(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        round_number = int(_required(data, "round"))
+        if round_number < 1:
+            raise ValueError("round must be greater than or equal to 1")
+        role = str(_required(data, "role"))
+        if role not in VALID_REVIEW_ROLES:
+            raise ValueError(
+                f"role must be one of {sorted(VALID_REVIEW_ROLES)}, got: {role!r}"
+            )
+        verdict = _required(data, "verdict")
+        if verdict not in VALID_REVIEW_VERDICTS:
+            raise ValueError(
+                f"verdict must be one of {sorted(VALID_REVIEW_VERDICTS)}, got: {verdict!r}"
+            )
         pr_notes = _required(data, "pr_notes")
         if not isinstance(pr_notes, dict):
             raise ValueError("Contract field must be an object: pr_notes")
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
-            round=int(_required(data, "round")),
-            role=str(_required(data, "role")),
-            verdict=_required(data, "verdict"),
+            round=round_number,
+            role=role,
+            verdict=verdict,
             findings=[
                 HocaReviewFinding.from_dict(item) for item in _object_list(data, "findings")
             ],

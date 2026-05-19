@@ -349,6 +349,229 @@ def test_manager_decision_round_trips_json() -> None:
     assert HocaManagerDecision.from_json(decision.to_json()) == decision
 
 
+def _finding(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "id": "F1",
+        "severity": "medium",
+        "category": "correctness",
+        "file": "src/main.py",
+        "summary": "Logic error in handler",
+        "required_fix": "Fix the condition",
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+def _review_report(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "schema_version": 1,
+        "run_id": "run-123",
+        "round": 1,
+        "role": "reviewer",
+        "verdict": "fix_required",
+        "findings": [_finding()],
+        "pr_notes": {"summary": ["Needs fix"], "known_followups": []},
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+# --- HocaReviewReport acceptance criteria ---
+
+
+def test_review_report_expresses_blocking_findings() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="fix_required",
+            findings=[
+                _finding(id="F1", severity="high", category="correctness", required_fix="Fix it"),
+            ],
+        )
+    )
+
+    assert report.verdict == "fix_required"
+    assert report.findings[0].severity == "high"
+    assert report.findings[0].required_fix is not None
+
+
+def test_review_report_expresses_non_blocking_findings() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="LGTM",
+            findings=[
+                _finding(
+                    id="F1", severity="low", category="maintainability", required_fix=None
+                ),
+            ],
+        )
+    )
+
+    assert report.verdict == "LGTM"
+    assert report.findings[0].severity == "low"
+    assert report.findings[0].required_fix is None
+
+
+def test_review_report_low_priority_findings_downgraded_to_pr_notes() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="LGTM",
+            findings=[
+                _finding(id="F1", severity="nit", category="style", required_fix=None),
+            ],
+            pr_notes={
+                "summary": ["Minor style nit"],
+                "known_followups": ["Consider renaming variable for clarity"],
+            },
+        )
+    )
+
+    assert report.verdict == "LGTM"
+    assert report.findings[0].severity == "nit"
+    assert len(report.pr_notes["known_followups"]) == 1
+
+
+def test_review_report_lgtm_with_non_blocking_followups() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="LGTM",
+            findings=[],
+            pr_notes={
+                "summary": ["Approved with minor follow-ups"],
+                "known_followups": [
+                    "Add doc comment to exported function",
+                    "Consider extracting helper",
+                ],
+            },
+        )
+    )
+
+    assert report.verdict == "LGTM"
+    assert len(report.findings) == 0
+    assert len(report.pr_notes["known_followups"]) == 2
+
+
+def test_review_report_blocked_verdict() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="blocked",
+            findings=[
+                _finding(id="F1", severity="critical", category="security",
+                         summary="Credential leak", required_fix="Remove leaked secret"),
+            ],
+        )
+    )
+
+    assert report.verdict == "blocked"
+    assert report.findings[0].severity == "critical"
+    assert report.findings[0].category == "security"
+
+
+def test_review_finding_rejects_security_nit() -> None:
+    with pytest.raises(ValueError, match="Security findings must have severity"):
+        HocaReviewFinding.from_dict(
+            _finding(severity="nit", category="security")
+        )
+
+
+def test_review_finding_rejects_security_low() -> None:
+    with pytest.raises(ValueError, match="Security findings must have severity"):
+        HocaReviewFinding.from_dict(
+            _finding(severity="low", category="security")
+        )
+
+
+def test_review_finding_allows_security_medium() -> None:
+    finding = HocaReviewFinding.from_dict(
+        _finding(severity="medium", category="security")
+    )
+    assert finding.severity == "medium"
+    assert finding.category == "security"
+
+
+def test_review_finding_rejects_correctness_nit() -> None:
+    with pytest.raises(ValueError, match="Correctness findings cannot have severity"):
+        HocaReviewFinding.from_dict(
+            _finding(severity="nit", category="correctness")
+        )
+
+
+def test_review_finding_allows_correctness_low() -> None:
+    finding = HocaReviewFinding.from_dict(
+        _finding(severity="low", category="correctness")
+    )
+    assert finding.severity == "low"
+
+
+def test_review_finding_rejects_invalid_severity() -> None:
+    with pytest.raises(ValueError, match="severity must be one of"):
+        HocaReviewFinding.from_dict(
+            _finding(severity="extreme")
+        )
+
+
+def test_review_finding_rejects_invalid_category() -> None:
+    with pytest.raises(ValueError, match="category must be one of"):
+        HocaReviewFinding.from_dict(
+            _finding(category="performance")
+        )
+
+
+def test_review_finding_supports_tooling_category() -> None:
+    finding = HocaReviewFinding.from_dict(
+        _finding(category="tooling", severity="low")
+    )
+    assert finding.category == "tooling"
+
+
+def test_review_finding_supports_environment_category() -> None:
+    finding = HocaReviewFinding.from_dict(
+        _finding(category="environment", severity="medium")
+    )
+    assert finding.category == "environment"
+
+
+def test_review_report_rejects_invalid_verdict() -> None:
+    with pytest.raises(ValueError, match="verdict must be one of"):
+        HocaReviewReport.from_dict(
+            _review_report(verdict="approved")
+        )
+
+
+def test_review_report_rejects_non_reviewer_role() -> None:
+    with pytest.raises(ValueError, match="role must be one of"):
+        HocaReviewReport.from_dict(
+            _review_report(role="worker")
+        )
+
+
+def test_review_report_rejects_invalid_round() -> None:
+    with pytest.raises(ValueError, match="round must be greater than or equal to 1"):
+        HocaReviewReport.from_dict(
+            _review_report(round=0)
+        )
+
+
+def test_review_report_mixed_severity_findings() -> None:
+    report = HocaReviewReport.from_dict(
+        _review_report(
+            verdict="fix_required",
+            findings=[
+                _finding(id="F1", severity="critical", category="security",
+                         required_fix="Remove credential"),
+                _finding(id="F2", severity="medium", category="test",
+                         required_fix="Add test"),
+                _finding(id="F3", severity="nit", category="style",
+                         required_fix=None),
+            ],
+        )
+    )
+
+    assert len(report.findings) == 3
+    severities = [f.severity for f in report.findings]
+    assert "critical" in severities
+    assert "nit" in severities
+
+
 def test_model_pool_serializes_with_safe_redaction() -> None:
     pool = HocaModelPool(
         models=[
