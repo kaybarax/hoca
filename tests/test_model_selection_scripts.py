@@ -244,3 +244,52 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     )
     assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert (run_dir / "review" / "git-diff.patch").is_file()
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+
+
+def test_review_with_openhands_prefers_structured_report(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "echo 'LGTM'\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    structured_report = tmp_path / "review-report.json"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    structured_report.write_text(
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "fix_required",\n'
+        '  "findings": [],\n'
+        '  "pr_notes": {"summary": ["Needs work."], "known_followups": []}\n'
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "review-with-openhands.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_USE_SANDBOX": "false",
+            "HOCA_REVIEW_REPORT_PATH": str(structured_report),
+        },
+        args=[str(project), "Review project", str(run_dir)],
+    )
+
+    assert result.returncode == 2
+    assert "source: structured" in result.stdout
+    assert "OpenHands review did not return LGTM" in result.stdout

@@ -104,7 +104,7 @@ def test_safe_stage_requires_lgtm_review(tmp_path: Path) -> None:
     result = run_safe_stage(tmp_path, "Update README", run_dir)
 
     assert result.returncode != 0
-    assert "before a review returns LGTM" in result.stderr
+    assert "before an approved review gate" in result.stderr
     assert staged_files(tmp_path) == []
 
 

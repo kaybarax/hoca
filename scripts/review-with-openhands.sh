@@ -13,6 +13,24 @@ RUN_DIR="$(mkdir -p "$3" && cd "$3" && pwd)"
 cd "$PROJECT_PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+run_review_gate() {
+  local review_text_path="$1"
+  set +e
+  REVIEW_GATE_ARGS=(
+    "$RUN_DIR"
+    --review-text "$review_text_path"
+    --run-id "$(basename "$RUN_DIR")"
+    --round "${HOCA_REVIEW_ROUND:-1}"
+  )
+  if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
+    REVIEW_GATE_ARGS+=(--structured-report "$HOCA_REVIEW_REPORT_PATH")
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "${REVIEW_GATE_ARGS[@]}"
+  REVIEW_GATE_EXIT=$?
+  set -e
+}
 
 changed_files_for_review() {
   {
@@ -32,7 +50,8 @@ CHANGED_FILES="$(changed_files_for_review)"
 if [ -z "$CHANGED_FILES" ]; then
   echo "No changed files to review."
   echo "LGTM" > "$RUN_DIR/openhands-review.txt"
-  exit 0
+  run_review_gate "$RUN_DIR/openhands-review.txt"
+  exit "$REVIEW_GATE_EXIT"
 fi
 
 REVIEW_DIR="$RUN_DIR/review"
@@ -91,9 +110,17 @@ if [ "$REVIEW_EXIT" -ne 0 ]; then
   exit "$REVIEW_EXIT"
 fi
 
-if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
+run_review_gate "$RUN_DIR/openhands-review.txt"
+
+if [ "$REVIEW_GATE_EXIT" -eq 0 ]; then
   echo "OpenHands review passed."
-else
+elif [ "$REVIEW_GATE_EXIT" -eq 2 ]; then
   echo "OpenHands review did not return LGTM."
   exit 2
+elif [ "$REVIEW_GATE_EXIT" -eq 4 ]; then
+  echo "OpenHands review was blocked."
+  exit 4
+else
+  echo "OpenHands review gate failed."
+  exit "$REVIEW_GATE_EXIT"
 fi

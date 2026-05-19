@@ -12,6 +12,7 @@ RUN_DIR="$3"
 INTENDED_FILE_LIST="$4"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_PATH"
 
@@ -20,8 +21,11 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 
-if [ ! -f "$RUN_DIR/openhands-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-  echo "Refusing safe staging before a review returns LGTM." >&2
+if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+  --review-text "$RUN_DIR/openhands-review.txt" \
+  --run-id "$(basename "$RUN_DIR")" \
+  --round "${HOCA_REVIEW_ROUND:-1}" >/dev/null; then
+  echo "Refusing safe staging before an approved review gate." >&2
   exit 1
 fi
 

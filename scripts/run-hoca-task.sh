@@ -484,10 +484,10 @@ while true; do
 
   echo "Running OpenHands review..."
   set +e
-  "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
   REVIEW_EXIT=$?
   set -e
-  if [ "$REVIEW_EXIT" -eq 2 ] || { [ "$REVIEW_EXIT" -eq 0 ] && ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; }; then
+  if [ "$REVIEW_EXIT" -eq 2 ]; then
     if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
       block_run "review_not_lgtm" "Review still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/openhands-review.txt."
     fi
@@ -498,11 +498,10 @@ while true; do
     check_openhands_changed_files
     continue
   elif [ "$REVIEW_EXIT" -ne 0 ]; then
+    if [ "$REVIEW_EXIT" -eq 4 ]; then
+      block_run "review_blocked" "OpenHands review reported a blocked verdict. Human intervention is needed; see $RUN_DIR/openhands-review.txt."
+    fi
     block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
-  fi
-
-  if ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-    block_run "review_not_lgtm" "Review did not return LGTM. Stopping before commit."
   fi
 
   break
@@ -537,7 +536,7 @@ fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."
-  if "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+  if HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
     update_status "staged" "safe_staging_completed"
   else
     STAGING_EXIT=$?
@@ -567,7 +566,7 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   if [ -n "$ISSUE_ID" ]; then
     PR_ARGS=(--issue-id "$ISSUE_ID")
   fi
-  "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true

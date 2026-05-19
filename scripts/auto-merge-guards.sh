@@ -8,6 +8,8 @@ set -euo pipefail
 
 SKIP_FILE=""
 RUN_DIR=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 log_skip() {
   printf '%s\n' "$1" >> "$SKIP_FILE"
@@ -143,8 +145,11 @@ precheck() {
     return 1
   fi
 
-  if [ ! -f "$RUN_DIR/openhands-review.txt" ] || ! grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-    log_skip "Code review must contain LGTM before auto-merge."
+  if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+    --review-text "$RUN_DIR/openhands-review.txt" \
+    --run-id "$(basename "$RUN_DIR")" \
+    --round "${HOCA_REVIEW_ROUND:-1}" >/dev/null; then
+    log_skip "Code review gate must approve before auto-merge."
     return 1
   fi
 
