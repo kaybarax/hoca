@@ -185,6 +185,87 @@ def test_worker_skill_never_owns_git_lifecycle() -> None:
     assert "hoca-pr-publisher.md" in content
 
 
+def test_reviewer_skill_is_review_focused() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    assert "# HOCA Reviewer (QA)" in content
+    assert "hoca-manager.md" in content
+    assert "hoca-worker-openhands.md" in content
+    assert "hoca-sandbox-policy.md" in content
+    assert "scripts/review-with-openhands.sh" in content
+    lowered = content.lower()
+    assert "review-only" in lowered
+    assert "never invoke openhands directly" in lowered
+
+
+def test_reviewer_skill_defines_manual_procedures() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    required_sections = (
+        "### 1. Receive task spec and diff context",
+        "### 2. Read project instructions",
+        "### 3. Write the OpenHands review prompt",
+        "### 4. Call the wrapper script",
+        "### 5. Classify findings",
+        "### 6. Produce `HocaReviewReport`",
+        "### 7. PR notes and tech debt",
+    )
+    for section in required_sections:
+        assert section in content
+
+
+def test_reviewer_skill_defines_categories_and_severities() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    for category in (
+        "correctness",
+        "security",
+        "test",
+        "scope",
+        "maintainability",
+        "style",
+        "tooling",
+        "environment",
+    ):
+        assert category in content
+    for severity in ("critical", "high", "medium", "low", "nit"):
+        assert severity in content
+    assert "## Review categories" in content
+    assert "## Severity meanings" in content
+
+
+def test_reviewer_skill_defines_verdict_conditions() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    assert "#### `LGTM` conditions" in content
+    assert "#### `fix_required` conditions" in content
+    assert "#### `blocked` conditions" in content
+    lowered = content.lower()
+    assert "do not block on pure preference" in lowered
+
+
+def test_reviewer_skill_references_structured_artifacts() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    assert "HocaTaskSpec" in content
+    assert "HocaAttemptReport" in content
+    assert "HocaReviewReport" in content
+    assert "task-spec.json" in content
+    assert "review-report-<round>.json" in content
+    assert "templates/HocaReviewReport.yaml" in content
+
+
+def test_reviewer_skill_maps_output_to_review_report() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    for field in ("verdict", "findings", "pr_notes", "required_fix", "severity", "category"):
+        assert field in content
+    assert "role" in content and "reviewer" in content
+    assert "known_followups" in content
+
+
+def test_reviewer_skill_never_owns_git_lifecycle() -> None:
+    content = (SKILLS_DIR / "hoca-reviewer-qa.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    assert "must never" in lowered
+    assert "git lifecycle" in lowered
+    assert "hoca-pr-publisher.md" in content
+
+
 @pytest.mark.parametrize("filename", ("hoca-worker-openhands.md", "hoca-reviewer-qa.md"))
 def test_worker_and_reviewer_skills_omit_manager_git_powers(filename: str) -> None:
     content = (SKILLS_DIR / filename).read_text(encoding="utf-8")
