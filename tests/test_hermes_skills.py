@@ -63,6 +63,128 @@ def test_manager_skill_is_orchestration_focused() -> None:
     assert "scripts/review-with-openhands.sh" in content
 
 
+def test_manager_skill_defines_manual_procedures() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    required_sections = (
+        "### 1. Intake",
+        "### 2. Definition of ready",
+        "### 3. Task spec output",
+        "### 5. Worker assignment",
+        "### 6. Deterministic validation",
+        "### 7. Reviewer assignment",
+        "### 8. Manager arbitration",
+        "### 9. Repair loop and max rounds",
+        "### 10. PR and cleanup",
+        "### 11. Human escalation triggers",
+    )
+    for section in required_sections:
+        assert section in content
+
+
+def test_manager_skill_references_structured_artifacts() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    assert "HocaTaskSpec" in content
+    assert "HocaAttemptReport" in content
+    assert "HocaValidationReport" in content
+    assert "HocaReviewReport" in content
+    assert "HocaManagerDecision" in content
+    assert "task-spec.json" in content
+
+
+def test_manager_skill_uses_wrapper_scripts_not_raw_openhands() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    assert "scripts/run-openhands-task.sh" in content
+    assert "scripts/review-with-openhands.sh" in content
+    assert "scripts/hoca-doctor.sh" in content
+    assert "scripts/run-tests.sh" in content
+    lowered = content.lower()
+    assert "never call openhands directly" in lowered
+
+
+def test_manager_skill_forbids_bypassing_safety_gates() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    assert "safety gates" in lowered
+    assert "never bypass" in lowered
+    assert "require_tests=true" in content
+    assert "require_review_lgtm=true" in content
+    assert "max_total_rounds" in content
+
+
+def test_manager_skill_distinguishes_trivial_edits_from_worker_implementation() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    assert "trivial mechanical edits" in lowered
+    assert "route all non-trivial implementation through the worker" in lowered
+
+
+def test_worker_skill_is_implementation_focused() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    assert "# HOCA Worker (OpenHands)" in content
+    assert "hoca-manager.md" in content
+    assert "hoca-sandbox-policy.md" in content
+    assert "scripts/run-openhands-task.sh" in content
+    lowered = content.lower()
+    assert "implementation-only" in lowered
+    assert "never invoke openhands directly" in lowered
+
+
+def test_worker_skill_defines_manual_procedures() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    required_sections = (
+        "### 1. Receive `HocaTaskSpec`",
+        "### 2. Read project instructions",
+        "### 3. Write the OpenHands implementation prompt",
+        "### 4. Call the wrapper script",
+        "### 5. Summarize changes (`HocaAttemptReport`)",
+        "### 6. Repair prompts",
+    )
+    for section in required_sections:
+        assert section in content
+
+
+def test_worker_skill_references_structured_artifacts() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    assert "HocaTaskSpec" in content
+    assert "HocaAttemptReport" in content
+    assert "task-spec.json" in content
+    assert "worker-attempt-<round>.json" in content
+    assert "record-worker" in content
+
+
+def test_worker_skill_maps_output_to_attempt_report() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    for field in (
+        "changed_files",
+        "summary",
+        "commands_run",
+        "tests_run",
+        "known_risks",
+        "blocked_reason",
+        "artifact_paths",
+    ):
+        assert field in content
+    assert "`status`" in content or "status" in content
+    assert "role" in content and "worker" in content
+
+
+def test_worker_skill_defines_repair_handling() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    assert "repair" in lowered
+    assert "next_worker_brief" in content
+    assert "accepted" in lowered
+    assert "rejected" in lowered
+
+
+def test_worker_skill_never_owns_git_lifecycle() -> None:
+    content = (SKILLS_DIR / "hoca-worker-openhands.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    assert "must never" in lowered
+    assert "git lifecycle" in lowered
+    assert "hoca-pr-publisher.md" in content
+
+
 @pytest.mark.parametrize("filename", ("hoca-worker-openhands.md", "hoca-reviewer-qa.md"))
 def test_worker_and_reviewer_skills_omit_manager_git_powers(filename: str) -> None:
     content = (SKILLS_DIR / filename).read_text(encoding="utf-8")
