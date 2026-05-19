@@ -57,6 +57,14 @@ def init_project(project_path: Path) -> None:
     run_script("init-project.sh", [str(project_path)])
 
 
+@main.command("setup-profiles")
+@click.option("--dry-run", is_flag=True, default=False, help="Print planned actions without changing files.")
+def setup_profiles(dry_run: bool) -> None:
+    """Install or update HOCA Hermes role profiles from repo templates."""
+    args = ["--dry-run"] if dry_run else []
+    run_script("setup-hermes-profiles.sh", args)
+
+
 @main.command()
 @click.argument("project_path", type=click.Path(path_type=Path))
 @click.argument("task")

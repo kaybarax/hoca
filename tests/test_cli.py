@@ -22,6 +22,66 @@ def test_cli_help_displays_group_help() -> None:
     assert "init-project" in result.output
     assert "run" in result.output
     assert "issue" in result.output
+    assert "setup-profiles" in result.output
+
+
+def test_setup_profiles_help_displays_command_help() -> None:
+    result = CliRunner().invoke(main, ["setup-profiles", "--help"])
+
+    assert result.exit_code == 0
+    assert "Install or update HOCA Hermes role profiles" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_setup_profiles_calls_script(monkeypatch) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["setup-profiles"])
+
+    assert result.exit_code == 0
+    assert calls == [("setup-hermes-profiles.sh", [])]
+
+
+def test_setup_profiles_forwards_dry_run_flag(monkeypatch) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["setup-profiles", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert calls == [("setup-hermes-profiles.sh", ["--dry-run"])]
+
+
+def test_setup_profiles_reports_missing_script(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("hoca.cli.repo_root", lambda: tmp_path)
+
+    result = CliRunner().invoke(main, ["setup-profiles"])
+
+    assert result.exit_code != 0
+    assert "Missing script" in result.output
+
+
+def test_setup_profiles_reports_script_failure(monkeypatch, tmp_path: Path) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    failing_script = scripts_dir / "setup-hermes-profiles.sh"
+    failing_script.write_text("#!/bin/sh\nexit 2\n")
+    failing_script.chmod(0o755)
+    monkeypatch.setattr("hoca.cli.repo_root", lambda: tmp_path)
+
+    result = CliRunner().invoke(main, ["setup-profiles"])
+
+    assert result.exit_code != 0
+    assert "Command failed with exit code 2" in result.output
 
 
 def test_bin_hoca_displays_help() -> None:

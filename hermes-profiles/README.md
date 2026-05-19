@@ -12,17 +12,18 @@ and example Hermes configuration (`config.example.yaml`).
 
 ## Installation
 
-Profile installation is handled by `scripts/setup-hermes-profiles.sh` (or
-`hoca setup-profiles` once task 4.7 lands). Run from the HOCA repo:
+Profile installation is handled by `scripts/setup-hermes-profiles.sh` or
+`hoca setup-profiles`. Run from the HOCA repo:
 
 ```bash
+hoca setup-profiles
+hoca setup-profiles --dry-run
 ./scripts/setup-hermes-profiles.sh
 ./scripts/setup-hermes-profiles.sh --dry-run
 ```
 
-Until the CLI wrapper ships, you can also copy a template directory into your
-Hermes profiles location or use `hermes profile install` when a distribution
-manifest is added.
+You can also copy a template directory into your Hermes profiles location or use
+`hermes profile install` when a distribution manifest is added.
 
 ```bash
 hermes profile create hoca-manager   # if creating manually
