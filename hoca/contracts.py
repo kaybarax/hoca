@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, ClassVar, Literal, Self
 
 RiskLevel = Literal["low", "medium", "high"]
+VALID_RISK_LEVELS: frozenset[str] = frozenset(("low", "medium", "high"))
 AttemptStatus = Literal["completed", "failed", "blocked"]
 ReviewVerdict = Literal["LGTM", "fix_required", "blocked"]
 FindingSeverity = Literal["critical", "high", "medium", "low", "nit"]
@@ -187,6 +188,7 @@ class HocaTaskSpec(JsonContract):
     base_branch: str
     task_branch: str
     issue_id: str | None
+    raw_request: str
     goal: str
     non_goals: list[str]
     expected_areas: list[str]
@@ -194,7 +196,7 @@ class HocaTaskSpec(JsonContract):
     test_commands: list[str]
     risk_level: RiskLevel
     requires_human_approval: bool
-    max_rounds: int
+    max_total_rounds: int
     models: HocaRoleModelSelection
     sandbox: HocaSandboxPolicy
 
@@ -204,6 +206,7 @@ class HocaTaskSpec(JsonContract):
         "base_branch",
         "task_branch",
         "issue_id",
+        "raw_request",
         "goal",
         "non_goals",
         "expected_areas",
@@ -211,7 +214,6 @@ class HocaTaskSpec(JsonContract):
         "test_commands",
         "risk_level",
         "requires_human_approval",
-        "max_rounds",
         "models",
         "sandbox",
     )
@@ -225,6 +227,11 @@ class HocaTaskSpec(JsonContract):
             raise ValueError("Contract field must be an object: models")
         if not isinstance(sandbox, dict):
             raise ValueError("Contract field must be an object: sandbox")
+        risk = _required(data, "risk_level")
+        if risk not in VALID_RISK_LEVELS:
+            raise ValueError(
+                f"risk_level must be one of {sorted(VALID_RISK_LEVELS)}, got: {risk!r}"
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
@@ -232,14 +239,15 @@ class HocaTaskSpec(JsonContract):
             base_branch=str(_required(data, "base_branch")),
             task_branch=str(_required(data, "task_branch")),
             issue_id=None if data["issue_id"] is None else str(data["issue_id"]),
+            raw_request=str(_required(data, "raw_request")),
             goal=str(_required(data, "goal")),
             non_goals=_string_list(data, "non_goals"),
             expected_areas=_string_list(data, "expected_areas"),
             acceptance_criteria=_string_list(data, "acceptance_criteria"),
             test_commands=_string_list(data, "test_commands"),
-            risk_level=_required(data, "risk_level"),
+            risk_level=risk,
             requires_human_approval=bool(_required(data, "requires_human_approval")),
-            max_rounds=int(_required(data, "max_rounds")),
+            max_total_rounds=int(data.get("max_total_rounds", 3)),
             models=HocaRoleModelSelection.from_dict(models),
             sandbox=HocaSandboxPolicy.from_dict(sandbox),
         )
