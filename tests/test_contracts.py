@@ -212,6 +212,102 @@ def test_attempt_report_round_trips_json() -> None:
     assert HocaAttemptReport.from_json(report.to_json()) == report
 
 
+def test_failed_attempt_report_can_be_read_without_changed_files() -> None:
+    report = HocaAttemptReport.from_dict(
+        {
+            "schema_version": 1,
+            "run_id": "run-456",
+            "round": 2,
+            "role": "worker",
+            "status": "failed",
+            "changed_files": [],
+            "summary": ["OpenHands exited non-zero before making changes"],
+            "commands_run": ["openhands --headless --task ..."],
+            "tests_run": [],
+            "known_risks": ["Implementation did not complete"],
+            "blocked_reason": "openhands_failed",
+            "artifact_paths": {
+                "openhands_output": ".hoca-runtime/runs/run-456/openhands-output.jsonl",
+                "monitor_result": ".hoca-runtime/runs/run-456/monitor-result.json",
+            },
+        }
+    )
+
+    assert report.status == "failed"
+    assert report.changed_files == []
+    assert report.blocked_reason == "openhands_failed"
+
+
+def test_attempt_report_rejects_invalid_status() -> None:
+    data = {
+        "schema_version": 1,
+        "run_id": "run-789",
+        "round": 1,
+        "role": "worker",
+        "status": "running",
+        "changed_files": [],
+        "summary": [],
+        "commands_run": [],
+        "tests_run": [],
+        "known_risks": [],
+        "blocked_reason": None,
+        "artifact_paths": {"openhands_output": "worker.json", "monitor_result": "monitor.json"},
+    }
+
+    with pytest.raises(ValueError, match="status must be one of"):
+        HocaAttemptReport.from_dict(data)
+
+
+def test_attempt_report_rejects_non_worker_role() -> None:
+    data = {
+        "schema_version": 1,
+        "run_id": "run-789",
+        "round": 1,
+        "role": "manager",
+        "status": "completed",
+        "changed_files": [],
+        "summary": [],
+        "commands_run": [],
+        "tests_run": [],
+        "known_risks": [],
+        "blocked_reason": None,
+        "artifact_paths": {"openhands_output": "worker.json", "monitor_result": "monitor.json"},
+    }
+
+    with pytest.raises(ValueError, match="role must be one of"):
+        HocaAttemptReport.from_dict(data)
+
+
+def test_attempt_report_artifact_paths_must_point_to_raw_log_files() -> None:
+    missing_artifact_data = {
+        "schema_version": 1,
+        "run_id": "run-789",
+        "round": 1,
+        "role": "worker",
+        "status": "blocked",
+        "changed_files": [],
+        "summary": ["Blocked by monitor"],
+        "commands_run": [],
+        "tests_run": [],
+        "known_risks": ["Secret access attempt detected"],
+        "blocked_reason": "secret_access",
+        "artifact_paths": {"openhands_output": "openhands-output.jsonl"},
+    }
+
+    with pytest.raises(ValueError, match="Missing required artifact path"):
+        HocaAttemptReport.from_dict(missing_artifact_data)
+
+    unsafe_artifact_data = {
+        **missing_artifact_data,
+        "artifact_paths": {
+            "openhands_output": "raw log contents\nTOKEN=value",
+            "monitor_result": ".env",
+        },
+    }
+    with pytest.raises(ValueError, match="single line|secret-like"):
+        HocaAttemptReport.from_dict(unsafe_artifact_data)
+
+
 def test_review_report_round_trips_json() -> None:
     report = HocaReviewReport(
         run_id="run-123",

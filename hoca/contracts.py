@@ -4,8 +4,15 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar, Literal, Self
 
+from hoca.security import is_secret_like_path
+
 RiskLevel = Literal["low", "medium", "high"]
 VALID_RISK_LEVELS: frozenset[str] = frozenset(("low", "medium", "high"))
+VALID_ATTEMPT_STATUSES: frozenset[str] = frozenset(("completed", "failed", "blocked"))
+VALID_ATTEMPT_ROLES: frozenset[str] = frozenset(("worker",))
+REQUIRED_ATTEMPT_ARTIFACT_PATHS: frozenset[str] = frozenset(
+    ("openhands_output", "monitor_result")
+)
 AttemptStatus = Literal["completed", "failed", "blocked"]
 ReviewVerdict = Literal["LGTM", "fix_required", "blocked"]
 FindingSeverity = Literal["critical", "high", "medium", "low", "nit"]
@@ -45,6 +52,33 @@ def _string_map(data: dict[str, Any], field: str) -> dict[str, str]:
     if not isinstance(value, dict):
         raise ValueError(f"Contract field must be an object: {field}")
     return {str(key): str(map_value) for key, map_value in value.items()}
+
+
+def _single_line_string(value: Any, field: str) -> str:
+    text = str(value)
+    if "\n" in text or "\r" in text:
+        raise ValueError(f"Contract field must be a single line: {field}")
+    return text
+
+
+def _single_line_string_list(data: dict[str, Any], field: str) -> list[str]:
+    return [_single_line_string(item, field) for item in _string_list(data, field)]
+
+
+def _artifact_path_map(data: dict[str, Any], field: str) -> dict[str, str]:
+    paths = {
+        key: _single_line_string(value, field)
+        for key, value in _string_map(data, field).items()
+    }
+    missing = sorted(REQUIRED_ATTEMPT_ARTIFACT_PATHS - paths.keys())
+    if missing:
+        raise ValueError(f"Missing required artifact path(s): {', '.join(missing)}")
+    for key, path in paths.items():
+        if not path:
+            raise ValueError(f"Artifact path must not be empty: {key}")
+        if is_secret_like_path(path):
+            raise ValueError(f"Artifact path must not point to secret-like file: {key}")
+    return paths
 
 
 def _object_list(data: dict[str, Any], field: str) -> list[dict[str, Any]]:
@@ -288,21 +322,34 @@ class HocaAttemptReport(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        round_number = int(_required(data, "round"))
+        if round_number < 1:
+            raise ValueError("round must be greater than or equal to 1")
+        role = _single_line_string(_required(data, "role"), "role")
+        if role not in VALID_ATTEMPT_ROLES:
+            raise ValueError(
+                f"role must be one of {sorted(VALID_ATTEMPT_ROLES)}, got: {role!r}"
+            )
+        status = _single_line_string(_required(data, "status"), "status")
+        if status not in VALID_ATTEMPT_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(VALID_ATTEMPT_STATUSES)}, got: {status!r}"
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
-            run_id=str(_required(data, "run_id")),
-            round=int(_required(data, "round")),
-            role=str(_required(data, "role")),
-            status=_required(data, "status"),
-            changed_files=_string_list(data, "changed_files"),
-            summary=_string_list(data, "summary"),
-            commands_run=_string_list(data, "commands_run"),
-            tests_run=_string_list(data, "tests_run"),
-            known_risks=_string_list(data, "known_risks"),
+            run_id=_single_line_string(_required(data, "run_id"), "run_id"),
+            round=round_number,
+            role=role,
+            status=status,
+            changed_files=_single_line_string_list(data, "changed_files"),
+            summary=_single_line_string_list(data, "summary"),
+            commands_run=_single_line_string_list(data, "commands_run"),
+            tests_run=_single_line_string_list(data, "tests_run"),
+            known_risks=_single_line_string_list(data, "known_risks"),
             blocked_reason=None
             if data["blocked_reason"] is None
-            else str(data["blocked_reason"]),
-            artifact_paths=_string_map(data, "artifact_paths"),
+            else _single_line_string(data["blocked_reason"], "blocked_reason"),
+            artifact_paths=_artifact_path_map(data, "artifact_paths"),
         )
 
     @classmethod
