@@ -120,6 +120,14 @@ git diff --stat
 
 JUSTIFICATION_FILE="$RUN_DIR/staging-justification.txt"
 TASK_TOKENS_FILE="$RUN_DIR/task-tokens.txt"
+EXPECTED_AREAS_FILE="$RUN_DIR/expected-areas.txt"
+TASK_SPEC_FILE="$RUN_DIR/task-spec.json"
+
+if [ -f "$TASK_SPEC_FILE" ] && command -v jq >/dev/null 2>&1; then
+  jq -r '.expected_areas[]?' "$TASK_SPEC_FILE" 2>/dev/null | awk 'NF' | sort -u > "$EXPECTED_AREAS_FILE" || : > "$EXPECTED_AREAS_FILE"
+else
+  : > "$EXPECTED_AREAS_FILE"
+fi
 
 printf '%s\n' "$TASK" \
   | tr '[:upper:]' '[:lower:]' \
@@ -199,6 +207,20 @@ matches_task_context() {
   local file="$1"
   local lower_file
   lower_file="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
+
+  if [ -s "$EXPECTED_AREAS_FILE" ]; then
+    while IFS= read -r area || [ -n "$area" ]; do
+      [ -z "$area" ] && continue
+      local lower_area
+      lower_area="$(printf '%s' "$area" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$lower_file" == "$lower_area" ]] \
+        || [[ "$lower_file" == "$lower_area"/* ]] \
+        || [[ "$lower_file" == *"/$lower_area" ]] \
+        || [[ "$lower_file" == *"/$lower_area/"* ]]; then
+        return 0
+      fi
+    done < "$EXPECTED_AREAS_FILE"
+  fi
 
   if [ ! -s "$TASK_TOKENS_FILE" ]; then
     return 0

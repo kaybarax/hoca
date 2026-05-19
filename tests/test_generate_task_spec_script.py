@@ -57,6 +57,7 @@ def test_script_writes_task_spec_json(tmp_path: Path) -> None:
     assert data["run_id"] == "run-shell"
     assert data["raw_request"] == "Update README"
     assert (run_dir / "task-spec-context.json").is_file()
+    assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update README\n"
 
 
 def test_script_fails_on_invalid_repo(tmp_path: Path) -> None:

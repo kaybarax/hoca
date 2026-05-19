@@ -349,6 +349,7 @@ def generate_task_spec(
     write_json_atomic(task_spec_path(run_dir), spec.to_dict())
     write_json_atomic(sandbox_policy_path(run_dir), spec.sandbox.to_dict())
     write_json_atomic(run_dir / "task-spec-context.json", context)
+    (run_dir / "raw-task.txt").write_text(raw_request.rstrip() + "\n", encoding="utf-8")
     return task_spec_path(run_dir)
 
 

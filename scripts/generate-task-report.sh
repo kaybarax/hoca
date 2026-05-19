@@ -62,6 +62,7 @@ append_structured_artifact() {
 append_log_links() {
   local found=0
   for file in \
+    "$RUN_DIR/raw-task.txt" \
     "$RUN_DIR/task-spec.json" \
     "$RUN_DIR/sandbox-policy.json" \
     "$RUN_DIR/final-state.json" \
@@ -142,7 +143,19 @@ fi
   echo "## HOCA Task Report"
   echo ""
   echo "### Task"
-  markdown_value "$TASK"
+  if [ -f "$RUN_DIR/raw-task.txt" ]; then
+    sed -n '1,80p' "$RUN_DIR/raw-task.txt"
+  else
+    markdown_value "$TASK"
+  fi
+  if [ -f "$RUN_DIR/task-spec.json" ] && command -v jq >/dev/null 2>&1; then
+    spec_goal="$(jq -r '.goal // empty' "$RUN_DIR/task-spec.json")"
+    if [ -n "$spec_goal" ] && [ "$spec_goal" != "$(head -n 1 "$RUN_DIR/raw-task.txt" 2>/dev/null || true)" ]; then
+      echo ""
+      echo "Refined goal:"
+      markdown_value "$spec_goal"
+    fi
+  fi
   echo ""
   echo "### Run"
   echo "- Run ID: $(markdown_value "$RUN_ID")"

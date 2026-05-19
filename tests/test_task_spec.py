@@ -89,6 +89,7 @@ def test_generate_task_spec_writes_contract_artifacts(tmp_path: Path) -> None:
     context = json.loads((run_dir / "task-spec-context.json").read_text(encoding="utf-8"))
     assert context["repository"]["git_inside_work_tree"] is True
     assert any(item["path"] == "README.md" for item in context["instruction_files"])
+    assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update src/app.py\n"
 
 
 def test_generate_task_spec_rejects_non_git_path(tmp_path: Path) -> None:

@@ -174,6 +174,24 @@ def prepare_pr_ready_repo(repo: Path) -> None:
     )
 
 
+def test_run_hoca_task_generates_task_spec_artifacts(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    assert result.returncode == 0, result.stderr
+    assert "Generating task spec..." in result.stdout
+    assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update README\n"
+    assert (run_dir / "task-spec.json").is_file()
+    assert (run_dir / "task-spec-context.json").is_file()
+    assert (run_dir / "sandbox-policy.json").is_file()
+
+
 def test_run_hoca_task_reports_workspace_validation_before_dirty_stop(tmp_path: Path) -> None:
     init_repo(tmp_path)
     (tmp_path / "README.md").write_text("human edit\n", encoding="utf-8")

@@ -62,14 +62,61 @@ DIFF_FILE="$REVIEW_DIR/git-diff.patch"
 printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_FILE"
 git diff > "$DIFF_FILE"
 
-REVIEW_TASK="Review the current repository changes for the following task: ${TASK}
+REVIEW_GOAL="$TASK"
+ACCEPTANCE_BLOCK=""
+NON_GOALS_BLOCK=""
+EXPECTED_AREAS_BLOCK=""
+TASK_SPEC_FILE="$RUN_DIR/task-spec.json"
+if [ -f "$TASK_SPEC_FILE" ] && command -v jq >/dev/null 2>&1; then
+  spec_goal="$(jq -r '.goal // empty' "$TASK_SPEC_FILE")"
+  if [ -n "$spec_goal" ]; then
+    REVIEW_GOAL="$spec_goal"
+  fi
+  acceptance_lines="$(jq -r '.acceptance_criteria[]?' "$TASK_SPEC_FILE" 2>/dev/null || true)"
+  if [ -n "$acceptance_lines" ]; then
+    ACCEPTANCE_BLOCK="$(printf '%s\n' "$acceptance_lines" | sed 's/^/- /')"
+  fi
+  non_goal_lines="$(jq -r '.non_goals[]?' "$TASK_SPEC_FILE" 2>/dev/null || true)"
+  if [ -n "$non_goal_lines" ]; then
+    NON_GOALS_BLOCK="$(printf '%s\n' "$non_goal_lines" | sed 's/^/- /')"
+  fi
+  expected_area_lines="$(jq -r '.expected_areas[]?' "$TASK_SPEC_FILE" 2>/dev/null || true)"
+  if [ -n "$expected_area_lines" ]; then
+    EXPECTED_AREAS_BLOCK="$(printf '%s\n' "$expected_area_lines" | sed 's/^/- /')"
+  fi
+fi
+
+REVIEW_TASK="Review the current repository changes for the following task: ${REVIEW_GOAL}
 
 The changed-file list and diff are saved in:
 - ${CHANGED_FILES_FILE}
 - ${DIFF_FILE}
 
 Inspect those files and the working tree directly. Do not rely on this prompt
-as a complete copy of the diff.
+as a complete copy of the diff."
+
+if [ -n "$ACCEPTANCE_BLOCK" ]; then
+  REVIEW_TASK="${REVIEW_TASK}
+
+Acceptance criteria:
+${ACCEPTANCE_BLOCK}"
+fi
+
+if [ -n "$EXPECTED_AREAS_BLOCK" ]; then
+  REVIEW_TASK="${REVIEW_TASK}
+
+Expected areas:
+${EXPECTED_AREAS_BLOCK}"
+fi
+
+if [ -n "$NON_GOALS_BLOCK" ]; then
+  REVIEW_TASK="${REVIEW_TASK}
+
+Non-goals:
+${NON_GOALS_BLOCK}"
+fi
+
+REVIEW_TASK="${REVIEW_TASK}
 
 Check:
 - Whether the task was fulfilled.

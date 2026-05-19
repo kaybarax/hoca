@@ -60,6 +60,48 @@ record_run_artifact() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.run_artifacts "$@"
 }
 
+task_spec_path_for_run() {
+  printf '%s\n' "$RUN_DIR/task-spec.json"
+}
+
+read_task_spec_field() {
+  local field="$1"
+  local fallback="$2"
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ -f "$spec_path" ] && command -v jq >/dev/null 2>&1; then
+    jq -r --arg field "$field" --arg fallback "$fallback" '.[$field] // $fallback' "$spec_path"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+worker_task_prompt() {
+  read_task_spec_field goal "$TASK"
+}
+
+original_task_prompt() {
+  read_task_spec_field raw_request "$TASK"
+}
+
+generate_run_task_spec() {
+  local generate_args=(
+    "$SCRIPT_DIR/generate-task-spec.sh"
+    "$PROJECT_PATH"
+    "$TASK"
+    "$PROJECT_PATH/$RUN_DIR"
+    --run-id "$RUN_ID"
+    --base-branch "$TASK_BASE_REF"
+    --task-branch "$BRANCH"
+    --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  )
+  if [ -n "$ISSUE_ID" ]; then
+    generate_args+=(--issue-id "$ISSUE_ID")
+  fi
+  echo "Generating task spec..."
+  "${generate_args[@]}"
+}
+
 if [ -n "$REQUESTED_MODEL" ]; then
   export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
   case "$REQUESTED_MODEL" in
@@ -202,6 +244,7 @@ fi
 
 RUN_DIR=".hoca-runtime/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
+printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
 
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
@@ -335,19 +378,7 @@ fi
 echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
 git checkout -b "$BRANCH" "$TASK_BASE_REF"
 
-INIT_ARGS=(
-  init "$RUN_DIR"
-  --run-id "$RUN_ID"
-  --repo-root "$REPO_ROOT"
-  --base-branch "$TASK_BASE_REF"
-  --task-branch "$BRANCH"
-  --task "$TASK"
-  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
-)
-if [ -n "$ISSUE_ID" ]; then
-  INIT_ARGS+=(--issue-id "$ISSUE_ID")
-fi
-record_run_artifact "${INIT_ARGS[@]}"
+generate_run_task_spec
 
 INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
@@ -407,7 +438,8 @@ run_openhands_phase() {
 }
 
 WORKER_ROUND=1
-run_openhands_phase "$TASK" "implementation"
+WORKER_TASK="$(worker_task_prompt)"
+run_openhands_phase "$WORKER_TASK" "implementation"
 record_worker_attempt "$WORKER_ROUND" "completed"
 
 path_is_secret_like() {
@@ -454,7 +486,7 @@ build_repair_task() {
     echo "Continue this HOCA task by fixing the current repository changes; do not start over."
     echo ""
     echo "Original task:"
-    echo "$TASK"
+    echo "$(original_task_prompt)"
     echo ""
     echo "Repair reason: $reason"
     echo "Repair attempt: $attempt of $MAX_REPAIR_ATTEMPTS"
@@ -535,7 +567,7 @@ while true; do
 
   echo "Running OpenHands review..."
   set +e
-  HOCA_REVIEW_ROUND="$VALIDATION_ROUND" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  HOCA_REVIEW_ROUND="$VALIDATION_ROUND" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$(worker_task_prompt)" "$RUN_DIR"
   REVIEW_EXIT=$?
   set -e
   record_manager_decision_artifact "$VALIDATION_ROUND"
