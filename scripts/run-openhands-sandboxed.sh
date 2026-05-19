@@ -116,7 +116,6 @@ docker run \
   -e "LLM_MODEL=${MODEL}" \
   -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
   -e "LLM_API_KEY=${API_KEY}" \
-  -e "GITHUB_TOKEN=${GITHUB_TOKEN:-}" \
   -e "OPENHANDS_SUPPRESS_BANNER=1" \
   -e "HOME=/home/worker" \
   --add-host=host.docker.internal:host-gateway \

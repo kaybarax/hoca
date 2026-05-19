@@ -338,9 +338,77 @@ def test_pr_publisher_defines_cleanup_and_branch_restoration() -> None:
     assert "HOCA_KEEP_RUNTIME" in content
 
 
-def test_sandbox_policy_documents_isolation() -> None:
+def test_sandbox_policy_documents_defaults() -> None:
     content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
-    assert "HOCA_USE_SANDBOX" in content or "sandbox" in content.lower()
+    assert "## Sandbox defaults" in content
+    assert "HOCA_USE_SANDBOX" in content
+    assert "sandbox-policy.json" in content
+    assert "templates/HocaSandboxPolicy.yaml" in content
     assert "run-openhands-sandboxed.sh" in content
+
+
+def test_sandbox_policy_documents_network_modes() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Network modes" in content
+    for mode in ("offline", "package-install", "github-only", "full"):
+        assert mode in content
+
+
+def test_sandbox_policy_documents_forbidden_mounts() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Forbidden mounts and access" in content
+    lowered = content.lower()
+    assert "docker socket" in lowered
+    assert "ssh" in lowered or "gpg" in lowered
+    assert "forbidden" in lowered
+
+
+def test_sandbox_policy_documents_credential_isolation() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Credential isolation" in content
     assert "GITHUB_TOKEN" in content
-    assert "forbidden" in content.lower() or "Forbidden" in content
+    lowered = content.lower()
+    assert "never forward" in lowered or "must not receive" in lowered
+    assert "LLM_API_KEY" in content
+
+
+def test_sandbox_policy_documents_host_execution() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Host execution" in content
+    assert "HOCA_USE_SANDBOX=false" in content
+    assert "run-openhands-task.sh" in content
+
+
+def test_sandbox_policy_documents_unsafe_activity_stop() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Stop on unsafe activity" in content
+    assert "monitor-stop.json" in content
+    lowered = content.lower()
+    assert "blocked" in lowered
+    assert "do not stage" in lowered or "do not stage, commit" in lowered
+
+
+def test_sandbox_policy_links_role_skills() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Related skills" in content
+    for skill in (
+        "hoca-manager.md",
+        "hoca-worker-openhands.md",
+        "hoca-reviewer-qa.md",
+        "hoca-pr-publisher.md",
+    ):
+        assert skill in content
+
+
+def test_sandbox_policy_aligns_with_scripts() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Alignment with scripts" in content
+    assert "sandbox-manager.sh" in content
+    assert "HocaSandboxPolicy" in content
+
+
+def test_sandbox_scripts_do_not_forward_github_token() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "GITHUB_TOKEN" not in content, f"{script_name} must not forward GITHUB_TOKEN"

@@ -57,7 +57,6 @@ sandbox_start() {
     -e "LLM_BASE_URL=${ollama_url}" \
     -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}" \
     -e "LLM_API_KEY=${LLM_API_KEY:-ollama}" \
-    -e "GITHUB_TOKEN=${GITHUB_TOKEN:-}" \
     -e "HOME=/home/worker" \
     --add-host=host.docker.internal:host-gateway \
     --security-opt=no-new-privileges \
