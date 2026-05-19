@@ -9,6 +9,7 @@ from hoca.contracts import (
     HocaReviewReport,
     ManagerDecision,
 )
+from hoca.downgrade_rules import can_downgrade_finding, downgrade_reasoning
 from hoca.hard_blockers import (
     ValidationStatus,
     collect_validation_hard_blockers,
@@ -50,16 +51,6 @@ def finding_requires_repair(
     if finding.severity == "medium" and finding.category == "correctness":
         return True
     if finding.severity == "medium":
-        return True
-    return False
-
-
-def can_downgrade_finding(finding: HocaReviewFinding) -> bool:
-    if finding.category == "security":
-        return False
-    if finding.category == "correctness" and finding.severity in ("critical", "high", "medium"):
-        return False
-    if finding.severity in ("low", "nit"):
         return True
     return False
 
@@ -301,9 +292,7 @@ def arbitrate(
             )
         elif disposition == "downgrade":
             downgraded_to_pr_notes.append(finding.id)
-            reasoning.append(
-                f"{finding.id} downgraded to PR notes ({finding.severity} {finding.category})."
-            )
+            reasoning.append(downgrade_reasoning(finding))
         else:
             if finding.id in explicitly_impossible:
                 rejected_findings.append(finding.id)

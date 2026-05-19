@@ -5,7 +5,6 @@ import pytest
 from hoca.arbitration import (
     ValidationStatus,
     arbitrate,
-    can_downgrade_finding,
     classify_finding,
     collect_validation_hard_blockers,
     decision_for_review,
@@ -14,6 +13,7 @@ from hoca.arbitration import (
     is_finding_hard_blocker,
     sort_findings_by_severity,
 )
+from hoca.downgrade_rules import can_downgrade_finding
 from hoca.contracts import HocaReviewFinding, HocaReviewReport
 
 
