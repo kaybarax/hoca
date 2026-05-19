@@ -1,0 +1,41 @@
+# Example Hermes configuration for the hoca-worker profile.
+# Copy relevant sections into the profile's real config.yaml and replace
+# placeholder paths. Do not put secrets in this file.
+
+terminal:
+  backend: docker
+  docker_image: "nikolaik/python-nodejs:python3.12-nodejs22"
+  docker_mount_cwd_to_workspace: false
+  docker_run_as_host_user: true
+  docker_forward_env:
+    - LLM_MODEL
+    - LLM_BASE_URL
+    - LLM_API_KEY
+    - OLLAMA_API_BASE
+    - HOCA_OPENHANDS_TIMEOUT
+    - HOCA_OPENHANDS_STALL
+  docker_volumes:
+    - "~/<path-to-workspace>/hoca:/workspace/hoca:ro"
+    - "~/<path-to-target-repos>/<target-repo>:/workspace/project"
+  container_cpu: 6
+  container_memory: 16384
+  container_persistent: false
+
+skills:
+  external_dirs:
+    - "~/<path-to-workspace>/hoca/hermes-skills"
+
+# Worker profile: implementation only. No PR or merge scripts in defaults.
+
+hoca:
+  role: worker
+  workspace_root: "~/<path-to-target-repos>"
+  default_model: "qwen2.5-coder:14b"
+  openhands_runner: "~/<path-to-workspace>/hoca/scripts/run-openhands-sandboxed.sh"
+  test_runner: "~/<path-to-workspace>/hoca/scripts/run-tests.sh"
+
+  safety:
+    auto_merge: false
+    require_tests: true
+    require_review_lgtm: true
+    stop_on_dirty_tree: true
