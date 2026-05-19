@@ -111,6 +111,38 @@ def test_manager_profile_includes_orchestration_scripts() -> None:
         )
 
 
+MANAGER_SOUL_REQUIRED_SECTIONS = (
+    "## Arbitration rule",
+    "## Hard limits",
+    "## Failure behavior",
+)
+
+MANAGER_SOUL_REQUIRED_PHRASES = (
+    "engineering manager",
+    "team lead",
+    "product-owner delegate",
+    "task clarity",
+    "safety policy",
+    "quality signals, not commands",
+    "final authority",
+    "max_total_rounds",
+)
+
+
+def test_manager_soul_documents_manager_role_contract() -> None:
+    content = (PROFILES_DIR / "hoca-manager" / "SOUL.md").read_text(encoding="utf-8")
+    lowered = content.lower()
+    for section in MANAGER_SOUL_REQUIRED_SECTIONS:
+        assert section in content, f"hoca-manager/SOUL.md is missing section {section!r}"
+    for phrase in MANAGER_SOUL_REQUIRED_PHRASES:
+        assert phrase in lowered, (
+            f"hoca-manager/SOUL.md should mention {phrase!r}"
+        )
+    assert "git lifecycle" in lowered
+    assert "hoca-worker" in content
+    assert "hoca-reviewer" in content
+
+
 def test_profiles_readme_lists_all_profiles() -> None:
     content = (PROFILES_DIR / "README.md").read_text(encoding="utf-8")
     for profile_name in PROFILE_NAMES:
