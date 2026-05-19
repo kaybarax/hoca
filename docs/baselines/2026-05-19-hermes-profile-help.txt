@@ -1,0 +1,25 @@
+/Users/kevin/.local/bin/hermes
+usage: hermes profile [-h]
+                      {list,use,create,delete,show,alias,rename,export,import,install,update,info}
+                      ...
+
+positional arguments:
+  {list,use,create,delete,show,alias,rename,export,import,install,update,info}
+    list                List all profiles
+    use                 Set sticky default profile
+    create              Create a new profile
+    delete              Delete a profile
+    show                Show profile details
+    alias               Manage wrapper scripts
+    rename              Rename a profile
+    export              Export a profile to archive
+    import              Import a profile from archive
+    install             Install a profile distribution from a git URL or local
+                        directory
+    update              Re-pull a distribution and apply updates (user data
+                        preserved)
+    info                Show a profile's distribution manifest (version,
+                        requirements, source)
+
+options:
+  -h, --help            show this help message and exit

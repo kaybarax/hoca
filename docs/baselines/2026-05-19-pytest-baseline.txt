@@ -1,0 +1,755 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.4, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/kevin/workspace/projects/hoca-development/hoca
+configfile: pyproject.toml
+testpaths: tests
+collected 428 items
+
+tests/test_auto_merge_guards.py .....................................    [  8%]
+tests/test_check_browsing.py .....                                       [  9%]
+tests/test_cli.py ..................                                     [ 14%]
+tests/test_commit_after_staging_scripts.py ......                        [ 15%]
+tests/test_config.py ...........................                         [ 21%]
+tests/test_defaults.py ....                                              [ 22%]
+tests/test_doctor.py ......                                              [ 24%]
+tests/test_git_utils.py ...................                              [ 28%]
+tests/test_init_project_script.py ..                                     [ 28%]
+tests/test_install_script.py ..                                          [ 29%]
+tests/test_model_selection_scripts.py ..........                         [ 31%]
+tests/test_monitor.py .................................................. [ 43%]
+...........................                                              [ 49%]
+tests/test_notify_script.py ....                                         [ 50%]
+tests/test_risk.py ..................................................... [ 63%]
+.........................................                                [ 72%]
+tests/test_run_hoca_task_script.py .F..FFFFFFFFFFFFFFF                   [ 77%]
+tests/test_run_state.py ................................                 [ 84%]
+tests/test_run_tests_script.py .....                                     [ 85%]
+tests/test_safe_staging_scripts.py .............                         [ 88%]
+tests/test_security.py ...............................                   [ 96%]
+tests/test_subprocess_utils.py ...                                       [ 96%]
+tests/test_task_report_script.py ..                                      [ 97%]
+tests/test_webhook_listener.py ............                              [100%]
+
+=================================== FAILURES ===================================
+___ test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured ____
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_logs_curren0')
+
+    def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: pathspec 'main' did not match any file(s) known to git
+E         Unable to switch to configured development branch: main
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:192: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_____________ test_run_hoca_task_stops_when_doctor_preflight_fails _____________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_stops_when_0')
+
+    def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+        (fake_bin / "docker").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert result.returncode != 0
+>       assert "HOCA doctor failed" in result.stderr
+E       assert 'HOCA doctor failed' in "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n"
+E        +  where "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n" = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").stderr
+
+tests/test_run_hoca_task_script.py:313: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+__________ test_run_hoca_task_marks_openhands_failure_and_saves_logs ___________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_marks_openh0')
+
+    def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="echo 'boom' >&2\nexit 42\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert result.returncode != 0
+>       assert "OpenHands failed with exit code" in result.stderr
+E       assert 'OpenHands failed with exit code' in "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n"
+E        +  where "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n" = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").stderr
+
+tests/test_run_hoca_task_script.py:330: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_______ test_run_hoca_task_marks_openhands_conversation_error_as_failure _______
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_marks_openh1')
+
+    def test_run_hoca_task_marks_openhands_conversation_error_as_failure(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body='echo \'{"kind": "ConversationErrorEvent", "code": "LLMServiceUnavailableError"}\'\n',
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert result.returncode != 0
+>       assert "OpenHands reported a conversation error event" in result.stdout
+E       assert 'OpenHands reported a conversation error event' in 'Validating target repository...\nRepository root: /private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-...arks_openh1\nCurrent branch: master\nWorking tree status before run:\n  clean\nSwitching to development branch: main\n'
+E        +  where 'Validating target repository...\nRepository root: /private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-...arks_openh1\nCurrent branch: master\nWorking tree status before run:\n  clean\nSwitching to development branch: main\n' = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").stdout
+
+tests/test_run_hoca_task_script.py:348: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_____ test_run_hoca_task_stops_immediately_on_secret_changed_by_openhands ______
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_stops_immed0')
+
+    def test_run_hoca_task_stops_immediately_on_secret_changed_by_openhands(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="echo 'TOKEN=value' > .env\necho 'created secret-like file'\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert result.returncode != 0
+>       assert "Secret-like changed file detected" in result.stderr
+E       assert 'Secret-like changed file detected' in "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n"
+E        +  where "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n" = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").stderr
+
+tests/test_run_hoca_task_script.py:365: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+____________ test_run_hoca_task_stops_before_review_when_tests_fail ____________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_stops_befor0')
+
+    def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+        )
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+            pytest_body="echo 'tests failed'\nexit 3\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert result.returncode != 0
+>       assert "Tests still failed after 1 repair attempt" in result.stderr
+E       assert 'Tests still failed after 1 repair attempt' in "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n"
+E        +  where "error: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n" = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").stderr
+
+tests/test_run_hoca_task_script.py:388: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+____________ test_run_hoca_task_repairs_current_task_test_failures _____________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_repairs_cur0')
+
+    def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+        )
+        count_file = tmp_path / "openhands-count"
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body=(
+                'count="$(cat "$OPENHANDS_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+                'count="$((count + 1))"\n'
+                'printf "%s\\n" "$count" > "$OPENHANDS_COUNT_FILE"\n'
+                'if [[ "$count" == "1" ]]; then printf "broken\\n" > README.md; '
+                'else printf "fixed\\n" > README.md; fi\n'
+            ),
+            pytest_body="grep -q '^fixed$' README.md\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["OPENHANDS_COUNT_FILE"] = str(count_file)
+        env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+        env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: pathspec 'main' did not match any file(s) known to git
+E         Unable to switch to configured development branch: main
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:419: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_ test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes _
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_stops_befor1')
+
+    def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/test_run_hoca_task_script.py:436: IndexError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+________ test_run_hoca_task_distinguishes_review_failure_from_rejection ________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_distinguish0')
+
+    def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+            review_body="echo 'Needs changes.'\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    
+        rejected = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        assert rejected.returncode != 0
+>       assert '"reason": "review_not_lgtm"' in latest_status(tmp_path) or \
+                                                ^^^^^^^^^^^^^^^^^^^^^^^
+               '"reason": "review_failed"' in latest_status(tmp_path)
+
+tests/test_run_hoca_task_script.py:458: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_run_hoca_task_script.py:124: in latest_status
+    run_dirs = sorted(p for p in runs.iterdir() if p.is_dir())
+                                 ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_distinguish0/.hoca-runtime/runs')
+
+    def iterdir(self):
+        """Yield path objects of the directory contents.
+    
+        The children are yielded in arbitrary order, and the
+        special entries '.' and '..' are not included.
+        """
+        root_dir = str(self)
+>       with os.scandir(root_dir) as scandir_it:
+             ^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_distinguish0/.hoca-runtime/runs'
+
+../../../../.local/share/mise/installs/python/3.14.4/lib/python3.14/pathlib/__init__.py:836: FileNotFoundError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_________________ test_run_hoca_task_repairs_review_rejections _________________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_repairs_rev0')
+
+    def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        count_file = tmp_path / "openhands-count"
+        review_count_file = tmp_path / "openhands-review-count"
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body=(
+                'count="$(cat "$OPENHANDS_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+                'count="$((count + 1))"\n'
+                'printf "%s\\n" "$count" > "$OPENHANDS_COUNT_FILE"\n'
+                'if [[ "$count" == "1" ]]; then printf "needs review\\n" > README.md; '
+                'else printf "ready\\nLGTM\\n" > README.md; fi\n'
+            ),
+            review_body=(
+                'count="$(cat "$OPENHANDS_REVIEW_COUNT_FILE" 2>/dev/null || echo 0)"\n'
+                'count="$((count + 1))"\n'
+                'printf "%s\\n" "$count" > "$OPENHANDS_REVIEW_COUNT_FILE"\n'
+                'if [[ "$count" == "1" ]]; then echo "Needs changes."; '
+                'else echo "Review complete."; echo "LGTM"; fi\n'
+            ),
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["OPENHANDS_COUNT_FILE"] = str(count_file)
+        env["OPENHANDS_REVIEW_COUNT_FILE"] = str(review_count_file)
+        env["HOCA_MAX_REPAIR_ATTEMPTS"] = "2"
+        env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: pathspec 'main' did not match any file(s) known to git
+E         Unable to switch to configured development branch: main
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:492: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_________ test_run_hoca_task_runs_safe_staging_with_intended_file_list _________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_runs_safe_s0')
+
+    def test_run_hoca_task_runs_safe_staging_with_intended_file_list(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        prepare_pr_ready_repo(tmp_path)
+        run_dir = tmp_path / ".hoca-runtime" / "runs" / "issue-42"
+        run_dir.mkdir(parents=True)
+        (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+        (run_dir / "intended-files-source.txt").write_text("manager\n", encoding="utf-8")
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_KEEP_RUNTIME"] = "true"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env, "--issue-id", "42")
+    
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=tmp_path,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:525: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_runs_safe_s0-origin.git
+ * [new branch]      HEAD -> master
+________ test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr ________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_auto_stages0')
+
+    def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        prepare_pr_ready_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_KEEP_RUNTIME"] = "true"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: pathspec 'main' did not match any file(s) known to git
+E         Unable to switch to configured development branch: main
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:553: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+To /private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_auto_stages0-origin.git
+ * [new branch]      HEAD -> master
+______ test_run_hoca_task_stops_before_staging_without_intended_file_list ______
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_stops_befor2')
+
+    def test_run_hoca_task_stops_before_staging_without_intended_file_list(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=tmp_path,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:581: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+_____ test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored _____
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_ignores_own0')
+
+    def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
+        tmp_path: Path,
+    ) -> None:
+        init_repo(tmp_path)
+        (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "--", ".gitignore"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "do not ignore hoca runtime"],
+            cwd=tmp_path,
+            check=True,
+            stdout=subprocess.PIPE,
+        )
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    
+        result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    
+>       changed_files = sorted((tmp_path / ".hoca-runtime" / "runs").glob("*/changed-files.txt"))[
+            -1
+        ].read_text(encoding="utf-8")
+E       IndexError: list index out of range
+
+tests/test_run_hoca_task_script.py:611: IndexError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+___________ test_duplicate_issue_lock_exits_successfully_with_notice ___________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_duplicate_issue_lock_exit0')
+
+    def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        lock_dir = tmp_path / ".hoca-runtime" / "runs"
+        lock_dir.mkdir(parents=True)
+        lock = lock_dir / "issue-42.lock"
+        lock.write_text('{"owner_token": "foreign"}\n', encoding="utf-8")
+    
+        result = subprocess.run(
+            [str(SCRIPT), str(tmp_path), "Fix issue", "--issue-id", "42"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:635: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+___________ test_run_hoca_task_cleanup_does_not_remove_replaced_lock ___________
+
+tmp_path = PosixPath('/private/var/folders/89/kcth3hqj2kq48z2xq5j0stpr0000gn/T/pytest-of-kevin/pytest-201/test_run_hoca_task_cleanup_doe0')
+
+    def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> None:
+        init_repo(tmp_path)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(tmp_path),
+            openhands_body=(
+                "cat > .hoca-runtime/runs/issue-42.lock <<'EOF'\n"
+                '{"owner_token": "foreign", "pid": 99999}\n'
+                "EOF\n"
+            ),
+        )
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    
+        result = run_hoca_task_with_env(tmp_path, "Fix issue", env, "--issue-id", "42")
+    
+        lock = tmp_path / ".hoca-runtime" / "runs" / "issue-42.lock"
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kevin/workspace/projects/hoca-development/hoca/scripts/run-hoca-task.sh', '/private/var...or: pathspec 'main' did not match any file(s) known to git\nUnable to switch to configured development branch: main\n").returncode
+
+tests/test_run_hoca_task_script.py:657: AssertionError
+----------------------------- Captured stderr call -----------------------------
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+=========================== short test summary info ============================
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_stops_when_doctor_preflight_fails
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_marks_openhands_failure_and_saves_logs
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_marks_openhands_conversation_error_as_failure
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_stops_immediately_on_secret_changed_by_openhands
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_stops_before_review_when_tests_fail
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_repairs_current_task_test_failures
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_distinguishes_review_failure_from_rejection
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_repairs_review_rejections
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_runs_safe_staging_with_intended_file_list
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_stops_before_staging_without_intended_file_list
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored
+FAILED tests/test_run_hoca_task_script.py::test_duplicate_issue_lock_exits_successfully_with_notice
+FAILED tests/test_run_hoca_task_script.py::test_run_hoca_task_cleanup_does_not_remove_replaced_lock
+================== 16 failed, 412 passed in 67.68s (0:01:07) ===================
