@@ -6,10 +6,12 @@ from unittest.mock import patch
 import pytest
 
 from hoca.profiles import (
+    HERMES_SKILL_FILENAMES,
     PROFILE_NAMES,
     PROFILE_REVIEWER,
     hermes_installed,
     hermes_profile_dir,
+    hermes_skill_path,
     hermes_skills_dir,
     profile_commands_available,
     profile_exists,
@@ -67,6 +69,18 @@ def test_hermes_skills_dir_points_at_repo_skills() -> None:
 
     assert hermes_skills_dir() == repo_root / "hermes-skills"
     assert hermes_skills_dir().is_dir()
+
+
+def test_hermes_skill_paths_for_each_role_skill() -> None:
+    for filename in HERMES_SKILL_FILENAMES:
+        path = hermes_skill_path(filename)
+        assert path.parent == hermes_skills_dir()
+        assert path.is_file()
+
+
+def test_hermes_skill_path_rejects_unknown_filename() -> None:
+    with pytest.raises(ValueError, match="Unknown Hermes skill"):
+        hermes_skill_path("hoca-unknown.md")
 
 
 def test_resolve_hermes_home_expands_tilde() -> None:

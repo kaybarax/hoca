@@ -15,6 +15,16 @@ PROFILE_NAMES: tuple[str, ...] = (PROFILE_MANAGER, PROFILE_WORKER, PROFILE_REVIE
 
 PROFILE_TEMPLATE_FILES: tuple[str, ...] = ("SOUL.md", "config.example.yaml", "README.md")
 
+COMPAT_SKILL_FILENAME = "hoca.md"
+ROLE_SKILL_FILENAMES: tuple[str, ...] = (
+    "hoca-manager.md",
+    "hoca-worker-openhands.md",
+    "hoca-reviewer-qa.md",
+    "hoca-pr-publisher.md",
+    "hoca-sandbox-policy.md",
+)
+HERMES_SKILL_FILENAMES: tuple[str, ...] = (COMPAT_SKILL_FILENAME, *ROLE_SKILL_FILENAMES)
+
 _SETUP_SCRIPT_NAME = "setup-hermes-profiles.sh"
 _PROFILE_HELP_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("profile", "list"),
@@ -29,6 +39,13 @@ def profiles_templates_dir() -> Path:
 
 def hermes_skills_dir() -> Path:
     return repo_root() / "hermes-skills"
+
+
+def hermes_skill_path(filename: str) -> Path:
+    if filename not in HERMES_SKILL_FILENAMES:
+        names = ", ".join(HERMES_SKILL_FILENAMES)
+        raise ValueError(f"Unknown Hermes skill {filename!r}; expected one of: {names}")
+    return hermes_skills_dir() / filename
 
 
 def setup_script_path() -> Path:

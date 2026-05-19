@@ -39,6 +39,8 @@ depend on terminal backend settings and host policy. Keep secrets in profile
 
 ## Related paths
 
-- Shared orchestration skill: `hermes-skills/hoca.md`
+- Compatibility entrypoint: `hermes-skills/hoca.md` ("Hoca OpenHands Boss")
+- Role skills: `hermes-skills/hoca-manager.md`, `hoca-worker-openhands.md`,
+  `hoca-reviewer-qa.md`, `hoca-pr-publisher.md`, `hoca-sandbox-policy.md`
 - Legacy single-profile example: `.hermes/config.example.yaml`
 - Upgrade flag: `HOCA_USE_HERMES_PROFILES` in `.env.example`
