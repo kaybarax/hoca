@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 from hoca.contracts import (
@@ -9,7 +8,13 @@ from hoca.contracts import (
     HocaReviewFinding,
     HocaReviewReport,
     ManagerDecision,
-    SECURITY_CRITICAL_SEVERITIES,
+)
+from hoca.hard_blockers import (
+    ValidationStatus,
+    collect_validation_hard_blockers,
+    has_absolute_validation_blocker,
+    has_repairable_validation_blocker,
+    is_finding_hard_blocker,
 )
 
 FindingDisposition = Literal["repair", "downgrade", "reject"]
@@ -22,54 +27,11 @@ SEVERITY_RANK: dict[FindingSeverity, int] = {
     "nit": 4,
 }
 
-# Validation blockers that cannot be resolved by another worker repair round.
-ABSOLUTE_VALIDATION_BLOCKERS: frozenset[str] = frozenset(
-    (
-        "secret_file_change",
-        "secret_access_attempt",
-        "unsafe_filesystem_access",
-        "missing_pr_credentials",
-        "detached_head",
-    )
-)
-
-# Validation blockers that may be repairable in earlier rounds.
-REPAIRABLE_VALIDATION_BLOCKERS: frozenset[str] = frozenset(
-    (
-        "test_failure",
-        "unreviewed_changed_files",
-        "unaccounted_staged_files",
-        "dirty_unrelated_work",
-        "scope_risk",
-        "staging_risk",
-    )
-)
-
-
-@dataclass(frozen=True)
-class ValidationStatus:
-    """Deterministic validation signals consumed by manager arbitration."""
-
-    tests_passed: bool = True
-    hard_blockers: tuple[str, ...] = ()
-    secret_scan_clean: bool = True
-    monitor_clean: bool = True
-
 
 def sort_findings_by_severity(
     findings: list[HocaReviewFinding],
 ) -> list[HocaReviewFinding]:
     return sorted(findings, key=lambda finding: (SEVERITY_RANK[finding.severity], finding.id))
-
-
-def is_finding_hard_blocker(finding: HocaReviewFinding) -> bool:
-    if finding.severity == "critical":
-        return True
-    if finding.category == "security" and finding.severity in SECURITY_CRITICAL_SEVERITIES:
-        return True
-    if finding.category == "correctness" and finding.severity == "critical":
-        return True
-    return False
 
 
 def finding_requires_repair(
@@ -114,31 +76,6 @@ def classify_finding(
     if finding_requires_repair(finding, explicitly_impossible=explicitly_impossible):
         return "repair"
     return "reject"
-
-
-def collect_validation_hard_blockers(validation: ValidationStatus) -> list[str]:
-    blockers = list(validation.hard_blockers)
-    if not validation.tests_passed and "test_failure" not in blockers:
-        blockers.append("test_failure")
-    if not validation.secret_scan_clean and "secret_file_change" not in blockers:
-        blockers.append("secret_file_change")
-    if not validation.monitor_clean and "unsafe_filesystem_access" not in blockers:
-        blockers.append("unsafe_filesystem_access")
-    return blockers
-
-
-def has_absolute_validation_blocker(validation: ValidationStatus) -> bool:
-    return any(
-        blocker in ABSOLUTE_VALIDATION_BLOCKERS
-        for blocker in collect_validation_hard_blockers(validation)
-    )
-
-
-def has_repairable_validation_blocker(validation: ValidationStatus) -> bool:
-    return any(
-        blocker in REPAIRABLE_VALIDATION_BLOCKERS
-        for blocker in collect_validation_hard_blockers(validation)
-    )
 
 
 def generate_repair_brief(
