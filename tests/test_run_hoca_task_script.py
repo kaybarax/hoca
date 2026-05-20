@@ -342,7 +342,7 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
     env["HERMES_HOME"] = str(hermes_home)
     env["HOCA_PYTHON"] = sys.executable
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "2"
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
     env["HERMES_TEST_PROJECT"] = str(tmp_path)
 
@@ -350,7 +350,7 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
 
     run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
     assert result.returncode == 0, result.stderr
-    assert "Running OpenHands (test repair attempt 1)" in result.stdout
+    assert "Running OpenHands (repair round 2 of 2)" in result.stdout
     assert "Routing worker attempt through run-worker-hermes.sh" in result.stdout
     assert (run_dir / "repair-attempt-1.md").is_file()
     assert (run_dir / "attempts" / "worker-attempt-2.json").is_file()
@@ -595,12 +595,12 @@ def test_run_hoca_task_stops_before_review_when_tests_fail(tmp_path: Path) -> No
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "2"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode != 0
-    assert "Tests still failed after 1 repair attempt" in result.stderr
+    assert "Tests still failed after round 2 of 2" in result.stderr
     assert '"reason": "tests_failed"' in latest_status(tmp_path)
 
 
@@ -626,13 +626,13 @@ def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> Non
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "2"
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running OpenHands (test repair attempt 1)" in result.stdout
+    assert "Running OpenHands (repair round 2 of 2)" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "fixed\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
@@ -665,7 +665,7 @@ def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Pat
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "2"
 
     rejected = run_hoca_task_with_env(tmp_path, "Update README", env)
 
@@ -699,13 +699,13 @@ def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["OPENHANDS_COUNT_FILE"] = str(count_file)
     env["OPENHANDS_REVIEW_COUNT_FILE"] = str(review_count_file)
-    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "2"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "3"
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running OpenHands (review repair attempt 1)" in result.stdout
+    assert "Running OpenHands (repair round 2 of 3)" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert review_count_file.read_text(encoding="utf-8") == "2\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)

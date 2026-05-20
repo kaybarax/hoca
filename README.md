@@ -222,8 +222,11 @@ validation after each repair pass.
 
 HOCA stops for human intervention when the failure is classified as
 environmental or pre-existing, when the review tool itself crashes, or when
-repair attempts are exhausted. Configure the repair limit with
-`HOCA_MAX_REPAIR_ATTEMPTS` (default `2`).
+all rounds are exhausted. Configure the round limit with
+`HOCA_MAX_TOTAL_ROUNDS` (default `3`): round 1 is the initial implementation
+plus review, and rounds 2-3 are repair plus review cycles. The legacy
+`HOCA_MAX_REPAIR_ATTEMPTS` variable is still accepted (value + 1 = total
+rounds).
 
 ### Docker Sandbox
 

@@ -138,6 +138,33 @@ class TestLoadConfigDefaults:
         assert cfg.use_sandbox is False
         assert cfg.max_total_rounds == 5
 
+    def test_legacy_max_repair_attempts_alias(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_MAX_REPAIR_ATTEMPTS=2\n")
+        monkeypatch.delenv("HOCA_MAX_TOTAL_ROUNDS", raising=False)
+        monkeypatch.delenv("HOCA_MAX_REPAIR_ATTEMPTS", raising=False)
+
+        cfg = load_config(dotenv_path=env_file)
+
+        assert cfg.max_total_rounds == 3
+
+    def test_max_total_rounds_takes_precedence_over_legacy_alias(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "HOCA_MAX_TOTAL_ROUNDS=5\n"
+            "HOCA_MAX_REPAIR_ATTEMPTS=1\n"
+        )
+        monkeypatch.delenv("HOCA_MAX_TOTAL_ROUNDS", raising=False)
+        monkeypatch.delenv("HOCA_MAX_REPAIR_ATTEMPTS", raising=False)
+
+        cfg = load_config(dotenv_path=env_file)
+
+        assert cfg.max_total_rounds == 5
+
     def test_env_var_overrides_dotenv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

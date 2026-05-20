@@ -186,6 +186,16 @@ def _load_model_pool(config_value) -> ModelPoolConfig:
     return pool
 
 
+def _resolve_max_total_rounds(config_value) -> int:
+    explicit = config_value("HOCA_MAX_TOTAL_ROUNDS")
+    if explicit:
+        return int(explicit)
+    legacy = config_value("HOCA_MAX_REPAIR_ATTEMPTS")
+    if legacy:
+        return int(legacy) + 1
+    return 3
+
+
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     dotenv: dict[str, str] = {}
     if dotenv_path is not None:
@@ -217,7 +227,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ),
         use_kanban=parse_bool(config_value("HOCA_USE_KANBAN") or None, default=False),
         use_sandbox=parse_bool(config_value("HOCA_USE_SANDBOX") or None, default=True),
-        max_total_rounds=int(config_value("HOCA_MAX_TOTAL_ROUNDS", "3")),
+        max_total_rounds=_resolve_max_total_rounds(config_value),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
         stop_on_dirty_tree=parse_bool(

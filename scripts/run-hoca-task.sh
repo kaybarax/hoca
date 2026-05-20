@@ -14,7 +14,13 @@ ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 REQUESTED_MODEL=""
-MAX_REPAIR_ATTEMPTS="${HOCA_MAX_REPAIR_ATTEMPTS:-2}"
+if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
+  MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
+elif [ -n "${HOCA_MAX_REPAIR_ATTEMPTS:-}" ]; then
+  MAX_TOTAL_ROUNDS="$((HOCA_MAX_REPAIR_ATTEMPTS + 1))"
+else
+  MAX_TOTAL_ROUNDS=3
+fi
 DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
 SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
 AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
@@ -125,7 +131,7 @@ generate_run_task_spec() {
     --run-id "$RUN_ID"
     --base-branch "$TASK_BASE_REF"
     --task-branch "$BRANCH"
-    --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+    --max-total-rounds "$MAX_TOTAL_ROUNDS"
   )
   if [ -n "$ISSUE_ID" ]; then
     generate_args+=(--issue-id "$ISSUE_ID")
@@ -318,7 +324,7 @@ EARLY_INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
   --run-id "$RUN_ID"
   --task "$TASK"
-  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  --max-total-rounds "$MAX_TOTAL_ROUNDS"
   --auto-merge "$AUTO_MERGE"
   --notify-telegram "$NOTIFY_TELEGRAM"
   --requested-model "$REQUESTED_MODEL"
@@ -438,7 +444,7 @@ INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
   --run-id "$RUN_ID"
   --task "$TASK"
-  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  --max-total-rounds "$MAX_TOTAL_ROUNDS"
   --auto-merge "$AUTO_MERGE"
   --notify-telegram "$NOTIFY_TELEGRAM"
   --requested-model "$REQUESTED_MODEL"
@@ -576,6 +582,7 @@ check_openhands_changed_files
 build_repair_task() {
   local reason="$1"
   local attempt="$2"
+  local round_number="$((attempt + 1))"
   local repair_file="$RUN_DIR/repair-attempt-${attempt}.md"
 
   {
@@ -585,7 +592,7 @@ build_repair_task() {
     echo "$(original_task_prompt)"
     echo ""
     echo "Repair reason: $reason"
-    echo "Repair attempt: $attempt of $MAX_REPAIR_ATTEMPTS"
+    echo "Round: $round_number of $MAX_TOTAL_ROUNDS"
     echo ""
     echo "Current git status:"
     git status --short
@@ -624,6 +631,7 @@ build_repair_task() {
   cat "$repair_file"
 }
 
+current_round=1
 repair_attempt=0
 
 while true; do
@@ -633,13 +641,12 @@ while true; do
     exit 0
   fi
 
-  VALIDATION_ROUND="$((repair_attempt + 1))"
-  echo "Running tests..."
+  echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
-  record_validation_artifact "$VALIDATION_ROUND"
+  record_validation_artifact "$current_round"
   if [ "$TESTS_EXIT" -ne 0 ]; then
     FAILURE_TYPE=""
     if [ -f "$RUN_DIR/tests-summary.md" ]; then
@@ -648,35 +655,35 @@ while true; do
     if [ "$FAILURE_TYPE" = "environment" ] || [ "$FAILURE_TYPE" = "pre-existing" ]; then
       block_run "tests_${FAILURE_TYPE}" "Tests failed due to $FAILURE_TYPE conditions. Human intervention is needed; see $RUN_DIR/tests-summary.md."
     fi
-    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
-      fail_run "tests_failed" "Tests still failed after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/tests-summary.md."
+    if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
+      fail_run "tests_failed" "Tests still failed after round $current_round of $MAX_TOTAL_ROUNDS. Human review is needed; see $RUN_DIR/tests-summary.md."
     fi
     repair_attempt=$((repair_attempt + 1))
-    update_status "repairing" "tests_failed_attempt_${repair_attempt}"
+    current_round=$((current_round + 1))
+    update_status "repairing" "tests_failed_round_${current_round}"
     build_repair_task "tests_failed" "$repair_attempt" >/dev/null
     REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
-    WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "test repair attempt $repair_attempt" "$WORKER_ROUND" "$REPAIR_BRIEF_PATH"
+    run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$REPAIR_BRIEF_PATH"
     check_openhands_changed_files
     continue
   fi
 
-  echo "Running review..."
+  echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
   set +e
-  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$VALIDATION_ROUND"
+  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
-  record_manager_decision_artifact "$VALIDATION_ROUND"
+  record_manager_decision_artifact "$current_round"
   if [ "$REVIEW_EXIT" -eq 2 ]; then
-    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
-      block_run "review_not_lgtm" "Review still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/openhands-review.txt."
+    if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
+      block_run "review_not_lgtm" "Review still did not approve after round $current_round of $MAX_TOTAL_ROUNDS. Human review is needed; see $RUN_DIR/openhands-review.txt."
     fi
     repair_attempt=$((repair_attempt + 1))
-    update_status "repairing" "review_not_lgtm_attempt_${repair_attempt}"
+    current_round=$((current_round + 1))
+    update_status "repairing" "review_not_lgtm_round_${current_round}"
     build_repair_task "review_not_lgtm" "$repair_attempt" >/dev/null
     REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
-    WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "review repair attempt $repair_attempt" "$WORKER_ROUND" "$REPAIR_BRIEF_PATH"
+    run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$REPAIR_BRIEF_PATH"
     check_openhands_changed_files
     continue
   elif [ "$REVIEW_EXIT" -ne 0 ]; then
@@ -718,7 +725,7 @@ fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."
-  if HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+  if HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
     update_status "staged" "safe_staging_completed"
   else
     STAGING_EXIT=$?
@@ -749,7 +756,7 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   if [ -n "$ISSUE_ID" ]; then
     PR_ARGS=(--issue-id "$ISSUE_ID")
   fi
-  HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
