@@ -513,11 +513,18 @@ run_openhands_phase() {
   fi
   set -e
   if [ "$openhands_exit" -ne 0 ]; then
+    local failure_status="failed"
     if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
       STOP_REASON="$(jq -r '.stop_reason // "unknown"' "$RUN_DIR/monitor-result.json")"
       if [ "$STOP_REASON" != "completed" ]; then
-        block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
+        failure_status="blocked"
       fi
+    fi
+    if [ "$used_worker_hermes" != "true" ]; then
+      record_worker_attempt "$round_number" "$failure_status"
+    fi
+    if [ "$failure_status" = "blocked" ]; then
+      block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
     fi
     fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
   fi

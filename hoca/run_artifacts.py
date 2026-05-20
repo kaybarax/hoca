@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,10 +42,35 @@ from hoca.run_state import (
 )
 
 
+_SECRET_VALUE_PATTERN = re.compile(
+    r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"
+)
+
+
+def _redact_secret_like_values(text: str) -> str:
+    return _SECRET_VALUE_PATTERN.sub("[redacted: possible secret]", text)
+
+
 def _read_lines(path: Path) -> list[str]:
     if not path.is_file():
         return []
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _git_changed_files(project_path: Path) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return []
 
 
 def _load_monitor_result(run_dir: Path) -> dict[str, Any]:
@@ -139,28 +166,59 @@ def init_run_layout(
     write_json_atomic(sandbox_policy_path(run_dir), sandbox.to_dict())
 
 
+def _build_monitor_summary(monitor: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    stop_reason = monitor.get("stop_reason")
+    if isinstance(stop_reason, str) and stop_reason and stop_reason != "completed":
+        lines.append(f"Monitor stop reason: {stop_reason}.")
+    exit_code = monitor.get("exit_code")
+    if isinstance(exit_code, int) and exit_code != 0:
+        lines.append(f"Process exited with code {exit_code}.")
+    events = monitor.get("events")
+    if isinstance(events, list):
+        for event in events[:5]:
+            if isinstance(event, dict):
+                etype = event.get("type", "unknown")
+                detail = event.get("detail", "")
+                if detail:
+                    lines.append(f"Monitor event ({etype}): {detail}")
+    return lines
+
+
 def record_worker_attempt(
     run_dir: Path,
     *,
     round_number: int,
     status: str,
     summary: list[str] | None = None,
+    mode: str = "legacy",
+    project_path: Path | None = None,
 ) -> Path:
     ensure_run_layout(run_dir)
     run_id = run_dir.name
+
     changed_files = _read_lines(run_dir / "changed-files-after-openhands.txt")
     if not changed_files:
         changed_files = _read_lines(run_dir / "changed-files.txt")
+    if not changed_files and project_path is not None:
+        changed_files = _git_changed_files(project_path)
 
     monitor = _load_monitor_result(run_dir)
+
     output_name = "openhands-output.jsonl"
     if not (run_dir / output_name).is_file() and (run_dir / "openhands-output.log").is_file():
         output_name = "openhands-output.log"
 
-    artifact_paths = {
+    artifact_paths: dict[str, str] = {
         "openhands_output": str(run_dir / output_name),
         "monitor_result": str(run_dir / "monitor-result.json"),
     }
+    if mode == "profile":
+        for log_name in ("worker-hermes-stdout.txt", "worker-hermes-stderr.txt"):
+            log_path = run_dir / "logs" / log_name
+            if log_path.is_file():
+                artifact_paths[log_name.replace("-", "_").replace(".txt", "")] = str(log_path)
+
     blocked_reason = None
     if status != "completed":
         if monitor.get("stop_reason"):
@@ -168,14 +226,25 @@ def record_worker_attempt(
         elif (run_dir / "openhands-error.txt").is_file():
             blocked_reason = (run_dir / "openhands-error.txt").read_text(encoding="utf-8").strip()
 
+    if mode == "profile":
+        commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
+    else:
+        commands_run = ["run-openhands-task.sh"]
+
+    auto_summary = summary or [f"Worker attempt {round_number} recorded with status {status}."]
+    monitor_lines = _build_monitor_summary(monitor)
+    if monitor_lines:
+        auto_summary = auto_summary + monitor_lines
+    auto_summary = [_redact_secret_like_values(line) for line in auto_summary]
+
     report = HocaAttemptReport(
         run_id=run_id,
         round=round_number,
         role="worker",
         status=status,
         changed_files=changed_files,
-        summary=summary or [f"Worker attempt {round_number} recorded with status {status}."],
-        commands_run=["run-openhands-task.sh"],
+        summary=auto_summary,
+        commands_run=commands_run,
         tests_run=[],
         known_risks=[],
         blocked_reason=blocked_reason,
@@ -337,6 +406,8 @@ def main(argv: list[str] | None = None) -> int:
     worker_parser.add_argument("run_dir")
     worker_parser.add_argument("--round", type=int, required=True)
     worker_parser.add_argument("--status", default="completed")
+    worker_parser.add_argument("--mode", default="legacy", choices=["legacy", "profile"])
+    worker_parser.add_argument("--project-path", default=None)
 
     validation_parser = subparsers.add_parser("record-validation", help="Write validation report.")
     validation_parser.add_argument("run_dir")
@@ -388,7 +459,14 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_rounds=args.max_total_rounds,
             )
         elif args.command == "record-worker":
-            path = record_worker_attempt(run_dir, round_number=args.round, status=args.status)
+            proj = Path(args.project_path) if args.project_path else None
+            path = record_worker_attempt(
+                run_dir,
+                round_number=args.round,
+                status=args.status,
+                mode=getattr(args, "mode", "legacy"),
+                project_path=proj,
+            )
             print(path)
         elif args.command == "record-validation":
             path = record_validation_report(run_dir, round_number=args.round)

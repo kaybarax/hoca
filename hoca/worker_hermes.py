@@ -250,11 +250,19 @@ def _ensure_worker_attempt_report(
     *,
     round_number: int,
     status: str,
+    mode: str = "legacy",
+    project_path: Path | None = None,
 ) -> Path:
     attempt_path = worker_attempt_path(run_dir, round_number)
     if attempt_path.is_file():
         return attempt_path
-    return record_worker_attempt(run_dir, round_number=round_number, status=status)
+    return record_worker_attempt(
+        run_dir,
+        round_number=round_number,
+        status=status,
+        mode=mode,
+        project_path=project_path,
+    )
 
 
 def run_worker_hermes(
@@ -303,6 +311,8 @@ def run_worker_hermes(
             run_dir,
             round_number=round_number,
             status=status,
+            mode="profile",
+            project_path=project_path,
         )
         return WorkerRunResult(
             mode="profile",
@@ -326,6 +336,8 @@ def run_worker_hermes(
         run_dir,
         round_number=round_number,
         status=status,
+        mode="legacy",
+        project_path=project_path,
     )
     return WorkerRunResult(
         mode="legacy",

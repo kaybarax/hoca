@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from hoca.contracts import HocaAttemptReport, HocaRoleModelSelection, HocaSandboxPolicy, HocaTaskSpec
+from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
     build_legacy_openhands_task,
@@ -319,3 +320,88 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     assert (run_dir / "logs" / "worker-hermes-stderr.txt").is_file()
     report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
     assert report["status"] == "completed"
+
+
+def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    monitor = {
+        "exit_code": 1,
+        "stop_reason": "secret_detected",
+        "events": [
+            {"type": "secret_access", "detail": "read .env file"},
+        ],
+    }
+    (run_dir / "monitor-result.json").write_text(json.dumps(monitor), encoding="utf-8")
+
+    path = record_worker_attempt(run_dir, round_number=1, status="blocked")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.status == "blocked"
+    assert report.blocked_reason == "secret_detected"
+    assert any("Monitor stop reason: secret_detected" in s for s in report.summary)
+    assert any("secret_access" in s for s in report.summary)
+
+
+def test_record_worker_attempt_failed_openhands_produces_report(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-error.txt").write_text("Segmentation fault\n", encoding="utf-8")
+
+    path = record_worker_attempt(run_dir, round_number=2, status="failed")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.status == "failed"
+    assert report.round == 2
+    assert report.blocked_reason == "Segmentation fault"
+    assert path == worker_attempt_path(run_dir, 2)
+
+
+def test_record_worker_attempt_redacts_secrets_from_summary(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    path = record_worker_attempt(
+        run_dir,
+        round_number=1,
+        status="completed",
+        summary=["Fixed bug where API_KEY=sk-live-abc123 was exposed"],
+    )
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert "sk-live-abc123" not in " ".join(report.summary)
+    assert "[redacted: possible secret]" in " ".join(report.summary)
+
+
+def test_record_worker_attempt_profile_mode_captures_log_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    (logs_dir / "worker-hermes-stdout.txt").write_text("stdout output\n", encoding="utf-8")
+    (logs_dir / "worker-hermes-stderr.txt").write_text("stderr output\n", encoding="utf-8")
+
+    path = record_worker_attempt(run_dir, round_number=1, status="completed", mode="profile")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert "run-worker-hermes.sh" in report.commands_run
+    assert "run-openhands-task.sh" in report.commands_run
+    assert "worker_hermes_stdout" in report.artifact_paths
+    assert "worker_hermes_stderr" in report.artifact_paths
+
+
+def test_record_worker_attempt_git_fallback_for_changed_files(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "new_file.txt").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "new_file.txt"], cwd=project, check=True)
+
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    path = record_worker_attempt(
+        run_dir, round_number=1, status="completed", project_path=project,
+    )
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert "new_file.txt" in report.changed_files
