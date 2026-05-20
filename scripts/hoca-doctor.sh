@@ -325,6 +325,31 @@ else
   warn "Telegram notifications are not enabled; skipping Telegram variable requirements."
 fi
 
+section "Model Pool"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MODEL_POOL_OUTPUT="$(
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.role_model_env doctor-checks 2>/dev/null || true
+)"
+if [ -n "$MODEL_POOL_OUTPUT" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "[OK]"*)
+        ok "${line#\[OK\] }"
+        ;;
+      "[WARN]"*)
+        warn "${line#\[WARN\] }"
+        ;;
+      "[FAIL]"*)
+        fail "${line#\[FAIL\] }"
+        ;;
+    esac
+  done <<< "$MODEL_POOL_OUTPUT"
+else
+  warn "Model pool doctor checks could not run."
+fi
+
 section "Summary"
 if [ "$FAILED" -eq 0 ]; then
   if [ "$WARNED" -eq 0 ]; then

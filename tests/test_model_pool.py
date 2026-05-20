@@ -285,6 +285,31 @@ class TestRoleModelSelection:
         assert "secret" not in str(names)
 
 
+class TestModelPoolLegacyAndScale:
+    def test_one_configured_model_serves_all_roles(self) -> None:
+        config = ModelPoolConfig(
+            slots=(ModelSlot(name="solo", model="ollama/qwen-14b-pro", api_key="secret"),),
+            fallback_model="solo",
+        )
+        pool = model_pool_from_config(config)
+
+        assert pool is not None
+        assert pool.roles.manager == "solo"
+        assert pool.roles.worker == "solo"
+        assert pool.roles.reviewer == "solo"
+
+    def test_five_configured_models_load(self) -> None:
+        slots = tuple(
+            ModelSlot(name=f"slot-{index}", model=f"provider/model-{index}", api_key="secret")
+            for index in range(1, 6)
+        )
+        config = ModelPoolConfig(slots=slots, fallback_model="slot-1")
+        pool = model_pool_from_config(config)
+
+        assert pool is not None
+        assert len(pool.active_models()) == 5
+
+
 class TestModelPoolSafeSerialization:
     def test_safe_json_redacts_api_keys(self) -> None:
         pool = sample_pool()

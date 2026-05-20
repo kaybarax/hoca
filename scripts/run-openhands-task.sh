@@ -15,6 +15,17 @@ mkdir -p "$RUN_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
+
+# Drop pooled credentials so only the active role's LLM_* values are forwarded.
+for _pool_index in 1 2 3 4 5; do
+  unset "HOCA_MODEL_${_pool_index}_API_KEY" 2>/dev/null || true
+done
+
+if [ "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" != "true" ]; then
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/resolve-role-model-env.sh" "$AGENT_ROLE"
+fi
 
 case "${LLM_MODEL:-}" in
   deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
@@ -48,7 +59,6 @@ esac
 TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
 USE_SANDBOX="${HOCA_USE_SANDBOX:-true}"
-AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
 
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"

@@ -141,6 +141,7 @@ generate_run_task_spec() {
 }
 
 if [ -n "$REQUESTED_MODEL" ]; then
+  export HOCA_CLI_MODEL_OVERRIDE=1
   export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
   case "$REQUESTED_MODEL" in
     openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
@@ -531,6 +532,10 @@ run_openhands_phase() {
   local used_worker_hermes="false"
 
   echo "Running OpenHands ($phase_label)..."
+  if [ -z "$REQUESTED_MODEL" ]; then
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
+  fi
   set +e
   if hermes_profiles_enabled; then
     used_worker_hermes="true"
@@ -646,6 +651,10 @@ while true; do
   fi
 
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  if [ -z "$REQUESTED_MODEL" ]; then
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+  fi
   set +e
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
@@ -686,6 +695,11 @@ while true; do
   fi
   break
 done
+
+if [ -z "$REQUESTED_MODEL" ]; then
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/clear-role-model-env.sh"
+fi
 
 echo "Inspecting changed files..."
 git_status_short_for_task | tee "$RUN_DIR/git-status.txt"

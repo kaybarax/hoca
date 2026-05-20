@@ -82,6 +82,23 @@ def test_parse_doctor_output_includes_browsing_when_available() -> None:
     assert "enable-browsing" in caps_check[0].message
 
 
+def test_doctor_output_includes_model_pool_section_when_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOCA_MODEL_1_NAME", "local-coder")
+    monkeypatch.setenv("HOCA_MODEL_1_MODEL", "ollama/qwen-14b-pro")
+    monkeypatch.setenv("HOCA_MODEL_1_API_KEY", "secret-key")
+    monkeypatch.setenv("HOCA_FALLBACK_MODEL", "local-coder")
+
+    from hoca.role_model_env import model_pool_doctor_lines
+    from hoca.config import load_config
+
+    lines = model_pool_doctor_lines(load_config())
+
+    assert any("Model pool active" in message for _, message in lines)
+    assert all("secret-key" not in message for _, message in lines)
+
+
 def test_run_doctor_invokes_shell_source_of_truth(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

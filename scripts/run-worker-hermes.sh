@@ -8,6 +8,10 @@ Usage: run-worker-hermes.sh /path/to/project /path/to/task-spec.json /path/to/ru
 Run a worker attempt through the hoca-worker Hermes profile when
 HOCA_USE_HERMES_PROFILES=true, or fall back to run-openhands-task.sh in legacy mode.
 
+Worker model selection is resolved in hoca.worker_hermes (model pool role worker, or
+legacy LLM_MODEL). run-hoca-task.sh also sources resolve-role-model-env.sh worker
+before each implementation phase when the model pool is active.
+
 Options:
   --repair-brief PATH   Optional repair brief file for rounds after the first attempt
   -h, --help            Show this help message

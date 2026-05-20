@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.config import load_config
+from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
 from hoca.contracts import HocaReviewFinding, HocaReviewReport, HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_REVIEWER, hermes_installed, profile_exists
@@ -203,8 +204,12 @@ def _invoke_hermes_reviewer(
         "--max-turns",
         str(max_turns),
     ]
-    env = os.environ.copy()
+    cfg = load_config()
+    env = apply_role_to_env("reviewer", cfg, os.environ.copy())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    env["HOCA_AGENT_ROLE"] = "reviewer"
+    if cfg.model_pool.is_active:
+        print(log_line_for_selection(resolve_role_llm("reviewer", cfg)), file=sys.stderr)
 
     try:
         completed = subprocess.run(
@@ -316,6 +321,12 @@ def _run_legacy_review_wrapper(
     script = repo_root() / "scripts" / "review-with-openhands.sh"
     env = os.environ.copy()
     env["HOCA_REVIEW_ROUND"] = str(round_number)
+    cfg = load_config()
+    env = apply_role_to_env("reviewer", cfg, env)
+    env["HOCA_AGENT_ROLE"] = "reviewer"
+    if cfg.model_pool.is_active:
+        print(log_line_for_selection(resolve_role_llm("reviewer", cfg)), file=sys.stderr)
+
     completed = subprocess.run(
         [str(script), str(project_path), task, str(run_dir)],
         cwd=project_path,

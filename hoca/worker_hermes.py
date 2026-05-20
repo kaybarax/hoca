@@ -9,7 +9,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from hoca.config import load_config
+from hoca.config import HocaConfig, load_config
+from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
 from hoca.contracts import HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_WORKER, hermes_installed, profile_exists
@@ -153,14 +154,31 @@ def _resolve_max_turns() -> int:
     return max_turns
 
 
+def _worker_execution_env(cfg: HocaConfig | None = None) -> dict[str, str]:
+    config = cfg or load_config()
+    env = apply_role_to_env("worker", config)
+    env["HOCA_AGENT_ROLE"] = "worker"
+    return env
+
+
 def _run_openhands_wrapper(
     *,
     project_path: Path,
     task: str,
     run_dir: Path,
+    cfg: HocaConfig | None = None,
 ) -> CommandResult:
+    config = cfg or load_config()
+    env = _worker_execution_env(config)
+    if config.model_pool.is_active:
+        selection = resolve_role_llm("worker", config)
+        print(log_line_for_selection(selection), file=sys.stderr)
     script = repo_root() / "scripts" / "run-openhands-task.sh"
-    return run_command([str(script), str(project_path), task, str(run_dir)], cwd=project_path)
+    return run_command(
+        [str(script), str(project_path), task, str(run_dir)],
+        cwd=project_path,
+        env=env,
+    )
 
 
 def _invoke_hermes_worker(
@@ -188,10 +206,14 @@ def _invoke_hermes_worker(
         str(max_turns),
     ]
 
-    env = os.environ.copy()
-    env.setdefault("HERMES_ACCEPT_HOOKS", "1")
-
     import subprocess
+
+    cfg = load_config()
+    env = apply_role_to_env("worker", cfg, os.environ.copy())
+    env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    env["HOCA_AGENT_ROLE"] = "worker"
+    if cfg.model_pool.is_active:
+        print(log_line_for_selection(resolve_role_llm("worker", cfg)), file=sys.stderr)
 
     try:
         completed = subprocess.run(
@@ -330,6 +352,7 @@ def run_worker_hermes(
         project_path=project_path,
         task=openhands_task,
         run_dir=run_dir,
+        cfg=cfg,
     )
     status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
     attempt_path = _ensure_worker_attempt_report(
