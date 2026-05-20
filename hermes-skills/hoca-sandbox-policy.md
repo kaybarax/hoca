@@ -63,7 +63,9 @@ Container goals:
 - No Docker socket mount
 - No SSH agent, GPG agent, browser profile, or cloud credential mounts
 - Bounded CPU, memory, and PIDs where the runner supports it
-- Non-root execution where the image supports it (see script/image notes)
+- Non-root execution: image defines `worker`; runtime uses project-owner
+  `uid:gid` (or `HOCA_SANDBOX_USER=worker`) via `scripts/sandbox-docker-env.sh`
+- OpenHands CLI is pre-installed in the image (no runtime `apt-get` as root)
 - Drop all capabilities (`--cap-drop=ALL`); do not add `NET_RAW` or other Linux capabilities
 - Package tooling (`pnpm install`, `pip install`, registry fetches) does not require capability exceptions
 

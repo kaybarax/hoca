@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Runs OpenHands inside a Docker sandbox container.
-# The container has bun, node, pnpm, git pre-installed and network access.
+# The container has bun, node, pnpm, git, and OpenHands pre-installed.
 # The project is mounted at /workspace and HOCA's monitor watches stdout.
 
 if [ "$#" -lt 8 ]; then
@@ -22,6 +22,8 @@ AGENT_ROLE="${9:-worker}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/sandbox-docker-env.sh
+source "$SCRIPT_DIR/sandbox-docker-env.sh"
 
 SANDBOX_IMAGE="${HOCA_SANDBOX_IMAGE:-hoca-sandbox:latest}"
 RUN_ID="$(basename "$RUN_DIR")"
@@ -37,26 +39,16 @@ fi
 CONTAINER_BASE_URL="${BASE_URL//127.0.0.1/host.docker.internal}"
 CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 
-# Install openhands inside container needs pip; use a richer base with Python
-# Actually, we need OpenHands CLI inside the container. Let's use a setup approach.
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
+SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
+
+# Optional dependency install inside the mounted worktree (no root package installs)
 SETUP_SCRIPT="$RUN_DIR/sandbox-setup.sh"
 cat > "$SETUP_SCRIPT" <<'SETUP_EOF'
 #!/bin/bash
 set -euo pipefail
 
-# Install Python and pip if not available
-if ! command -v python3 >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv >/dev/null 2>&1
-fi
-
-# Install OpenHands CLI in a venv
-if ! command -v openhands >/dev/null 2>&1; then
-  python3 -m venv /tmp/openhands-venv
-  /tmp/openhands-venv/bin/pip install -q openhands-ai 2>/dev/null
-  export PATH="/tmp/openhands-venv/bin:$PATH"
-fi
-
-# Run pnpm install if lockfile exists
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
   pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
 fi
@@ -68,28 +60,6 @@ echo "  pnpm: $(command -v pnpm 2>/dev/null && pnpm --version || echo 'not avail
 echo "  openhands: $(command -v openhands 2>/dev/null && openhands --version 2>/dev/null || echo 'not available')"
 SETUP_EOF
 chmod +x "$SETUP_SCRIPT"
-
-# Create the entrypoint script that runs inside the container
-ENTRYPOINT_SCRIPT="$RUN_DIR/sandbox-entrypoint.sh"
-cat > "$ENTRYPOINT_SCRIPT" <<ENTRY_EOF
-#!/bin/bash
-set -euo pipefail
-
-export LLM_MODEL="$MODEL"
-export LLM_BASE_URL="$CONTAINER_BASE_URL"
-export LLM_API_KEY="$API_KEY"
-export OPENHANDS_SUPPRESS_BANNER=1
-export PATH="/tmp/openhands-venv/bin:\$PATH"
-
-# Run setup
-bash /workspace/.hoca-runtime/runs/$RUN_ID/sandbox-setup.sh
-
-# Run OpenHands in headless mode
-OH_FLAGS=(--headless --task "\$TASK_CONTENT" --override-with-envs --json)
-
-openhands "\${OH_FLAGS[@]}"
-ENTRY_EOF
-chmod +x "$ENTRYPOINT_SCRIPT"
 
 # Write task content to a file the container can read
 TASK_FILE="$RUN_DIR/task-input.txt"
@@ -104,8 +74,9 @@ trap cleanup_container EXIT
 echo "Starting sandboxed OpenHands execution..."
 echo "  Container: $CONTAINER_NAME"
 echo "  Image: $SANDBOX_IMAGE"
+echo "  User: $SANDBOX_USER"
 
-# Run the container with the project mounted
+# Run the container with the project mounted (non-root; worktree owner uid:gid by default)
 set +e
 docker run \
   --name "$CONTAINER_NAME" \
@@ -113,29 +84,26 @@ docker run \
   --workdir /workspace \
   -v "${PROJECT_PATH}:/workspace" \
   -v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}" \
+  -v "${SANDBOX_HOME}:/home/hoca-sandbox" \
   -e "LLM_MODEL=${MODEL}" \
   -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
   -e "LLM_API_KEY=${API_KEY}" \
   -e "OPENHANDS_SUPPRESS_BANNER=1" \
-  -e "HOME=/home/worker" \
+  -e "HOME=/home/hoca-sandbox" \
   --add-host=host.docker.internal:host-gateway \
   --security-opt=no-new-privileges \
   --cap-drop=ALL \
   --memory="${HOCA_SANDBOX_MEMORY:-8g}" \
   --pids-limit="${HOCA_SANDBOX_PIDS:-512}" \
-  --user root \
+  --user "$SANDBOX_USER" \
   "$SANDBOX_IMAGE" \
   bash -c "
     set -euo pipefail
-    export PATH=\"/tmp/openhands-venv/bin:\$PATH\"
 
-    # Setup phase
     bash /workspace/.hoca-runtime/runs/${RUN_ID}/sandbox-setup.sh
 
-    # Read task
     TASK_CONTENT=\$(cat /workspace/.hoca-runtime/runs/${RUN_ID}/task-input.txt)
 
-    # Run OpenHands
     openhands --headless --task \"\$TASK_CONTENT\" --override-with-envs --json
   " 2>"$RUN_DIR/openhands-stderr.log" | \
   PYTHONPATH="$HOCA_ROOT" python3 -c "

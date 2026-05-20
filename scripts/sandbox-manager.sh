@@ -7,6 +7,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/sandbox-docker-env.sh
+source "$SCRIPT_DIR/sandbox-docker-env.sh"
 
 SANDBOX_IMAGE="${HOCA_SANDBOX_IMAGE:-hoca-sandbox:latest}"
 SANDBOX_CONTAINER_PREFIX="hoca-worker"
@@ -39,6 +41,10 @@ sandbox_start() {
 
   # Resolve project path
   project_path="$(cd "$project_path" && pwd)"
+  local sandbox_user
+  sandbox_user="$(sandbox_resolve_user "$project_path")"
+  local sandbox_home
+  sandbox_home="$(sandbox_prepare_home "${HOCA_ROOT}/.hoca-runtime/sandbox/${run_id}")"
 
   # Determine Ollama base URL for container
   local ollama_url="${LLM_BASE_URL:-http://127.0.0.1:11434}"
@@ -54,15 +60,17 @@ sandbox_start() {
     -v "${HOCA_ROOT}/scripts:/hoca/scripts:ro" \
     -v "${HOCA_ROOT}/hoca:/hoca/hoca:ro" \
     -v "${HOCA_ROOT}/templates:/hoca/templates:ro" \
+    -v "${sandbox_home}:/home/hoca-sandbox" \
     -e "LLM_BASE_URL=${ollama_url}" \
     -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}" \
     -e "LLM_API_KEY=${LLM_API_KEY:-ollama}" \
-    -e "HOME=/home/worker" \
+    -e "HOME=/home/hoca-sandbox" \
     --add-host=host.docker.internal:host-gateway \
     --security-opt=no-new-privileges \
     --cap-drop=ALL \
     --memory=8g \
     --pids-limit=512 \
+    --user "$sandbox_user" \
     "$SANDBOX_IMAGE" \
     sleep infinity
 

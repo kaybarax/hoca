@@ -430,3 +430,26 @@ def test_sandbox_scripts_drop_capabilities_without_net_raw() -> None:
         assert "--cap-drop=ALL" in content, f"{script_name} must drop all capabilities"
         assert "NET_RAW" not in content, f"{script_name} must not grant NET_RAW"
         assert "--cap-add=" not in content, f"{script_name} must not add Linux capabilities"
+
+
+def test_sandbox_scripts_run_as_non_root() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "--user root" not in content, f"{script_name} must not run as root"
+        assert 'sandbox_resolve_user' in content, f"{script_name} must resolve a non-root user"
+        assert "--user" in content, f"{script_name} must pass --user to docker run"
+
+
+def test_sandbox_scripts_avoid_runtime_root_package_install() -> None:
+    sandboxed = (REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh").read_text(encoding="utf-8")
+    assert "apt-get" not in sandboxed
+    assert "pip install" not in sandboxed
+
+
+def test_sandbox_dockerfile_defines_worker_and_openhands() -> None:
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.sandbox").read_text(encoding="utf-8")
+    assert "useradd" in dockerfile and "worker" in dockerfile
+    assert "USER worker" in dockerfile
+    assert "install.openhands.dev" in dockerfile
+    assert "apt-get" not in dockerfile.split("USER worker", 1)[-1]

@@ -2,7 +2,7 @@
 # Pre-built container with all tools needed for OpenHands to operate safely.
 # Network access is available for package installation (pnpm install, etc).
 
-FROM oven/bun:1.1-slim AS base
+FROM oven/bun:1.2.23-debian AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -29,8 +29,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # Create non-root user for the worker
 RUN useradd -m -s /bin/bash worker
+
+# Pre-install OpenHands CLI binary (no runtime apt-get or pip as root)
+RUN curl -fsSL https://install.openhands.dev/install.sh | sh
+
 USER worker
 WORKDIR /workspace
 
 # Verify tools are available
-RUN bun --version && node --version && pnpm --version && git --version
+RUN bun --version && node --version && pnpm --version && git --version \
+    && openhands --help >/dev/null
