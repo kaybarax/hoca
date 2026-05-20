@@ -86,11 +86,19 @@ def test_record_worker_and_validation_reports(tmp_path: Path) -> None:
         "# Test Summary\n\n- **Status**: passed\n", encoding="utf-8"
     )
 
+    (run_dir / "git-status.txt").write_text(" M README.md\n", encoding="utf-8")
+
     worker_path = record_worker_attempt(run_dir, round_number=1, status="completed")
     validation_path = record_validation_report(run_dir, round_number=1)
 
     assert worker_path.is_file()
     assert validation_path.is_file()
+    validation_data = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation_data["git_status"] == ["M README.md"]
+    assert validation_data["changed_files"] == ["README.md"]
+    assert validation_data["secret_scan_clean"] is True
+    assert validation_data["monitor_clean"] is True
+    assert validation_data["tests_passed"] is True
     assert current_round(run_dir, prefix="worker-attempt-", subdir="attempts") == 1
     assert current_round(run_dir, prefix="validation-report-", subdir="validation") == 1
 

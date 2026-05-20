@@ -22,6 +22,7 @@ from hoca.contracts import (
     HocaValidationReport,
 )
 from hoca.hard_blockers import ValidationStatus, validation_blocker_from_monitor_stop_reason
+from hoca.validation_assessment import assess_validation_risks
 from hoca.run_layout import (
     ensure_run_layout,
     manager_decision_path,
@@ -325,6 +326,13 @@ def build_validation_status_from_run_dir(run_dir: Path) -> ValidationStatus:
         if monitor_blocker:
             hard_blockers.append(monitor_blocker)
 
+    changed_files = _read_lines(run_dir / "changed-files.txt")
+    risk = assess_validation_risks(run_dir, changed_files)
+    if risk.scope_risk and "scope_risk" not in hard_blockers:
+        hard_blockers.append("scope_risk")
+    if risk.staging_risk and "staging_risk" not in hard_blockers:
+        hard_blockers.append("staging_risk")
+
     return ValidationStatus(
         tests_passed=tests_passed,
         hard_blockers=tuple(sorted(set(hard_blockers))),
@@ -337,6 +345,8 @@ def build_validation_status_from_run_dir(run_dir: Path) -> ValidationStatus:
 def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
     ensure_run_layout(run_dir)
     validation = build_validation_status_from_run_dir(run_dir)
+    changed_files = _read_lines(run_dir / "changed-files.txt")
+    risk = assess_validation_risks(run_dir, changed_files)
     failure_type = ""
     summary_path = run_dir / "tests-summary.md"
     if summary_path.is_file():
@@ -345,24 +355,31 @@ def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
                 failure_type = line.split(":", 1)[-1].strip().strip("*")
                 break
 
+    artifact_paths = {
+        "tests_summary": str(run_dir / "tests-summary.md"),
+        "tests_output": str(run_dir / "tests-output.log"),
+        "monitor_result": str(run_dir / "monitor-result.json"),
+        "git_status": str(run_dir / "git-status.txt"),
+        "changed_files": str(run_dir / "changed-files.txt"),
+    }
+    secret_detected = run_dir / "secret-detected.txt"
+    if secret_detected.is_file():
+        artifact_paths["secret_detected"] = str(secret_detected)
+
     report = HocaValidationReport(
         run_id=run_dir.name,
         round=round_number,
         tests_passed=validation.tests_passed,
         test_failure_type=failure_type or None,
         git_status=_read_lines(run_dir / "git-status.txt"),
-        changed_files=_read_lines(run_dir / "changed-files.txt"),
+        changed_files=changed_files,
         secret_scan_clean=validation.secret_scan_clean,
         monitor_clean=validation.monitor_clean,
         monitor_stop_reason=validation.monitor_stop_reason,
         hard_blockers=list(validation.hard_blockers),
-        scope_risk=False,
-        staging_risk=False,
-        artifact_paths={
-            "tests_summary": str(run_dir / "tests-summary.md"),
-            "tests_output": str(run_dir / "tests-output.log"),
-            "monitor_result": str(run_dir / "monitor-result.json"),
-        },
+        scope_risk=risk.scope_risk,
+        staging_risk=risk.staging_risk,
+        artifact_paths=artifact_paths,
     )
     path = validation_report_path(run_dir, round_number)
     write_json_atomic(path, report.to_dict())

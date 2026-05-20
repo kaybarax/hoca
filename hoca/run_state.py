@@ -245,6 +245,15 @@ def summarize_run_for_pr_body(
             )
             if report:
                 lines = [f"- **Tests passed**: {report.get('tests_passed')}"]
+                failure_type = report.get("test_failure_type")
+                if failure_type:
+                    lines.append(f"- **Failure type**: {failure_type}")
+                lines.append(f"- **Secret scan clean**: {report.get('secret_scan_clean')}")
+                lines.append(f"- **Monitor clean**: {report.get('monitor_clean')}")
+                if report.get("scope_risk"):
+                    lines.append("- **Scope risk**: true")
+                if report.get("staging_risk"):
+                    lines.append("- **Staging risk**: true")
                 blockers = report.get("hard_blockers") or []
                 if blockers:
                     lines.append(f"- **Hard blockers**: {', '.join(blockers)}")
