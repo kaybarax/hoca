@@ -49,6 +49,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_KANBAN",
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
+            "HOCA_NETWORK_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
             "HOCA_MANAGER_MODEL",
             "HOCA_WORKER_MODEL",
@@ -79,6 +80,7 @@ class TestLoadConfigDefaults:
         assert cfg.use_kanban is False
         assert cfg.use_sandbox is True
         assert cfg.use_worktree_sandbox is True
+        assert cfg.network_mode == "offline"
         assert cfg.max_total_rounds == 3
         assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
@@ -123,6 +125,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_KANBAN",
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
+            "HOCA_NETWORK_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
         ]:
             monkeypatch.delenv(key, raising=False)

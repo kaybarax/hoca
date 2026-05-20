@@ -170,9 +170,16 @@ def init_run_layout(
 ) -> None:
     ensure_run_layout(run_dir)
     cfg = load_config()
+    from hoca.sandbox_network import normalize_network_mode
+
+    resolved_network_mode = (
+        normalize_network_mode(sandbox_network_mode)
+        if sandbox_network_mode is not None
+        else normalize_network_mode(cfg.network_mode)
+    )
     sandbox = HocaSandboxPolicy(
         enabled=cfg.use_sandbox if sandbox_enabled is None else sandbox_enabled,
-        network_mode=sandbox_network_mode or "offline",
+        network_mode=resolved_network_mode,
     )
     spec = build_initial_task_spec(
         run_id=run_id,

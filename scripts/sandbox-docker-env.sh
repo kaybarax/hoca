@@ -24,3 +24,34 @@ sandbox_prepare_home() {
   mkdir -p "$home_dir"
   printf '%s' "$home_dir"
 }
+
+# Resolve effective sandbox network mode (worker/reviewer) via hoca.sandbox_network.
+sandbox_resolve_network_mode() {
+  local role="${1:-worker}"
+  local run_dir="${2:-}"
+  local resolve_args=(--role "$role")
+  if [ -n "$run_dir" ]; then
+    resolve_args+=(--run-dir "$run_dir")
+  fi
+  if [ -n "${HOCA_NETWORK_MODE:-}" ]; then
+    resolve_args+=(--env-mode "$HOCA_NETWORK_MODE")
+  fi
+  PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.sandbox_network resolve "${resolve_args[@]}"
+}
+
+# Print docker run network flags for a resolved mode.
+sandbox_docker_network_args() {
+  local mode="$1"
+  PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.sandbox_network docker-args --mode "$mode"
+}
+
+# Record effective network policy into sandbox-policy.json for the run.
+sandbox_record_network_policy() {
+  local role="$1"
+  local run_dir="$2"
+  PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.sandbox_network record --role "$role" --run-dir "$run_dir" \
+    ${HOCA_NETWORK_MODE:+--env-mode "$HOCA_NETWORK_MODE"} >/dev/null
+}

@@ -33,6 +33,9 @@ VALID_MANAGER_DECISIONS: frozenset[str] = frozenset(
     ("proceed_to_pr", "repair_required", "blocked", "draft_pr_with_blockers")
 )
 NetworkMode = Literal["offline", "package-install", "github-only", "full"]
+VALID_NETWORK_MODES: frozenset[str] = frozenset(
+    ("offline", "package-install", "github-only", "full")
+)
 FinalStatus = Literal["completed", "failed", "blocked", "draft_pr_opened", "pr_opened"]
 
 
@@ -132,10 +135,15 @@ class HocaSandboxPolicy(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        network_mode = str(_required(data, "network_mode"))
+        if network_mode not in VALID_NETWORK_MODES:
+            raise ValueError(
+                f"network_mode must be one of {sorted(VALID_NETWORK_MODES)}, got: {network_mode!r}"
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             enabled=bool(_required(data, "enabled")),
-            network_mode=_required(data, "network_mode"),
+            network_mode=network_mode,  # type: ignore[arg-type]
         )
 
     @classmethod

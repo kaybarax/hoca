@@ -312,7 +312,12 @@ def generate_task_spec(
     expected_areas = infer_expected_areas(raw_request, resolved_repo_root)
 
     cfg = load_config()
-    sandbox = HocaSandboxPolicy(enabled=cfg.use_sandbox, network_mode="offline")
+    from hoca.sandbox_network import normalize_network_mode
+
+    sandbox = HocaSandboxPolicy(
+        enabled=cfg.use_sandbox,
+        network_mode=normalize_network_mode(cfg.network_mode),
+    )
     initial = build_initial_task_spec(
         run_id=resolved_run_id,
         repo_root=str(resolved_repo_root),

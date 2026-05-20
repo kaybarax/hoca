@@ -351,6 +351,8 @@ def test_sandbox_policy_documents_defaults() -> None:
 def test_sandbox_policy_documents_network_modes() -> None:
     content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
     assert "## Network modes" in content
+    assert "HOCA_NETWORK_MODE" in content
+    assert "## Docker implementation" in content
     for mode in ("offline", "package-install", "github-only", "full"):
         assert mode in content
 
@@ -439,6 +441,16 @@ def test_sandbox_scripts_run_as_non_root() -> None:
         assert "--user root" not in content, f"{script_name} must not run as root"
         assert 'sandbox_resolve_user' in content, f"{script_name} must resolve a non-root user"
         assert "--user" in content, f"{script_name} must pass --user to docker run"
+
+
+def test_sandbox_scripts_apply_network_modes() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "sandbox_resolve_network_mode" in content, script_name
+        assert "sandbox_docker_network_args" in content, script_name
+    sandboxed = (REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh").read_text(encoding="utf-8")
+    assert "sandbox_record_network_policy" in sandboxed
 
 
 def test_sandbox_scripts_avoid_runtime_root_package_install() -> None:

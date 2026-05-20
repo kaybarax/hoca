@@ -107,6 +107,7 @@ def test_hoca_doctor_script_includes_sandbox_section() -> None:
     content = script.read_text(encoding="utf-8")
     assert 'section "Sandbox"' in content
     assert "HOCA_USE_SANDBOX" in content
+    assert "HOCA_NETWORK_MODE" in content
     assert "run-openhands-sandboxed.sh" in content
     assert "does not forward GITHUB_TOKEN" in content
 

@@ -35,6 +35,8 @@ sandbox_ensure_image() {
 sandbox_start() {
   local project_path="$1"
   local run_id="${2:-$(date -u +%Y%m%dT%H%M%SZ)}"
+  local agent_role="${3:-worker}"
+  local run_dir="${4:-}"
   local container_name="${SANDBOX_CONTAINER_PREFIX}-${run_id}"
 
   sandbox_ensure_image
@@ -52,25 +54,41 @@ sandbox_start() {
   ollama_url="${ollama_url//127.0.0.1/host.docker.internal}"
   ollama_url="${ollama_url//localhost/host.docker.internal}"
 
+  local network_mode
+  network_mode="$(sandbox_resolve_network_mode "$agent_role" "$run_dir")"
+  network_args=()
+  while IFS= read -r _network_flag; do
+    [ -n "$_network_flag" ] || continue
+    network_args+=("$_network_flag")
+  done < <(sandbox_docker_network_args "$network_mode")
+
+  local docker_run_args=(
+    --name "$container_name"
+    --hostname "hoca-sandbox"
+    --workdir /workspace
+    -v "${project_path}:/workspace"
+    -v "${HOCA_ROOT}/scripts:/hoca/scripts:ro"
+    -v "${HOCA_ROOT}/hoca:/hoca/hoca:ro"
+    -v "${HOCA_ROOT}/templates:/hoca/templates:ro"
+    -v "${sandbox_home}:/home/hoca-sandbox"
+    -e "LLM_BASE_URL=${ollama_url}"
+    -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}"
+    -e "LLM_API_KEY=${LLM_API_KEY:-ollama}"
+    -e "HOME=/home/hoca-sandbox"
+    --security-opt=no-new-privileges
+    --cap-drop=ALL
+    --memory=8g
+    --pids-limit=512
+    --user "$sandbox_user"
+  )
+  if [ "${#network_args[@]}" -gt 0 ]; then
+    docker_run_args+=("${network_args[@]}")
+  else
+    docker_run_args+=(--add-host=host.docker.internal:host-gateway)
+  fi
+
   docker run -d \
-    --name "$container_name" \
-    --hostname "hoca-sandbox" \
-    --workdir /workspace \
-    -v "${project_path}:/workspace" \
-    -v "${HOCA_ROOT}/scripts:/hoca/scripts:ro" \
-    -v "${HOCA_ROOT}/hoca:/hoca/hoca:ro" \
-    -v "${HOCA_ROOT}/templates:/hoca/templates:ro" \
-    -v "${sandbox_home}:/home/hoca-sandbox" \
-    -e "LLM_BASE_URL=${ollama_url}" \
-    -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}" \
-    -e "LLM_API_KEY=${LLM_API_KEY:-ollama}" \
-    -e "HOME=/home/hoca-sandbox" \
-    --add-host=host.docker.internal:host-gateway \
-    --security-opt=no-new-privileges \
-    --cap-drop=ALL \
-    --memory=8g \
-    --pids-limit=512 \
-    --user "$sandbox_user" \
+    "${docker_run_args[@]}" \
     "$SANDBOX_IMAGE" \
     sleep infinity
 
@@ -108,10 +126,10 @@ case "${1:-help}" in
     ;;
   start)
     if [ "$#" -lt 2 ]; then
-      echo "Usage: sandbox-manager.sh start /path/to/project [run-id]"
+      echo "Usage: sandbox-manager.sh start /path/to/project [run-id] [role] [run-dir]"
       exit 1
     fi
-    sandbox_start "$2" "${3:-}"
+    sandbox_start "$2" "${3:-}" "${4:-worker}" "${5:-}"
     ;;
   exec)
     if [ "$#" -lt 3 ]; then

@@ -84,6 +84,14 @@ echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
 echo "  SANDBOX=$USE_SANDBOX"
 echo "  ROLE=$AGENT_ROLE"
+if [ "$USE_SANDBOX" = "true" ] && [ -x "$SCRIPT_DIR/run-openhands-sandboxed.sh" ]; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    # shellcheck source=scripts/sandbox-docker-env.sh
+    source "$SCRIPT_DIR/sandbox-docker-env.sh"
+    SANDBOX_NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
+    echo "  NETWORK_MODE=$SANDBOX_NETWORK_MODE"
+  fi
+fi
 
 cat > "$RUN_DIR/agent-role-policy.txt" <<EOF
 role: $AGENT_ROLE

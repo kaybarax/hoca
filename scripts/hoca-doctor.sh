@@ -331,6 +331,8 @@ fi
 section "Sandbox"
 USE_SANDBOX="$(config_value HOCA_USE_SANDBOX)"
 USE_SANDBOX="${USE_SANDBOX:-true}"
+NETWORK_MODE="$(config_value HOCA_NETWORK_MODE)"
+NETWORK_MODE="${NETWORK_MODE:-offline}"
 SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
 SANDBOX_IMAGE="$(config_value HOCA_SANDBOX_IMAGE)"
 SANDBOX_IMAGE="${SANDBOX_IMAGE:-hoca-sandbox:latest}"
@@ -341,6 +343,22 @@ else
   warn "HOCA_USE_SANDBOX=false: worker/reviewer OpenHands runs on the host (higher risk)."
   warn "Host execution is opt-in only. Prefer sandboxed execution for autonomous rounds."
 fi
+
+case "$NETWORK_MODE" in
+  offline)
+    ok "HOCA_NETWORK_MODE=offline (default; safest worker/reviewer egress)."
+    ;;
+  package-install|github-only)
+    warn "HOCA_NETWORK_MODE=$NETWORK_MODE uses Docker bridge egress without allowlisting."
+    warn "Registry/GitHub-only restrictions are documented intent, not enforced by Docker alone."
+    ;;
+  full)
+    warn "HOCA_NETWORK_MODE=full allows unrestricted sandbox egress (explicit opt-in)."
+    ;;
+  *)
+    fail "HOCA_NETWORK_MODE must be offline, package-install, github-only, or full (got: $NETWORK_MODE)."
+    ;;
+esac
 
 if command -v docker >/dev/null 2>&1; then
   if docker info >/dev/null 2>&1; then

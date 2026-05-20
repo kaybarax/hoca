@@ -42,6 +42,13 @@ CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
 SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
 SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
+NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
+sandbox_record_network_policy "$AGENT_ROLE" "$RUN_DIR"
+SANDBOX_NETWORK_ARGS=()
+while IFS= read -r _network_flag; do
+  [ -n "$_network_flag" ] || continue
+  SANDBOX_NETWORK_ARGS+=("$_network_flag")
+done < <(sandbox_docker_network_args "$NETWORK_MODE")
 
 # Optional dependency install inside the mounted worktree (no root package installs)
 SETUP_SCRIPT="$RUN_DIR/sandbox-setup.sh"
@@ -49,10 +56,16 @@ cat > "$SETUP_SCRIPT" <<'SETUP_EOF'
 #!/bin/bash
 set -euo pipefail
 
+SETUP_EOF
+if [ "$NETWORK_MODE" != "offline" ]; then
+  cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
   pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
 fi
 
+SETUP_EOF
+fi
+cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 echo "Sandbox setup complete."
 echo "  bun: $(command -v bun 2>/dev/null && bun --version || echo 'not available')"
 echo "  node: $(command -v node 2>/dev/null && node --version || echo 'not available')"
@@ -75,27 +88,36 @@ echo "Starting sandboxed OpenHands execution..."
 echo "  Container: $CONTAINER_NAME"
 echo "  Image: $SANDBOX_IMAGE"
 echo "  User: $SANDBOX_USER"
+echo "  Network mode: $NETWORK_MODE"
 
 # Run the container with the project mounted (non-root; worktree owner uid:gid by default)
+DOCKER_RUN_ARGS=(
+  --name "$CONTAINER_NAME"
+  --hostname "hoca-sandbox"
+  --workdir /workspace
+  -v "${PROJECT_PATH}:/workspace"
+  -v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}"
+  -v "${SANDBOX_HOME}:/home/hoca-sandbox"
+  -e "LLM_MODEL=${MODEL}"
+  -e "LLM_BASE_URL=${CONTAINER_BASE_URL}"
+  -e "LLM_API_KEY=${API_KEY}"
+  -e "OPENHANDS_SUPPRESS_BANNER=1"
+  -e "HOME=/home/hoca-sandbox"
+  --security-opt=no-new-privileges
+  --cap-drop=ALL
+  --memory="${HOCA_SANDBOX_MEMORY:-8g}"
+  --pids-limit="${HOCA_SANDBOX_PIDS:-512}"
+  --user "$SANDBOX_USER"
+)
+if [ "${#SANDBOX_NETWORK_ARGS[@]}" -gt 0 ]; then
+  DOCKER_RUN_ARGS+=("${SANDBOX_NETWORK_ARGS[@]}")
+else
+  DOCKER_RUN_ARGS+=(--add-host=host.docker.internal:host-gateway)
+fi
+
 set +e
 docker run \
-  --name "$CONTAINER_NAME" \
-  --hostname "hoca-sandbox" \
-  --workdir /workspace \
-  -v "${PROJECT_PATH}:/workspace" \
-  -v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}" \
-  -v "${SANDBOX_HOME}:/home/hoca-sandbox" \
-  -e "LLM_MODEL=${MODEL}" \
-  -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
-  -e "LLM_API_KEY=${API_KEY}" \
-  -e "OPENHANDS_SUPPRESS_BANNER=1" \
-  -e "HOME=/home/hoca-sandbox" \
-  --add-host=host.docker.internal:host-gateway \
-  --security-opt=no-new-privileges \
-  --cap-drop=ALL \
-  --memory="${HOCA_SANDBOX_MEMORY:-8g}" \
-  --pids-limit="${HOCA_SANDBOX_PIDS:-512}" \
-  --user "$SANDBOX_USER" \
+  "${DOCKER_RUN_ARGS[@]}" \
   "$SANDBOX_IMAGE" \
   bash -c "
     set -euo pipefail

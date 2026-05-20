@@ -48,6 +48,28 @@ access from worker/reviewer sandboxes:
 | `github-only` | GitHub API/fetch only | Tasks that must read issues or remote refs |
 | `full` | Broader network | Rare; document rationale in task spec / manager notes |
 
+Environment default: `HOCA_NETWORK_MODE` (default `offline`). Task spec field:
+`sandbox.network_mode` on `HocaTaskSpec` overrides the env default for worker phases.
+Review phases prefer `offline` unless an explicit runtime override is passed.
+
+### Docker implementation (best effort)
+
+| Mode | Docker flags | Notes |
+|------|----------------|-------|
+| `offline` | `--network none` | No registry/GitHub egress; host LLM via `host.docker.internal` is unavailable |
+| `package-install` | default bridge + `host.docker.internal` | Registry-only egress is **not** enforced |
+| `github-only` | default bridge + `host.docker.internal` | GitHub-only egress is **not** enforced |
+| `full` | default bridge + `host.docker.internal` | Requires explicit `HOCA_NETWORK_MODE=full` or task-spec `full` |
+
+Runtime records the effective mode in `.hoca-runtime/runs/<run_id>/sandbox-policy.json`
+(`effective_network_mode`, `docker_network_args`, `limitations`). Helpers live in
+`hoca/sandbox_network.py` and `scripts/sandbox-docker-env.sh`.
+
+`full` is rejected unless opted in via `HOCA_NETWORK_MODE=full`, task-spec
+`sandbox.network_mode: full`, or an explicit phase override. Reviewer sandboxes
+default to `offline` so review can run without broad network when dependencies are
+already present in the worktree.
+
 Managers set network mode in the task spec or run init. Workers and reviewers must
 not widen network access beyond the recorded policy.
 
