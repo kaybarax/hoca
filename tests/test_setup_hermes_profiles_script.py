@@ -55,13 +55,16 @@ def test_setup_script_documents_required_behavior() -> None:
 def test_setup_script_dry_run_never_writes_report(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
+    report_path = REPO_ROOT / ".hoca-runtime" / "setup-hermes-profiles-report.txt"
+    if report_path.is_file():
+        report_path.unlink()
 
     result = run_setup(hermes_home=hermes_home, dry_run=True)
 
     assert result.returncode == 0, result.stderr
     assert "[DRY-RUN]" in result.stdout
     assert "hermes profile create hoca-manager" in result.stdout
-    assert not (REPO_ROOT / ".hoca-runtime" / "setup-hermes-profiles-report.txt").exists()
+    assert not report_path.exists()
     assert not list(hermes_home.glob("profiles/*"))
 
 
