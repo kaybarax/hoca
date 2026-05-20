@@ -121,7 +121,6 @@ docker run \
   --add-host=host.docker.internal:host-gateway \
   --security-opt=no-new-privileges \
   --cap-drop=ALL \
-  --cap-add=NET_RAW \
   --memory="${HOCA_SANDBOX_MEMORY:-8g}" \
   --pids-limit="${HOCA_SANDBOX_PIDS:-512}" \
   --user root \

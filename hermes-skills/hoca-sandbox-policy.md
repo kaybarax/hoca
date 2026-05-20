@@ -64,7 +64,8 @@ Container goals:
 - No SSH agent, GPG agent, browser profile, or cloud credential mounts
 - Bounded CPU, memory, and PIDs where the runner supports it
 - Non-root execution where the image supports it (see script/image notes)
-- Drop unnecessary capabilities; do not add `NET_RAW` unless policy explicitly requires it
+- Drop all capabilities (`--cap-drop=ALL`); do not add `NET_RAW` or other Linux capabilities
+- Package tooling (`pnpm install`, `pip install`, registry fetches) does not require capability exceptions
 
 Supporting scripts:
 

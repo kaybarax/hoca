@@ -61,7 +61,6 @@ sandbox_start() {
     --add-host=host.docker.internal:host-gateway \
     --security-opt=no-new-privileges \
     --cap-drop=ALL \
-    --cap-add=NET_RAW \
     --memory=8g \
     --pids-limit=512 \
     "$SANDBOX_IMAGE" \

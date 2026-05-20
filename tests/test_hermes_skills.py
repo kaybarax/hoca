@@ -421,3 +421,12 @@ def test_sandbox_scripts_do_not_forward_github_token() -> None:
         script = REPO_ROOT / "scripts" / script_name
         content = script.read_text(encoding="utf-8")
         assert "GITHUB_TOKEN" not in content, f"{script_name} must not forward GITHUB_TOKEN"
+
+
+def test_sandbox_scripts_drop_capabilities_without_net_raw() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "--cap-drop=ALL" in content, f"{script_name} must drop all capabilities"
+        assert "NET_RAW" not in content, f"{script_name} must not grant NET_RAW"
+        assert "--cap-add=" not in content, f"{script_name} must not add Linux capabilities"
