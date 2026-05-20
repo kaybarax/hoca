@@ -124,6 +124,24 @@ class TestRecordValidationReport:
         assert report.staging_risk is False
         assert report.hard_blockers == []
 
+    def test_record_validation_report_writes_risk_artifacts(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run-risk-artifacts"
+        ensure_run_layout(run_dir)
+        spec = _task_spec(tmp_path, expected_areas=["src"], goal="Update package dependencies")
+        write_json_atomic(run_dir / "task-spec.json", spec.to_dict())
+        (run_dir / "changed-files.txt").write_text("package-lock.json\n", encoding="utf-8")
+        (run_dir / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
+
+        record_validation_report(run_dir, round_number=1)
+
+        assert (run_dir / "risk-level.txt").read_text(encoding="utf-8") == "high\n"
+        notes = (run_dir / "risk-notes.txt").read_text(encoding="utf-8")
+        assert "dependency_lockfile" in notes
+        assert "Requires staging justification" in notes
+
+        fragments = summarize_run_for_pr_body(run_dir, task="Update package dependencies")
+        assert "dependency_lockfile" in fragments["risk"]
+
 
 class TestValidationStatusIntegration:
     def test_build_validation_status_includes_scope_risk_blocker(self, tmp_path: Path) -> None:

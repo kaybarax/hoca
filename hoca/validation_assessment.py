@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.contracts import HocaTaskSpec
+from hoca.risk import (
+    is_dependency_lockfile,
+    is_generated_file,
+    is_infrastructure_file,
+    is_migration_file,
+    justified_files_from_run_dir,
+)
 from hoca.run_layout import task_spec_path
 from hoca.run_state import read_optional_json
 
@@ -33,24 +40,6 @@ _TASK_TOKEN_STOPWORDS = frozenset(
     }
 )
 
-_GENERATED_SUFFIXES = (".min.js", ".min.css")
-_GENERATED_SUBSTRINGS = (".generated.", ".gen.", "/generated/", "/__generated__/", ".egg-info/")
-_DEPENDENCY_LOCKFILES = frozenset(
-    {
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "poetry.lock",
-        "pipfile.lock",
-        "uv.lock",
-        "cargo.lock",
-        "gemfile.lock",
-        "composer.lock",
-    }
-)
-
-
 @dataclass(frozen=True)
 class ValidationRiskAssessment:
     scope_risk: bool
@@ -72,42 +61,6 @@ def task_tokens_from_text(text: str) -> frozenset[str]:
         if len(token) >= 4 and token not in _TASK_TOKEN_STOPWORDS:
             tokens.add(token)
     return frozenset(tokens)
-
-
-def is_generated_file(path: str) -> bool:
-    lower = _normalize_path(path).lower()
-    if any(lower.endswith(suffix) for suffix in _GENERATED_SUFFIXES):
-        return True
-    return any(marker in lower for marker in _GENERATED_SUBSTRINGS)
-
-
-def is_dependency_lockfile(path: str) -> bool:
-    return Path(_normalize_path(path)).name.lower() in _DEPENDENCY_LOCKFILES
-
-
-def is_migration_file(path: str) -> bool:
-    lower = _normalize_path(path).lower()
-    return (
-        lower.startswith("migrations/")
-        or "/migrations/" in lower
-        or lower.startswith("db/migrate/")
-        or "/db/migrate/" in lower
-    )
-
-
-def is_infrastructure_file(path: str) -> bool:
-    lower = _normalize_path(path).lower()
-    if lower.startswith(".github/workflows/"):
-        return True
-    name = Path(lower).name
-    if name in {"dockerfile", "vercel.json"}:
-        return True
-    if name.startswith("docker-compose") and name.endswith((".yml", ".yaml")):
-        return True
-    return any(
-        lower.startswith(prefix) or f"/{prefix}/" in lower
-        for prefix in ("terraform/", "k8s/", "kubernetes/", "charts/", "helm/")
-    ) or lower.endswith(".tf")
 
 
 def path_matches_expected_area(path: str, area: str) -> bool:
@@ -140,24 +93,6 @@ def path_matches_task_context(
         return not expected_areas
     lower_file = _normalize_path(path).lower()
     return any(token in lower_file for token in task_tokens)
-
-
-def _justified_files(run_dir: Path) -> set[str]:
-    justified: set[str] = set()
-    justification_path = run_dir / "staging-justification.txt"
-    if not justification_path.is_file():
-        return justified
-    for line in justification_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if ":" in stripped:
-            file_part = stripped.split(":", 1)[0].strip()
-            if file_part:
-                justified.add(file_part)
-        else:
-            justified.add(stripped)
-    return justified
 
 
 def _load_task_spec(run_dir: Path) -> HocaTaskSpec | None:
@@ -194,7 +129,7 @@ def assess_validation_risks(
     spec = _load_task_spec(run_dir)
     expected_areas = list(spec.expected_areas) if spec else []
     task_tokens = task_tokens_from_text(spec.goal if spec else "")
-    justified_files = _justified_files(run_dir)
+    justified_files = justified_files_from_run_dir(run_dir)
 
     out_of_scope: list[str] = []
     staging_risk_files: list[str] = []

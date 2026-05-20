@@ -22,6 +22,7 @@ from hoca.contracts import (
     HocaValidationReport,
 )
 from hoca.hard_blockers import ValidationStatus, validation_blocker_from_monitor_stop_reason
+from hoca.risk import write_risk_artifacts
 from hoca.security import find_secret_like_paths
 from hoca.validation_assessment import assess_validation_risks
 from hoca.run_layout import (
@@ -350,10 +351,33 @@ def build_validation_status_from_run_dir(run_dir: Path) -> ValidationStatus:
     )
 
 
+def _task_description_for_run(run_dir: Path) -> str:
+    spec_path = task_spec_path(run_dir)
+    if spec_path.is_file():
+        data = read_optional_json(spec_path)
+        if data:
+            goal = data.get("goal")
+            if isinstance(goal, str) and goal.strip():
+                return goal.strip()
+            raw_request = data.get("raw_request")
+            if isinstance(raw_request, str) and raw_request.strip():
+                return raw_request.strip()
+    status = read_optional_json(run_dir / "status.json") or {}
+    task = status.get("task")
+    if isinstance(task, str):
+        return task.strip()
+    return ""
+
+
 def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
     ensure_run_layout(run_dir)
     validation = build_validation_status_from_run_dir(run_dir)
     changed_files = _read_lines(run_dir / "changed-files.txt")
+    write_risk_artifacts(
+        run_dir,
+        changed_paths=changed_files,
+        description=_task_description_for_run(run_dir),
+    )
     risk = assess_validation_risks(run_dir, changed_files)
     failure_type = ""
     summary_path = run_dir / "tests-summary.md"
