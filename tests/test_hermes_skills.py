@@ -451,5 +451,9 @@ def test_sandbox_dockerfile_defines_worker_and_openhands() -> None:
     dockerfile = (REPO_ROOT / "docker" / "Dockerfile.sandbox").read_text(encoding="utf-8")
     assert "useradd" in dockerfile and "worker" in dockerfile
     assert "USER worker" in dockerfile
-    assert "install.openhands.dev" in dockerfile
+    assert "python3-venv" in dockerfile
+    assert "UV_TOOL_DIR" in dockerfile
+    assert "uv tool install openhands --python 3.12 --with openhands-ai" in dockerfile
+    assert "openhands-ai" in dockerfile
+    assert "openhands --help" in dockerfile
     assert "apt-get" not in dockerfile.split("USER worker", 1)[-1]

@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     jq \
+    python3 \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (LTS) via NodeSource
@@ -30,12 +32,27 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Create non-root user for the worker
 RUN useradd -m -s /bin/bash worker
 
-# Pre-install OpenHands CLI binary (no runtime apt-get or pip as root)
-RUN curl -fsSL https://install.openhands.dev/install.sh | sh
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
+    UV_TOOL_DIR=/opt/openhands-tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_CACHE_DIR=/opt/uv/cache \
+    PATH="/usr/local/bin:${PATH}"
+
+# Pre-install OpenHands in a Python 3.12 uv tool virtualenv (no runtime apt-get or pip as root)
+RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/install-uv.sh \
+    && env UV_INSTALL_DIR=/usr/local/bin sh /tmp/install-uv.sh \
+    && rm /tmp/install-uv.sh \
+    && uv python install 3.12 \
+    && uv tool install openhands --python 3.12 --with openhands-ai \
+    && openhands --help >/dev/null \
+    && uv cache clean \
+    && rm -rf "$UV_CACHE_DIR"
 
 USER worker
 WORKDIR /workspace
 
 # Verify tools are available
 RUN bun --version && node --version && pnpm --version && git --version \
+    && python3 --version \
+    && "$UV_TOOL_DIR/openhands/bin/python" --version \
     && openhands --help >/dev/null

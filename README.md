@@ -232,7 +232,8 @@ rounds).
 
 HOCA runs worker and reviewer OpenHands phases inside one HOCA-controlled Docker
 container by default (`HOCA_USE_SANDBOX=true` in `.env.example`). The sandbox
-comes pre-built with bun, node, pnpm, git, and GitHub CLI — the worker has
+comes pre-built with bun, node, pnpm, git, GitHub CLI, and a Python 3.12
+OpenHands virtualenv — the worker has
 network access for package installation but is filesystem-isolated from the
 host (only the project worktree is mounted).
 
@@ -268,7 +269,7 @@ scripts/sandbox-manager.sh build
 
 The sandbox provides:
 
-- Pre-installed tools (bun, node, pnpm, git, gh)
+- Pre-installed tools (bun, node, pnpm, git, gh, Python, OpenHands)
 - Credential isolation: `GITHUB_TOKEN` is not forwarded into worker/reviewer
   containers; PR creation uses manager-side `gh` authentication only
 - Network access for `pnpm install`, registry fetches, etc.

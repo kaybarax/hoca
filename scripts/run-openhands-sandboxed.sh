@@ -100,6 +100,11 @@ docker run \
   bash -c "
     set -euo pipefail
 
+    command -v openhands >/dev/null 2>&1 || {
+      echo 'openhands command not found in sandbox image. Rebuild with scripts/sandbox-manager.sh build.' >&2
+      exit 127
+    }
+
     bash /workspace/.hoca-runtime/runs/${RUN_ID}/sandbox-setup.sh
 
     TASK_CONTENT=\$(cat /workspace/.hoca-runtime/runs/${RUN_ID}/task-input.txt)
