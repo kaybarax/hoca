@@ -106,10 +106,15 @@ def test_hoca_doctor_script_includes_sandbox_section() -> None:
     script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
     content = script.read_text(encoding="utf-8")
     assert 'section "Sandbox"' in content
-    assert "HOCA_USE_SANDBOX" in content
-    assert "HOCA_NETWORK_MODE" in content
-    assert "run-openhands-sandboxed.sh" in content
-    assert "does not forward GITHUB_TOKEN" in content
+    assert "hoca.sandbox_doctor doctor-checks" in content
+    assert "podman" in content
+    assert "docker" in content
+
+
+def test_hoca_doctor_script_accepts_docker_or_podman() -> None:
+    script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
+    content = script.read_text(encoding="utf-8")
+    assert "Neither docker nor podman found" in content
 
 
 def test_create_pr_script_uses_manager_gh_auth_not_sandbox_token() -> None:

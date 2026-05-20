@@ -151,7 +151,16 @@ check_command node "Install Node.js."
 check_command jq "Install jq: brew install jq"
 check_command curl "Install curl."
 check_command openssl "Install OpenSSL."
-check_command docker "Install Docker Desktop or Colima."
+if command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1; then
+    ok "docker found: $(command -v docker)"
+  fi
+  if command -v podman >/dev/null 2>&1; then
+    ok "podman found: $(command -v podman)"
+  fi
+else
+  fail "Neither docker nor podman found. Install Docker Desktop, Colima, or Podman."
+fi
 check_command openhands "Install OpenHands CLI."
 
 section "GitHub CLI"
@@ -166,14 +175,20 @@ else
 fi
 
 section "Docker"
+CONTAINER_RUNTIME=""
 if command -v docker >/dev/null 2>&1; then
-  if docker info >/dev/null 2>&1; then
-    ok "Docker daemon is running."
+  CONTAINER_RUNTIME="docker"
+elif command -v podman >/dev/null 2>&1; then
+  CONTAINER_RUNTIME="podman"
+fi
+if [ -n "$CONTAINER_RUNTIME" ]; then
+  if "$CONTAINER_RUNTIME" info >/dev/null 2>&1; then
+    ok "$CONTAINER_RUNTIME daemon is running."
   else
-    fail "Docker is installed but the daemon is not running."
+    fail "$CONTAINER_RUNTIME is installed but the daemon is not running."
   fi
 else
-  warn "Skipping Docker daemon check because docker is missing."
+  warn "Skipping container runtime daemon check because docker and podman are missing."
 fi
 
 section "Ollama"
@@ -329,78 +344,27 @@ else
 fi
 
 section "Sandbox"
-USE_SANDBOX="$(config_value HOCA_USE_SANDBOX)"
-USE_SANDBOX="${USE_SANDBOX:-true}"
-NETWORK_MODE="$(config_value HOCA_NETWORK_MODE)"
-NETWORK_MODE="${NETWORK_MODE:-offline}"
-SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
-SANDBOX_IMAGE="$(config_value HOCA_SANDBOX_IMAGE)"
-SANDBOX_IMAGE="${SANDBOX_IMAGE:-hoca-sandbox:latest}"
-
-if is_truthy "$USE_SANDBOX"; then
-  ok "HOCA_USE_SANDBOX is enabled (recommended default)."
+SANDBOX_OUTPUT="$(
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.sandbox_doctor doctor-checks 2>/dev/null || true
+)"
+if [ -n "$SANDBOX_OUTPUT" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "[OK]"*)
+        ok "${line#\[OK\] }"
+        ;;
+      "[WARN]"*)
+        warn "${line#\[WARN\] }"
+        ;;
+      "[FAIL]"*)
+        fail "${line#\[FAIL\] }"
+        ;;
+    esac
+  done <<< "$SANDBOX_OUTPUT"
 else
-  warn "HOCA_USE_SANDBOX=false: worker/reviewer OpenHands runs on the host (higher risk)."
-  warn "Host execution is opt-in only. Prefer sandboxed execution for autonomous rounds."
+  warn "Sandbox doctor checks could not run."
 fi
-
-case "$NETWORK_MODE" in
-  offline)
-    ok "HOCA_NETWORK_MODE=offline (default; safest worker/reviewer egress)."
-    ;;
-  package-install|github-only)
-    warn "HOCA_NETWORK_MODE=$NETWORK_MODE uses Docker bridge egress without allowlisting."
-    warn "Registry/GitHub-only restrictions are documented intent, not enforced by Docker alone."
-    ;;
-  full)
-    warn "HOCA_NETWORK_MODE=full allows unrestricted sandbox egress (explicit opt-in)."
-    ;;
-  *)
-    fail "HOCA_NETWORK_MODE must be offline, package-install, github-only, or full (got: $NETWORK_MODE)."
-    ;;
-esac
-
-if command -v docker >/dev/null 2>&1; then
-  if docker info >/dev/null 2>&1; then
-    if is_truthy "$USE_SANDBOX"; then
-      if [ -x "$SANDBOX_SCRIPT" ]; then
-        ok "Sandbox wrapper script is executable: run-openhands-sandboxed.sh"
-      else
-        fail "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh is missing or not executable."
-      fi
-      if docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
-        ok "Sandbox image is available: $SANDBOX_IMAGE"
-      else
-        warn "Sandbox image not built yet: $SANDBOX_IMAGE (run: scripts/sandbox-manager.sh build)"
-      fi
-    else
-      warn "Docker is available but sandboxing is disabled via HOCA_USE_SANDBOX=false."
-    fi
-  else
-    if is_truthy "$USE_SANDBOX"; then
-      fail "HOCA_USE_SANDBOX=true but Docker daemon is not running."
-    else
-      warn "Docker daemon is not running; host execution will be used."
-    fi
-  fi
-else
-  if is_truthy "$USE_SANDBOX"; then
-    fail "HOCA_USE_SANDBOX=true but docker command is missing."
-  else
-    warn "Docker is missing; host execution is the only available path."
-  fi
-fi
-
-for sandbox_script in run-openhands-sandboxed.sh sandbox-manager.sh; do
-  script_path="$SCRIPT_DIR/$sandbox_script"
-  if [ ! -f "$script_path" ]; then
-    warn "Sandbox script missing: $sandbox_script"
-  elif grep -q 'GITHUB_TOKEN' "$script_path"; then
-    fail "Sandbox script forwards GITHUB_TOKEN: $sandbox_script"
-  else
-    ok "Sandbox script does not forward GITHUB_TOKEN: $sandbox_script"
-  fi
-done
 
 section "Worktree Sandbox"
 USE_WORKTREE="$(config_value HOCA_USE_WORKTREE_SANDBOX)"
