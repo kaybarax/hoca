@@ -35,17 +35,46 @@ def _review(
     )
 
 
-def _finding(finding_id: str, *, severity: str = "high") -> HocaReviewFinding:
-    return HocaReviewFinding.from_dict(
-        {
-            "id": finding_id,
-            "severity": severity,
-            "category": "correctness",
-            "file": "src/app.py",
-            "summary": f"Finding {finding_id}",
-            "required_fix": f"Fix {finding_id}",
-        }
+def _finding(
+    finding_id: str,
+    *,
+    severity: str = "high",
+    category: str = "correctness",
+    required_fix: str | None = None,
+) -> HocaReviewFinding:
+    payload: dict[str, object] = {
+        "id": finding_id,
+        "severity": severity,
+        "category": category,
+        "file": "src/app.py",
+        "summary": f"Finding {finding_id}",
+        "required_fix": required_fix if required_fix is not None else f"Fix {finding_id}",
+    }
+    if required_fix is None and severity in ("nit", "low"):
+        payload["required_fix"] = None
+    return HocaReviewFinding.from_dict(payload)
+
+
+def _setup_run(
+    tmp_path: Path,
+    *,
+    round_number: int,
+    review: HocaReviewReport,
+    tests_passed: bool = True,
+    max_total_rounds: int = 3,
+) -> Path:
+    run_dir = tmp_path / "run-1"
+    ensure_run_layout(run_dir)
+    write_json_atomic(
+        run_dir / "status.json",
+        {"run_id": "run-1", "max_total_rounds": max_total_rounds},
     )
+    (run_dir / "tests-exit-code.txt").write_text(
+        "0\n" if tests_passed else "1\n",
+        encoding="utf-8",
+    )
+    review_report_path(run_dir, round_number).write_text(review.to_json(), encoding="utf-8")
+    return run_dir
 
 
 class TestDecideAfterValidation:
@@ -164,6 +193,132 @@ class TestDecideAfterArbitration:
 
         assert decision.action == "proceed"
         assert decision.draft_pr is True
+
+
+class TestRoundBehavior:
+    """End-to-end round semantics via resolve_after_arbitration/validation."""
+
+    def test_lgtm_after_round_1_proceeds_to_pr(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=1,
+            review=_review(round_number=1, verdict="LGTM"),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=1, max_total_rounds=3)
+
+        assert decision.action == "proceed"
+        assert decision.manager_decision == "proceed_to_pr"
+        assert decision.draft_pr is False
+
+    def test_fix_required_in_round_1_goes_to_round_2(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=1,
+            review=_review(
+                round_number=1,
+                findings=[_finding("F1", severity="high", category="correctness")],
+            ),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=1, max_total_rounds=3)
+
+        assert decision.action == "repair"
+        assert decision.next_round == 2
+        assert decision.repair_brief_path is not None
+        assert "Round: 2 of 3" in Path(decision.repair_brief_path).read_text(encoding="utf-8")
+
+    def test_fix_required_in_round_2_goes_to_round_3(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=2,
+            review=_review(
+                round_number=2,
+                findings=[_finding("F1", severity="medium", category="test")],
+            ),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=2, max_total_rounds=3)
+
+        assert decision.action == "repair"
+        assert decision.next_round == 3
+        assert decision.repair_brief_path is not None
+
+    def test_low_priority_finding_after_round_3_proceeds_to_pr_notes(
+        self, tmp_path: Path
+    ) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=3,
+            review=_review(
+                round_number=3,
+                verdict="LGTM",
+                findings=[
+                    _finding(
+                        "F1",
+                        severity="nit",
+                        category="style",
+                        required_fix=None,
+                    )
+                ],
+            ),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=3, max_total_rounds=3)
+
+        assert decision.action == "proceed"
+        assert decision.manager_decision == "proceed_to_pr"
+        assert decision.draft_pr is False
+
+    def test_medium_residual_after_round_3_produces_draft_pr(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=3,
+            review=_review(
+                round_number=3,
+                findings=[_finding("F1", severity="medium", category="test")],
+            ),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=3, max_total_rounds=3)
+
+        assert decision.action == "proceed"
+        assert decision.manager_decision == "draft_pr_with_blockers"
+        assert decision.draft_pr is True
+
+    def test_critical_finding_after_round_3_blocks(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=3,
+            review=_review(
+                round_number=3,
+                findings=[_finding("F1", severity="critical", category="security")],
+            ),
+        )
+
+        decision = resolve_after_arbitration(run_dir, current_round=3, max_total_rounds=3)
+
+        assert decision.action == "block"
+        assert decision.manager_decision == "blocked"
+        assert decision.block_reason == "review_blocked"
+
+    def test_test_failure_after_round_3_blocks(self, tmp_path: Path) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=3,
+            review=_review(round_number=3, verdict="LGTM"),
+            tests_passed=False,
+        )
+
+        decision = resolve_after_validation(
+            run_dir,
+            current_round=3,
+            max_total_rounds=3,
+            test_failure_type="current_task",
+        )
+
+        assert decision.action == "block"
+        assert decision.block_reason == "tests_failed"
 
 
 class TestResolveAfterArbitration:
