@@ -357,6 +357,36 @@ def test_record_worker_attempt_failed_openhands_produces_report(tmp_path: Path) 
     assert path == worker_attempt_path(run_dir, 2)
 
 
+def test_record_worker_attempt_captures_existing_command_and_log_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-stderr.log").write_text("stderr\n", encoding="utf-8")
+    (run_dir / "openhands-exit-code.txt").write_text("1\n", encoding="utf-8")
+    (run_dir / "failed-command.txt").write_text("pytest tests/test_api.py\n", encoding="utf-8")
+    (run_dir / "tests-summary.md").write_text(
+        "# Test Summary\n\n"
+        "- **Status**: failed\n"
+        "- **Command**: `pytest tests/test_api.py`\n"
+        "- **Failed command**: `pytest tests/test_api.py`\n",
+        encoding="utf-8",
+    )
+    (run_dir / "tests-output.log").write_text("failed output\n", encoding="utf-8")
+    (run_dir / "changed-files-after-openhands.txt").write_text("src/api.py\n", encoding="utf-8")
+
+    path = record_worker_attempt(run_dir, round_number=1, status="failed")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.changed_files == ["src/api.py"]
+    assert report.tests_run == ["pytest tests/test_api.py"]
+    assert report.artifact_paths["openhands_stderr"].endswith("openhands-stderr.log")
+    assert report.artifact_paths["failed_command"].endswith("failed-command.txt")
+    assert report.artifact_paths["tests_summary"].endswith("tests-summary.md")
+    assert report.artifact_paths["tests_output"].endswith("tests-output.log")
+    assert report.artifact_paths["changed_files_after_openhands"].endswith(
+        "changed-files-after-openhands.txt"
+    )
+
+
 def test_record_worker_attempt_redacts_secrets_from_summary(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     ensure_run_layout(run_dir)
@@ -371,6 +401,21 @@ def test_record_worker_attempt_redacts_secrets_from_summary(tmp_path: Path) -> N
 
     assert "sk-live-abc123" not in " ".join(report.summary)
     assert "[redacted: possible secret]" in " ".join(report.summary)
+
+
+def test_record_worker_attempt_redacts_secret_like_blocked_reason(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-error.txt").write_text(
+        "OpenHands failed with token=secret-value\n",
+        encoding="utf-8",
+    )
+
+    path = record_worker_attempt(run_dir, round_number=1, status="failed")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert "secret-value" not in str(report.blocked_reason)
+    assert report.blocked_reason == "OpenHands failed with [redacted: possible secret]"
 
 
 def test_record_worker_attempt_profile_mode_captures_log_artifacts(tmp_path: Path) -> None:

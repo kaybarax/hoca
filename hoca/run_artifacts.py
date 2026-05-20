@@ -57,6 +57,32 @@ def _read_lines(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _existing_artifact_paths(run_dir: Path, names: dict[str, str]) -> dict[str, str]:
+    artifacts: dict[str, str] = {}
+    for key, relative_path in names.items():
+        path = run_dir / relative_path
+        if path.is_file():
+            artifacts[key] = str(path)
+    return artifacts
+
+
+def _read_test_commands_from_summary(run_dir: Path) -> list[str]:
+    summary_path = run_dir / "tests-summary.md"
+    if not summary_path.is_file():
+        return []
+
+    commands: list[str] = []
+    for line in summary_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- **Command**:"):
+            commands.append(stripped.split(":", 1)[1].strip().strip("`"))
+        elif stripped.startswith("- **Failed command**:"):
+            command = stripped.split(":", 1)[1].strip().strip("`")
+            if command not in commands:
+                commands.append(command)
+    return commands
+
+
 def _git_changed_files(project_path: Path) -> list[str]:
     try:
         result = subprocess.run(
@@ -213,6 +239,23 @@ def record_worker_attempt(
         "openhands_output": str(run_dir / output_name),
         "monitor_result": str(run_dir / "monitor-result.json"),
     }
+    artifact_paths.update(
+        _existing_artifact_paths(
+            run_dir,
+            {
+                "openhands_stderr": "openhands-stderr.log",
+                "openhands_error": "openhands-error.txt",
+                "openhands_exit_code": "openhands-exit-code.txt",
+                "failed_command": "failed-command.txt",
+                "tests_summary": "tests-summary.md",
+                "tests_output": "tests-output.log",
+                "tests_stderr": "tests-stderr.log",
+                "tests_exit_code": "tests-exit-code.txt",
+                "changed_files_after_openhands": "changed-files-after-openhands.txt",
+                "changed_files": "changed-files.txt",
+            },
+        )
+    )
     if mode == "profile":
         for log_name in ("worker-hermes-stdout.txt", "worker-hermes-stderr.txt"):
             log_path = run_dir / "logs" / log_name
@@ -225,6 +268,8 @@ def record_worker_attempt(
             blocked_reason = str(monitor["stop_reason"])
         elif (run_dir / "openhands-error.txt").is_file():
             blocked_reason = (run_dir / "openhands-error.txt").read_text(encoding="utf-8").strip()
+        if blocked_reason:
+            blocked_reason = _redact_secret_like_values(blocked_reason)
 
     if mode == "profile":
         commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
@@ -245,7 +290,7 @@ def record_worker_attempt(
         changed_files=changed_files,
         summary=auto_summary,
         commands_run=commands_run,
-        tests_run=[],
+        tests_run=_read_test_commands_from_summary(run_dir),
         known_risks=[],
         blocked_reason=blocked_reason,
         artifact_paths=artifact_paths,
