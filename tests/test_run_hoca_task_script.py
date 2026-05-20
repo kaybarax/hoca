@@ -665,13 +665,18 @@ def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Pat
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_MAX_TOTAL_ROUNDS"] = "2"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "1"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
-    rejected = run_hoca_task_with_env(tmp_path, "Update README", env)
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    decision_path = run_dir / "decisions" / "manager-decision-1.json"
 
-    assert rejected.returncode != 0
-    assert '"reason": "review_not_lgtm"' in latest_status(tmp_path) or \
-           '"reason": "review_failed"' in latest_status(tmp_path)
+    assert decision_path.is_file()
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    assert decision["decision"] == "draft_pr_with_blockers"
+    assert (run_dir / "draft-pr-with-blockers.flag").is_file()
+    assert result.stdout.count("round 1 of 1") >= 2
 
 
 def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:

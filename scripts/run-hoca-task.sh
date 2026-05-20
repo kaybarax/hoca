@@ -472,9 +472,49 @@ record_validation_artifact() {
   sync_run_status
 }
 
-record_manager_decision_artifact() {
-  local round_number="$1"
-  record_run_artifact record-decision "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
+resolve_round_loop() {
+  local phase="$1"
+  local round_number="$2"
+  local failure_type="${3:-}"
+  local cmd=(
+    python3
+    -m hoca.round_loop
+    "$phase"
+    "$RUN_DIR"
+    --round "$round_number"
+    --max-rounds "$MAX_TOTAL_ROUNDS"
+  )
+  if [ "$phase" = "after-validation" ] && [ -n "$failure_type" ]; then
+    cmd+=(--failure-type "$failure_type")
+  fi
+  if [ "$phase" = "after-arbitration" ]; then
+    cmd+=(--mark-draft)
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "${cmd[@]}"
+}
+
+round_loop_action() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["action"])'
+}
+
+round_loop_field() {
+  local field="$1"
+  python3 -c "import json,sys; value=json.load(sys.stdin).get('$field'); print('' if value is None else value)"
+}
+
+apply_round_loop_repair() {
+  local decision_json="$1"
+  local next_round
+  local repair_brief_path
+  local status_detail
+  next_round="$(printf '%s' "$decision_json" | round_loop_field next_round)"
+  repair_brief_path="$(printf '%s' "$decision_json" | round_loop_field repair_brief_path)"
+  status_detail="$(printf '%s' "$decision_json" | round_loop_field status_detail)"
+  current_round="$next_round"
+  update_status "repairing" "$status_detail"
+  run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$repair_brief_path"
+  check_openhands_changed_files
+  sync_run_status
 }
 
 hermes_profiles_enabled() {
@@ -579,60 +619,8 @@ check_openhands_changed_files() {
 
 check_openhands_changed_files
 
-build_repair_task() {
-  local reason="$1"
-  local attempt="$2"
-  local round_number="$((attempt + 1))"
-  local repair_file="$RUN_DIR/repair-attempt-${attempt}.md"
-
-  {
-    echo "Continue this HOCA task by fixing the current repository changes; do not start over."
-    echo ""
-    echo "Original task:"
-    echo "$(original_task_prompt)"
-    echo ""
-    echo "Repair reason: $reason"
-    echo "Round: $round_number of $MAX_TOTAL_ROUNDS"
-    echo ""
-    echo "Current git status:"
-    git status --short
-    echo ""
-    echo "Current diff:"
-    git diff
-    echo ""
-    if [ -f "$RUN_DIR/tests-summary.md" ]; then
-      echo "Test summary:"
-      cat "$RUN_DIR/tests-summary.md"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/failed-command.txt" ]; then
-      echo "Failed command:"
-      cat "$RUN_DIR/failed-command.txt"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/tests-output.log" ]; then
-      echo "Recent test output:"
-      tail -n 120 "$RUN_DIR/tests-output.log"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/tests-stderr.log" ]; then
-      echo "Recent test stderr:"
-      tail -n 120 "$RUN_DIR/tests-stderr.log"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/openhands-review.txt" ]; then
-      echo "Review feedback:"
-      cat "$RUN_DIR/openhands-review.txt"
-      echo ""
-    fi
-    echo "Fix only issues needed to make validation and review pass. If the failure is caused by missing local services, missing dependencies, credentials, or another human-only environment problem, explain that clearly and make no unrelated changes."
-  } > "$repair_file"
-
-  cat "$repair_file"
-}
-
 current_round=1
-repair_attempt=0
+DRAFT_PR_WITH_BLOCKERS="false"
 
 while true; do
   if [ -z "$(git_status_short_for_task)" ]; then
@@ -647,25 +635,33 @@ while true; do
   TESTS_EXIT=$?
   set -e
   record_validation_artifact "$current_round"
+  sync_run_status
   if [ "$TESTS_EXIT" -ne 0 ]; then
     FAILURE_TYPE=""
     if [ -f "$RUN_DIR/tests-summary.md" ]; then
       FAILURE_TYPE="$(awk -F': ' '/Failure type/ { gsub(/\r/, "", $2); print $2; exit }' "$RUN_DIR/tests-summary.md" | tr -d '*')"
     fi
-    if [ "$FAILURE_TYPE" = "environment" ] || [ "$FAILURE_TYPE" = "pre-existing" ]; then
-      block_run "tests_${FAILURE_TYPE}" "Tests failed due to $FAILURE_TYPE conditions. Human intervention is needed; see $RUN_DIR/tests-summary.md."
+    VALIDATION_DECISION_JSON=""
+    set +e
+    VALIDATION_DECISION_JSON="$(resolve_round_loop after-validation "$current_round" "$FAILURE_TYPE")"
+    VALIDATION_LOOP_EXIT=$?
+    set -e
+    VALIDATION_ACTION="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_action)"
+    if [ "$VALIDATION_ACTION" = "block" ]; then
+      BLOCK_REASON="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_field block_reason)"
+      BLOCK_MESSAGE="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_field block_message)"
+      if [ "$BLOCK_REASON" = "tests_failed" ]; then
+        fail_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/tests-summary.md."
+      fi
+      block_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/tests-summary.md."
     fi
-    if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
-      fail_run "tests_failed" "Tests still failed after round $current_round of $MAX_TOTAL_ROUNDS. Human review is needed; see $RUN_DIR/tests-summary.md."
+    if [ "$VALIDATION_ACTION" = "repair" ]; then
+      apply_round_loop_repair "$VALIDATION_DECISION_JSON"
+      continue
     fi
-    repair_attempt=$((repair_attempt + 1))
-    current_round=$((current_round + 1))
-    update_status "repairing" "tests_failed_round_${current_round}"
-    build_repair_task "tests_failed" "$repair_attempt" >/dev/null
-    REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
-    run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$REPAIR_BRIEF_PATH"
-    check_openhands_changed_files
-    continue
+    if [ "$VALIDATION_LOOP_EXIT" -ne 0 ]; then
+      fail_run "tests_failed" "Tests failed and round loop resolution failed; see $RUN_DIR/tests-summary.md."
+    fi
   fi
 
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
@@ -673,26 +669,40 @@ while true; do
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
-  record_manager_decision_artifact "$current_round"
-  if [ "$REVIEW_EXIT" -eq 2 ]; then
-    if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
-      block_run "review_not_lgtm" "Review still did not approve after round $current_round of $MAX_TOTAL_ROUNDS. Human review is needed; see $RUN_DIR/openhands-review.txt."
-    fi
-    repair_attempt=$((repair_attempt + 1))
-    current_round=$((current_round + 1))
-    update_status "repairing" "review_not_lgtm_round_${current_round}"
-    build_repair_task "review_not_lgtm" "$repair_attempt" >/dev/null
-    REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
-    run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$REPAIR_BRIEF_PATH"
-    check_openhands_changed_files
-    continue
-  elif [ "$REVIEW_EXIT" -ne 0 ]; then
+  sync_run_status
+  ARBITRATION_DECISION_JSON=""
+  set +e
+  ARBITRATION_DECISION_JSON="$(resolve_round_loop after-arbitration "$current_round")"
+  ARBITRATION_LOOP_EXIT=$?
+  set -e
+  if [ -z "$ARBITRATION_DECISION_JSON" ]; then
     if [ "$REVIEW_EXIT" -eq 4 ]; then
       block_run "review_blocked" "OpenHands review reported a blocked verdict. Human intervention is needed; see $RUN_DIR/openhands-review.txt."
     fi
+    if [ "$REVIEW_EXIT" -ne 0 ]; then
+      block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
+    fi
+    block_run "review_failed" "Manager arbitration could not resolve the next loop action."
+  fi
+  ARBITRATION_ACTION="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_action)"
+  if [ "$ARBITRATION_ACTION" = "block" ]; then
+    BLOCK_REASON="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field block_reason)"
+    BLOCK_MESSAGE="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field block_message)"
+    block_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/openhands-review.txt."
+  fi
+  if [ "$ARBITRATION_ACTION" = "proceed" ]; then
+    if [ "$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field draft_pr)" = "true" ]; then
+      DRAFT_PR_WITH_BLOCKERS="true"
+    fi
+    break
+  fi
+  if [ "$ARBITRATION_ACTION" = "repair" ]; then
+    apply_round_loop_repair "$ARBITRATION_DECISION_JSON"
+    continue
+  fi
+  if [ "$ARBITRATION_LOOP_EXIT" -ne 0 ]; then
     block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
   fi
-
   break
 done
 
@@ -768,3 +778,4 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
 else
   echo "HOCA run completed up to review. Human staging required."
 fi
+exit 0

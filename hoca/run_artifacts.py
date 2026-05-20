@@ -377,11 +377,16 @@ def record_manager_decision(run_dir: Path, *, round_number: int) -> Path | None:
 
     review = HocaReviewReport.from_json(review_path.read_text(encoding="utf-8"))
     validation = build_validation_status_from_run_dir(run_dir)
-    cfg = load_config()
+    status = read_optional_json(run_dir / "status.json")
+    max_total_rounds = load_config().max_total_rounds
+    if status is not None:
+        configured = status.get("max_total_rounds")
+        if isinstance(configured, int) and configured >= 1:
+            max_total_rounds = configured
     decision = arbitrate(
         review=review,
         validation=validation,
-        max_total_rounds=cfg.max_total_rounds,
+        max_total_rounds=max_total_rounds,
     )
     path = manager_decision_path(run_dir, round_number)
     write_json_atomic(path, decision.to_dict())
