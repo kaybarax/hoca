@@ -68,7 +68,8 @@ Follow `hoca-manager.md` for the full manager procedure. At a high level:
 5. Publish via `hoca-pr-publisher.md` scripts when gates pass
 6. Notify and `scripts/generate-task-report.sh`
 
-Apply `hoca-sandbox-policy.md` when sandboxing is enabled.
+Apply `hoca-sandbox-policy.md` for worker/reviewer execution. Sandboxed runs are the
+recommended default (`HOCA_USE_SANDBOX=true`); host execution requires explicit opt-in.
 
 ## One-command shortcut
 

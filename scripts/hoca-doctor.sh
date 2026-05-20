@@ -103,6 +103,9 @@ DOCTOR_LLM_MODEL="${DOCTOR_LLM_MODEL:-ollama/qwen-14b-pro}"
 DOCTOR_LLM_BASE_URL="$(config_value LLM_BASE_URL)"
 DOCTOR_LLM_API_KEY="$(config_value LLM_API_KEY)"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "HOCA Doctor"
 echo "==========="
 
@@ -325,9 +328,52 @@ else
   warn "Telegram notifications are not enabled; skipping Telegram variable requirements."
 fi
 
+section "Sandbox"
+USE_SANDBOX="$(config_value HOCA_USE_SANDBOX)"
+USE_SANDBOX="${USE_SANDBOX:-true}"
+SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
+SANDBOX_IMAGE="$(config_value HOCA_SANDBOX_IMAGE)"
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-hoca-sandbox:latest}"
+
+if is_truthy "$USE_SANDBOX"; then
+  ok "HOCA_USE_SANDBOX is enabled (recommended default)."
+else
+  warn "HOCA_USE_SANDBOX=false: worker/reviewer OpenHands runs on the host (higher risk)."
+  warn "Host execution is opt-in only. Prefer sandboxed execution for autonomous rounds."
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  if docker info >/dev/null 2>&1; then
+    if is_truthy "$USE_SANDBOX"; then
+      if [ -x "$SANDBOX_SCRIPT" ]; then
+        ok "Sandbox wrapper script is executable: run-openhands-sandboxed.sh"
+      else
+        fail "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh is missing or not executable."
+      fi
+      if docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
+        ok "Sandbox image is available: $SANDBOX_IMAGE"
+      else
+        warn "Sandbox image not built yet: $SANDBOX_IMAGE (run: scripts/sandbox-manager.sh build)"
+      fi
+    else
+      warn "Docker is available but sandboxing is disabled via HOCA_USE_SANDBOX=false."
+    fi
+  else
+    if is_truthy "$USE_SANDBOX"; then
+      fail "HOCA_USE_SANDBOX=true but Docker daemon is not running."
+    else
+      warn "Docker daemon is not running; host execution will be used."
+    fi
+  fi
+else
+  if is_truthy "$USE_SANDBOX"; then
+    fail "HOCA_USE_SANDBOX=true but docker command is missing."
+  else
+    warn "Docker is missing; host execution is the only available path."
+  fi
+fi
+
 section "Model Pool"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL_POOL_OUTPUT="$(
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m hoca.role_model_env doctor-checks 2>/dev/null || true

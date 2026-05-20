@@ -121,6 +121,26 @@ Treat headless OpenHands on the host as high-power automation with full access t
 mounted project directory and the engineer's environment. Prefer sandboxed execution
 for autonomous worker/reviewer rounds.
 
+Wrappers emit a visible warning and write `host-execution-warning.txt` under the run
+directory whenever host execution is selected or when sandboxing was requested but
+unavailable.
+
+## Nested sandboxes and Hermes-in-Docker
+
+Prefer one explicit HOCA-controlled OpenHands container boundary for worker and
+reviewer phases. Avoid confusing nested sandbox stacks (for example Hermes Docker
+terminal backend plus a separate OpenHands-in-Docker layer inside it).
+
+| Layout | Guidance |
+|--------|----------|
+| Default | Manager on host; worker/reviewer via `run-openhands-sandboxed.sh` |
+| Hermes in Docker | Mount only the HOCA workspace and task worktree; no `~`, credential stores, or Docker socket |
+| OpenHands native sandbox | Do not add a second container boundary on top of HOCA's unless policy documents a rare exception |
+
+When Hermes runs inside Docker, the manager still owns Git lifecycle and PR credentials
+outside worker/reviewer sandboxes. Keep worker and reviewer inside the HOCA sandbox
+wrapper rather than widening mounts to compensate for an outer Hermes container.
+
 ## Capability checks
 
 Browsing and other optional OpenHands features require explicit confirmation:

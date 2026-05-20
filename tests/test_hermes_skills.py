@@ -378,6 +378,14 @@ def test_sandbox_policy_documents_host_execution() -> None:
     assert "## Host execution" in content
     assert "HOCA_USE_SANDBOX=false" in content
     assert "run-openhands-task.sh" in content
+    assert "host-execution-warning.txt" in content
+
+
+def test_sandbox_policy_documents_nested_sandboxes() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Nested sandboxes and Hermes-in-Docker" in content
+    assert "one explicit HOCA-controlled" in content
+    assert "task worktree" in content
 
 
 def test_sandbox_policy_documents_unsafe_activity_stop() -> None:

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from hoca.doctor import DoctorReport, parse_doctor_output, run_doctor
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_parse_doctor_output_extracts_tagged_checks() -> None:
@@ -97,6 +100,14 @@ def test_doctor_output_includes_model_pool_section_when_active(
 
     assert any("Model pool active" in message for _, message in lines)
     assert all("secret-key" not in message for _, message in lines)
+
+
+def test_hoca_doctor_script_includes_sandbox_section() -> None:
+    script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
+    content = script.read_text(encoding="utf-8")
+    assert 'section "Sandbox"' in content
+    assert "HOCA_USE_SANDBOX" in content
+    assert "run-openhands-sandboxed.sh" in content
 
 
 def test_run_doctor_invokes_shell_source_of_truth(

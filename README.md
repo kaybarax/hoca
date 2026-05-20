@@ -228,19 +228,35 @@ plus review, and rounds 2-3 are repair plus review cycles. The legacy
 `HOCA_MAX_REPAIR_ATTEMPTS` variable is still accepted (value + 1 = total
 rounds).
 
-### Docker Sandbox
+### Docker Sandbox (recommended default)
 
-HOCA can run the OpenHands worker inside an isolated Docker container for
-safety and reproducibility. The sandbox container comes pre-built with bun,
-node, pnpm, git, and GitHub CLI — the worker has network access for package
-installation but is filesystem-isolated from the host.
+HOCA runs worker and reviewer OpenHands phases inside one HOCA-controlled Docker
+container by default (`HOCA_USE_SANDBOX=true` in `.env.example`). The sandbox
+comes pre-built with bun, node, pnpm, git, and GitHub CLI — the worker has
+network access for package installation but is filesystem-isolated from the
+host (only the project worktree is mounted).
 
-Enable sandbox mode:
+No extra setup is required when Docker is running; `bin/hoca run` uses the
+sandbox automatically:
 
 ```sh
-export HOCA_USE_SANDBOX=true
 bin/hoca run /path/to/repo "Implement feature X"
 ```
+
+Host-local OpenHands is higher risk and requires an explicit opt-in:
+
+```sh
+export HOCA_USE_SANDBOX=false
+bin/hoca run /path/to/repo "Implement feature X"
+```
+
+Wrappers print a visible warning and record `host-execution-warning.txt` in the
+run directory when host execution is used.
+
+Avoid nested sandbox layers: prefer this single HOCA OpenHands container boundary
+rather than stacking Hermes Docker terminal backends with an additional OpenHands
+sandbox inside. If Hermes itself runs in Docker, mount only the HOCA workspace and
+the task worktree — not your home directory, credential stores, or the Docker socket.
 
 Build the sandbox image manually:
 

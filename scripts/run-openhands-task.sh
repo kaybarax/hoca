@@ -60,6 +60,16 @@ TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
 USE_SANDBOX="${HOCA_USE_SANDBOX:-true}"
 
+warn_host_execution() {
+  local reason="$1"
+  {
+    echo "[WARN] HOCA host execution (higher risk): $reason"
+    echo "[WARN] OpenHands will run on the host with access to the project worktree and your shell environment."
+    echo "[WARN] Prefer HOCA_USE_SANDBOX=true (default) and a running Docker daemon for worker/reviewer rounds."
+    echo "[WARN] To keep host execution, set HOCA_USE_SANDBOX=false explicitly in .env or the environment."
+  } | tee -a "$RUN_DIR/host-execution-warning.txt" >&2
+}
+
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
 echo "  BASE_URL=$BASE_URL"
@@ -81,12 +91,20 @@ forbidden_for_worker_and_reviewer:
 EOF
 
 # --- Sandbox mode: run everything inside a Docker container ---
-if [ "$USE_SANDBOX" = "true" ] && command -v docker >/dev/null 2>&1; then
-  SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
-  if [ -x "$SANDBOX_SCRIPT" ]; then
-    exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
+if [ "$USE_SANDBOX" = "true" ]; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
+    if [ -x "$SANDBOX_SCRIPT" ]; then
+      exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
+    fi
+    warn_host_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found; falling back to host execution."
+  elif ! command -v docker >/dev/null 2>&1; then
+    warn_host_execution "HOCA_USE_SANDBOX=true but docker is not installed; falling back to host execution."
+  else
+    warn_host_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running; falling back to host execution."
   fi
-  echo "Warning: HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found. Falling back to host execution."
+else
+  warn_host_execution "HOCA_USE_SANDBOX is not enabled (explicit host-local opt-in)."
 fi
 
 if ! command -v openhands >/dev/null 2>&1; then
