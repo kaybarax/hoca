@@ -8,6 +8,7 @@ import pytest
 
 from hoca.contracts import HocaSandboxPolicy, HocaTaskSpec
 from hoca.run_layout import sandbox_policy_path, task_spec_path
+from hoca.run_artifacts import build_initial_task_spec
 from hoca.task_spec import (
     build_enriched_task_spec,
     derive_task_branch,
@@ -16,7 +17,6 @@ from hoca.task_spec import (
     generate_task_spec,
     infer_expected_areas,
     infer_test_commands,
-    build_initial_task_spec,
 )
 
 
@@ -100,6 +100,40 @@ def test_generate_task_spec_rejects_non_git_path(tmp_path: Path) -> None:
             repo_root=tmp_path,
             raw_request="noop",
         )
+
+
+def test_build_initial_task_spec_records_resolved_role_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "HOCA_MODEL_1_NAME=local-coder\n"
+        "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
+        "HOCA_MODEL_2_NAME=reviewer-strong\n"
+        "HOCA_MODEL_2_MODEL=openai/gpt-oss-20b\n"
+        "HOCA_MODEL_3_NAME=local-fast\n"
+        "HOCA_MODEL_3_MODEL=ollama/qwen-7b-pro\n"
+        "HOCA_WORKER_MODEL=local-coder\n"
+        "HOCA_REVIEWER_MODEL=reviewer-strong\n"
+        "HOCA_FALLBACK_MODEL=local-fast\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    spec = build_initial_task_spec(
+        run_id="r1",
+        repo_root=str(tmp_path),
+        base_branch="main",
+        task_branch="feat/x",
+        raw_request="task",
+        issue_id=None,
+        max_total_rounds=3,
+        sandbox=HocaSandboxPolicy(),
+    )
+
+    assert spec.models.worker == "local-coder"
+    assert spec.models.reviewer == "reviewer-strong"
+    assert spec.models.manager == "local-fast"
+    assert "secret" not in spec.to_json()
 
 
 def test_build_enriched_task_spec_preserves_models_and_sandbox(tmp_path: Path) -> None:

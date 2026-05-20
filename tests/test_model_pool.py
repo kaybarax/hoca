@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from hoca.config import ModelPoolConfig, ModelSlot
+from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 from hoca.model_pool import (
     MAX_MODEL_SLOTS,
@@ -12,6 +12,7 @@ from hoca.model_pool import (
     model_slot_from_env,
     model_pool_from_config,
     role_model_names_for_report,
+    role_model_names_for_task_spec,
     safe_model_pool_json,
     validate_model_pool,
     validate_model_pool_config,
@@ -194,9 +195,19 @@ class TestModelPoolConfigBridge:
         config = ModelPoolConfig(
             slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
             worker_model="missing",
+            fallback_model="local-coder",
         )
 
         with pytest.raises(ValueError, match="must reference a configured model name"):
+            validate_model_pool_config(config)
+
+    def test_active_pool_requires_fallback_at_load_time(self) -> None:
+        config = ModelPoolConfig(
+            slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
+            worker_model="local-coder",
+        )
+
+        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
             validate_model_pool_config(config)
 
     def test_role_names_for_report_exclude_credentials(self) -> None:
@@ -218,6 +229,60 @@ class TestModelPoolConfigBridge:
             "fallback": "local-fast",
         }
         assert "secret" not in json.dumps(names)
+
+
+class TestRoleModelSelection:
+    def test_worker_and_reviewer_can_use_different_configured_models(self) -> None:
+        config = ModelPoolConfig(
+            slots=(
+                ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),
+                ModelSlot(name="reviewer-strong", model="openai/gpt-oss-20b"),
+                ModelSlot(name="local-fast", model="ollama/qwen-7b-pro"),
+            ),
+            worker_model="local-coder",
+            reviewer_model="reviewer-strong",
+            fallback_model="local-fast",
+        )
+
+        assert config.resolve_role("worker").model == "ollama/qwen-14b-pro"
+        assert config.resolve_role("reviewer").model == "openai/gpt-oss-20b"
+        assert config.resolve_role("manager").name == "local-fast"
+
+    def test_role_model_names_for_task_spec_uses_legacy_llm_model(self) -> None:
+        cfg = HocaConfig(llm_model="openai/gpt-oss-20b")
+
+        names = role_model_names_for_task_spec(cfg)
+
+        assert names == {
+            "manager": "openai/gpt-oss-20b",
+            "worker": "openai/gpt-oss-20b",
+            "reviewer": "openai/gpt-oss-20b",
+            "fallback": "openai/gpt-oss-20b",
+        }
+
+    def test_role_model_names_for_task_spec_resolves_inherited_roles(self) -> None:
+        cfg = HocaConfig(
+            model_pool=ModelPoolConfig(
+                slots=(
+                    ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),
+                    ModelSlot(name="reviewer-strong", model="openai/gpt-oss-20b"),
+                    ModelSlot(name="local-fast", model="ollama/qwen-7b-pro"),
+                ),
+                worker_model="local-coder",
+                reviewer_model="reviewer-strong",
+                fallback_model="local-fast",
+            )
+        )
+
+        names = role_model_names_for_task_spec(cfg)
+
+        assert names == {
+            "manager": "local-fast",
+            "worker": "local-coder",
+            "reviewer": "reviewer-strong",
+            "fallback": "local-fast",
+        }
+        assert "secret" not in str(names)
 
 
 class TestModelPoolSafeSerialization:

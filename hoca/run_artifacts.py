@@ -12,6 +12,7 @@ from typing import Any
 
 from hoca.arbitration import arbitrate
 from hoca.config import load_config
+from hoca.model_pool import role_model_names_for_task_spec
 from hoca.contracts import (
     HocaAttemptReport,
     HocaReviewReport,
@@ -114,15 +115,7 @@ def _load_monitor_result(run_dir: Path) -> dict[str, Any]:
 
 
 def _role_models_from_config() -> dict[str, str]:
-    cfg = load_config()
-    pool = cfg.model_pool
-    fallback = pool.fallback_model or pool.worker_model or pool.manager_model or "default"
-    return {
-        "manager": pool.manager_model or fallback,
-        "worker": pool.worker_model or fallback,
-        "reviewer": pool.reviewer_model or fallback,
-        "fallback": fallback,
-    }
+    return role_model_names_for_task_spec(load_config())
 
 
 def build_initial_task_spec(

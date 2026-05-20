@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config, parse_bool
+from hoca.model_pool import validate_model_pool_config
 
 
 class TestParseBool:
@@ -243,8 +244,22 @@ class TestModelPoolConfig:
             slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
         )
 
-        with pytest.raises(ValueError, match="HOCA_MANAGER_MODEL"):
-            pool.resolve_role("manager")
+        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
+            validate_model_pool_config(pool)
+
+    def test_load_config_fails_when_active_pool_has_no_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "HOCA_MODEL_1_NAME=local-coder\n"
+            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_WORKER_MODEL=local-coder\n"
+        )
+        self._clear_model_pool_env(monkeypatch)
+
+        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
+            load_config(dotenv_path=env_file)
 
     def test_active_pool_requires_role_name_to_exist(self) -> None:
         pool = ModelPoolConfig(
@@ -285,6 +300,7 @@ class TestModelPoolConfig:
                     f"HOCA_MODEL_{index}_API_KEY=secret-{index}",
                 ]
             )
+        lines.append("HOCA_FALLBACK_MODEL=slot-1")
         env_file = tmp_path / ".env"
         env_file.write_text("\n".join(lines) + "\n")
         self._clear_model_pool_env(monkeypatch)
@@ -310,6 +326,7 @@ class TestModelPoolConfig:
             "HOCA_MODEL_4_MODEL=\n"
             "HOCA_MODEL_5_NAME=\n"
             "HOCA_MODEL_5_MODEL=\n"
+            "HOCA_FALLBACK_MODEL=local-coder\n"
         )
         self._clear_model_pool_env(monkeypatch)
 
@@ -327,6 +344,7 @@ class TestModelPoolConfig:
             "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
             "HOCA_MODEL_6_NAME=extra-slot\n"
             "HOCA_MODEL_6_MODEL=provider/extra\n"
+            "HOCA_FALLBACK_MODEL=local-coder\n"
         )
         self._clear_model_pool_env(monkeypatch)
         monkeypatch.setenv("HOCA_MODEL_6_NAME", "env-extra")

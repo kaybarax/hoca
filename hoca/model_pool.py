@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from hoca.config import ModelPoolConfig, ModelSlot, RoleName
+from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, RoleName
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 
 MAX_MODEL_SLOTS = 5
@@ -83,6 +83,11 @@ def validate_model_pool_config(pool: ModelPoolConfig) -> None:
     if not pool.is_active:
         return
 
+    if not pool.fallback_model.strip():
+        raise ValueError(
+            "HOCA_FALLBACK_MODEL is required when the model pool is active"
+        )
+
     configured = set(pool.slot_by_name())
     for role in ("manager", "worker", "reviewer", "fallback"):
         selected_name = {
@@ -144,6 +149,20 @@ def role_model_names_for_report(pool: HocaModelPool | ModelPoolConfig) -> dict[s
         "worker": _resolved_role_name(pool, "worker"),
         "reviewer": _resolved_role_name(pool, "reviewer"),
         "fallback": _resolved_role_name(pool, "fallback"),
+    }
+
+
+def role_model_names_for_task_spec(config: HocaConfig) -> dict[str, str]:
+    """Resolved role model slot names for task specs and run artifacts."""
+    if config.model_pool.is_active:
+        return role_model_names_for_report(config.model_pool)
+
+    legacy_name = config.llm_model
+    return {
+        "manager": legacy_name,
+        "worker": legacy_name,
+        "reviewer": legacy_name,
+        "fallback": legacy_name,
     }
 
 
