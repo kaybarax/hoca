@@ -17,6 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
 
+case "$AGENT_ROLE" in
+  worker|reviewer)
+    unset GITHUB_TOKEN 2>/dev/null || true
+    ;;
+esac
+
 # Drop pooled credentials so only the active role's LLM_* values are forwarded.
 for _pool_index in 1 2 3 4 5; do
   unset "HOCA_MODEL_${_pool_index}_API_KEY" 2>/dev/null || true
@@ -212,6 +218,8 @@ actor_role = sys.argv[6]
 oh_args = sys.argv[7:]
 
 env_override = dict(__import__('os').environ)
+if '${AGENT_ROLE}' in ('worker', 'reviewer'):
+    env_override.pop('GITHUB_TOKEN', None)
 env_override['LLM_MODEL'] = '${MODEL}'
 if '${BASE_URL}':
     env_override['LLM_BASE_URL'] = '${BASE_URL}'

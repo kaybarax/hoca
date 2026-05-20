@@ -38,7 +38,10 @@ def make_fake_curl(fake_bin: Path, *, succeeds: bool = True) -> None:
     curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
 
 
-def make_fake_openhands(fake_bin: Path) -> None:
+def make_fake_openhands(fake_bin: Path, *, env_capture: Path | None = None) -> None:
+    capture_line = ""
+    if env_capture is not None:
+        capture_line = f'env | sort > "{env_capture}"\n'
     openhands = fake_bin / "openhands"
     openhands.write_text(
         "#!/usr/bin/env bash\n"
@@ -47,6 +50,7 @@ def make_fake_openhands(fake_bin: Path) -> None:
         '  echo "openhands --headless --task --override-with-envs --json"\n'
         "  exit 0\n"
         "fi\n"
+        f"{capture_line}"
         "echo 'OpenHands fake run complete.'\n",
         encoding="utf-8",
     )
@@ -206,6 +210,59 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
+
+
+def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_USE_SANDBOX": "false",
+            "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "GITHUB_TOKEN=" not in captured
+
+
+def test_openhands_wrapper_strips_github_token_for_reviewer(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_AGENT_ROLE": "reviewer",
+            "HOCA_USE_SANDBOX": "false",
+            "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
+        },
+        args=[str(project), "Review changes", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "GITHUB_TOKEN=" not in captured
 
 
 def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:

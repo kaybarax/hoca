@@ -108,6 +108,15 @@ def test_hoca_doctor_script_includes_sandbox_section() -> None:
     assert 'section "Sandbox"' in content
     assert "HOCA_USE_SANDBOX" in content
     assert "run-openhands-sandboxed.sh" in content
+    assert "does not forward GITHUB_TOKEN" in content
+
+
+def test_create_pr_script_uses_manager_gh_auth_not_sandbox_token() -> None:
+    script = REPO_ROOT / "scripts" / "create-pr.sh"
+    content = script.read_text(encoding="utf-8")
+    assert "gh auth status" in content
+    assert "gh pr create" in content
+    assert "GITHUB_TOKEN" not in content
 
 
 def test_run_doctor_invokes_shell_source_of_truth(

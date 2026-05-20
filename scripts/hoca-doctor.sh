@@ -373,6 +373,17 @@ else
   fi
 fi
 
+for sandbox_script in run-openhands-sandboxed.sh sandbox-manager.sh; do
+  script_path="$SCRIPT_DIR/$sandbox_script"
+  if [ ! -f "$script_path" ]; then
+    warn "Sandbox script missing: $sandbox_script"
+  elif grep -q 'GITHUB_TOKEN' "$script_path"; then
+    fail "Sandbox script forwards GITHUB_TOKEN: $sandbox_script"
+  else
+    ok "Sandbox script does not forward GITHUB_TOKEN: $sandbox_script"
+  fi
+done
+
 section "Model Pool"
 MODEL_POOL_OUTPUT="$(
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \

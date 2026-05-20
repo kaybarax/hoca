@@ -269,6 +269,8 @@ scripts/sandbox-manager.sh build
 The sandbox provides:
 
 - Pre-installed tools (bun, node, pnpm, git, gh)
+- Credential isolation: `GITHUB_TOKEN` is not forwarded into worker/reviewer
+  containers; PR creation uses manager-side `gh` authentication only
 - Network access for `pnpm install`, registry fetches, etc.
 - Host Ollama access via `host.docker.internal`
 - Memory and PID limits (configurable via `HOCA_SANDBOX_MEMORY`, `HOCA_SANDBOX_PIDS`)
@@ -278,8 +280,10 @@ The sandbox provides:
 ### Pull Request Creation
 
 When staging and commit succeed, HOCA creates a pull request using the GitHub
-CLI. The PR includes a summary, validation results, code review status, and
-risk assessment.
+CLI on the manager host (`scripts/create-pr.sh`). The PR includes a summary,
+validation results, code review status, and risk assessment. Worker and
+reviewer sandboxes do not receive `GITHUB_TOKEN`; only the manager PR phase
+uses GitHub credentials.
 
 ### Auto-Merge
 
