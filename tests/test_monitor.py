@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
+
+import pytest
 
 
 from hoca.monitor import (
@@ -210,6 +213,30 @@ class TestSaveStopReason:
 
 
 class TestMonitorProcess:
+    def test_completed_process_does_not_wait_for_watchdog_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr("hoca.monitor.STALL_CHECK_INTERVAL", 60)
+        proc = subprocess.Popen(
+            ["printf", "done\n"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        started = time.monotonic()
+        result = monitor_process(
+            proc,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+
+        assert result.exit_code == 0
+        assert result.stop_reason == "completed"
+        assert time.monotonic() - started < 2
+
     def test_clean_exit(self, tmp_path: Path):
         proc = subprocess.Popen(
             ["printf", "line1\nline2\nline3\n"],

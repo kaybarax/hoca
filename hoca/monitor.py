@@ -392,6 +392,7 @@ def monitor_process(
     stop_reason = "completed"
     watchdog_reason: list[str] = []
     lock = threading.Lock()
+    watchdog_stop = threading.Event()
 
     _record(
         events,
@@ -400,8 +401,9 @@ def monitor_process(
     )
 
     def _watchdog() -> None:
-        while process.poll() is None:
-            time.sleep(STALL_CHECK_INTERVAL)
+        while process.poll() is None and not watchdog_stop.is_set():
+            if watchdog_stop.wait(STALL_CHECK_INTERVAL):
+                break
             if process.poll() is not None:
                 break
             elapsed = _now() - start_time
@@ -490,6 +492,7 @@ def monitor_process(
         _kill_process(process)
 
     exit_code = process.wait()
+    watchdog_stop.set()
     watchdog_thread.join(timeout=5)
     _record(events, "exit", f"Process exited with code {exit_code}")
 
