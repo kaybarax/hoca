@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import json
-import re
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from hoca.contracts import HocaReviewFinding, HocaReviewReport
-
-
-LEGACY_LGTM_TOKEN = "LGTM"
+from hoca.contracts import HocaReviewReport
+from hoca.review_report_parser import (
+    ReviewReportParseError,
+    parse_review_report_text,
+    try_extract_structured_report,
+)
 
 
 class ReviewGateError(ValueError):
@@ -33,105 +33,11 @@ def default_report_path(run_dir: Path, round_number: int) -> Path:
     return run_dir / "reviews" / f"review-report-{round_number}.json"
 
 
-def legacy_text_to_report(
-    review_text: str,
-    *,
-    run_id: str,
-    round_number: int,
-) -> HocaReviewReport:
-    if LEGACY_LGTM_TOKEN in review_text:
-        verdict = "LGTM"
-        findings: list[HocaReviewFinding] = []
-        summary = "Legacy review output contained LGTM."
-    else:
-        verdict = "fix_required"
-        summary = "Legacy review output did not contain LGTM."
-        findings = [
-            HocaReviewFinding(
-                id=f"legacy-review-{round_number}",
-                severity="medium",
-                category="correctness",
-                file=None,
-                summary=summary,
-                required_fix=review_text.strip() or "Review requested changes.",
-            )
-        ]
-
-    return HocaReviewReport(
-        run_id=run_id,
-        round=round_number,
-        role="reviewer",
-        verdict=verdict,
-        findings=findings,
-        pr_notes={
-            "summary": [summary],
-            "known_followups": [],
-        },
-    )
-
-
 def _load_structured_report(path: Path) -> HocaReviewReport:
     try:
         return HocaReviewReport.from_json(path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise ReviewGateError(f"Malformed HocaReviewReport at {path}: {exc}") from exc
-
-
-def _fenced_code_blocks(text: str) -> list[str]:
-    blocks: list[str] = []
-    for match in re.finditer(
-        r"```(?:json|yaml|yml)?\s*\n(.*?)\n```",
-        text,
-        flags=re.DOTALL | re.IGNORECASE,
-    ):
-        block = match.group(1).strip()
-        if block:
-            blocks.append(block)
-    return blocks
-
-
-def _json_object_candidates(text: str) -> list[str]:
-    decoder = json.JSONDecoder()
-    candidates: list[str] = []
-    idx = 0
-    while idx < len(text):
-        start = text.find("{", idx)
-        if start == -1:
-            break
-        try:
-            _, end = decoder.raw_decode(text[start:])
-        except json.JSONDecodeError:
-            idx = start + 1
-            continue
-        candidates.append(text[start : start + end])
-        idx = start + end
-    return candidates
-
-
-def _structured_report_candidates(text: str) -> list[str]:
-    seen: set[str] = set()
-    candidates: list[str] = []
-    for block in [
-        *_fenced_code_blocks(text),
-        text.strip(),
-        *_json_object_candidates(text),
-    ]:
-        if not block or block in seen:
-            continue
-        seen.add(block)
-        candidates.append(block)
-    return candidates
-
-
-def try_extract_structured_report(review_text: str) -> HocaReviewReport | None:
-    if not review_text.strip():
-        return None
-    for candidate in _structured_report_candidates(review_text):
-        try:
-            return HocaReviewReport.from_json(candidate)
-        except Exception:
-            continue
-    return None
 
 
 def materialize_structured_report_from_text(
@@ -233,14 +139,18 @@ def evaluate_review_gate(
     if not review_text_path.exists():
         raise ReviewGateError(f"Review text file does not exist: {review_text_path}")
 
-    report = legacy_text_to_report(
-        review_text_path.read_text(encoding="utf-8"),
-        run_id=run_id,
-        round_number=round_number,
-    )
+    try:
+        parsed = parse_review_report_text(
+            review_text_path.read_text(encoding="utf-8"),
+            run_id=run_id,
+            round_number=round_number,
+        )
+    except ReviewReportParseError as exc:
+        raise ReviewGateError(str(exc)) from exc
+    report = parsed.report
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report.to_json(), encoding="utf-8")
-    return ReviewGateResult(report=report, report_path=output_path, source="legacy")
+    return ReviewGateResult(report=report, report_path=output_path, source=parsed.source)
 
 
 def main(argv: list[str] | None = None) -> int:

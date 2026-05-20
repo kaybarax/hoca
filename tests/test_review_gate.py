@@ -10,13 +10,13 @@ from hoca.review_gate import (
     ReviewGateResult,
     code_review_pr_fragment,
     evaluate_review_gate,
-    legacy_text_to_report,
     main,
     materialize_structured_report_from_text,
     task_report_review_status,
     try_extract_structured_report,
     try_resolve_review_gate,
 )
+from hoca.review_report_parser import ReviewReportParseError, legacy_text_to_report
 
 
 def test_legacy_lgtm_converts_to_approved_structured_report(tmp_path: Path) -> None:
@@ -33,6 +33,21 @@ def test_legacy_lgtm_converts_to_approved_structured_report(tmp_path: Path) -> N
     assert result.report.findings == []
     assert result.report_path == run_dir / "reviews" / "review-report-1.json"
     assert HocaReviewReport.from_json(result.report_path.read_text(encoding="utf-8")).verdict == "LGTM"
+
+
+def test_legacy_lgtm_compatibility_accepts_token_in_text() -> None:
+    report = legacy_text_to_report(
+        "LGTM all good",
+        run_id="run-1",
+        round_number=1,
+    )
+
+    assert report.verdict == "LGTM"
+
+
+def test_legacy_empty_output_is_rejected() -> None:
+    with pytest.raises(ReviewReportParseError, match="empty"):
+        legacy_text_to_report("", run_id="run-1", round_number=1)
 
 
 def test_legacy_missing_lgtm_converts_to_fix_required(tmp_path: Path) -> None:
@@ -79,6 +94,16 @@ def test_malformed_structured_report_fails_gracefully(tmp_path: Path) -> None:
     (reports / "review-report-1.json").write_text('{"verdict": "LGTM"}', encoding="utf-8")
 
     with pytest.raises(ReviewGateError, match="Malformed HocaReviewReport"):
+        evaluate_review_gate(run_dir, review_text_path=review_text, run_id="run-1")
+
+
+def test_empty_review_output_fails_gracefully(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    review_text = run_dir / "openhands-review.txt"
+    review_text.write_text("\n", encoding="utf-8")
+
+    with pytest.raises(ReviewGateError, match="empty"):
         evaluate_review_gate(run_dir, review_text_path=review_text, run_id="run-1")
 
 
@@ -177,6 +202,51 @@ def test_try_extract_structured_report_from_fenced_json() -> None:
     assert report is not None
     assert report.verdict == "fix_required"
     assert report.findings[0].id == "F1"
+
+
+def test_try_extract_structured_report_prefers_json_before_yaml() -> None:
+    review_text = (
+        "verdict: blocked\n"
+        '{"schema_version":1,"run_id":"run-1","round":1,"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
+        '"known_followups":[]}}\n'
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "LGTM"
+
+
+def test_try_extract_structured_report_from_dependency_free_yaml() -> None:
+    review_text = (
+        "Review complete.\n"
+        "```yaml\n"
+        "schema_version: 1\n"
+        "run_id: run-1\n"
+        "round: 1\n"
+        "role: reviewer\n"
+        "verdict: fix_required\n"
+        "findings:\n"
+        "  - id: F1\n"
+        "    severity: medium\n"
+        "    category: test\n"
+        "    file: tests/test_module.py\n"
+        "    summary: Missing error-path coverage\n"
+        "    required_fix: Add a test for invalid input\n"
+        "pr_notes:\n"
+        "  summary:\n"
+        "    - Needs tests.\n"
+        "  known_followups: []\n"
+        "```\n"
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "fix_required"
+    assert report.findings[0].id == "F1"
+    assert report.pr_notes["summary"] == ["Needs tests."]
 
 
 def test_try_extract_structured_report_rejects_random_text() -> None:
