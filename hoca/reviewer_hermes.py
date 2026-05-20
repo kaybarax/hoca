@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.config import load_config
+from hoca.env_allowlist import filter_env
 from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
 from hoca.contracts import HocaReviewFinding, HocaReviewReport, HocaTaskSpec
 from hoca.paths import repo_root
@@ -208,6 +209,7 @@ def _invoke_hermes_reviewer(
     env = apply_role_to_env("reviewer", cfg, os.environ.copy())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
+    env = filter_env(env, "reviewer")
     if cfg.model_pool.is_active:
         print(log_line_for_selection(resolve_role_llm("reviewer", cfg)), file=sys.stderr)
 

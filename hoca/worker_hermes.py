@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.config import HocaConfig, load_config
+from hoca.env_allowlist import filter_env, redact_env_for_logging
 from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
 from hoca.contracts import HocaTaskSpec
 from hoca.paths import repo_root
@@ -212,6 +213,7 @@ def _invoke_hermes_worker(
     env = apply_role_to_env("worker", cfg, os.environ.copy())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "worker"
+    env = filter_env(env, "worker")
     if cfg.model_pool.is_active:
         print(log_line_for_selection(resolve_role_llm("worker", cfg)), file=sys.stderr)
 

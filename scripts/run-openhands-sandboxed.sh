@@ -90,7 +90,8 @@ echo "  Image: $SANDBOX_IMAGE"
 echo "  User: $SANDBOX_USER"
 echo "  Network mode: $NETWORK_MODE"
 
-# Run the container with the project mounted (non-root; worktree owner uid:gid by default)
+# Run the container with the project mounted (non-root; worktree owner uid:gid by default).
+# Only allowlisted env vars are forwarded via explicit -e flags (see hoca/env_allowlist.py).
 DOCKER_RUN_ARGS=(
   --name "$CONTAINER_NAME"
   --hostname "hoca-sandbox"
