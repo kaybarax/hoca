@@ -8,6 +8,8 @@ from hoca.config import ModelPoolConfig, ModelSlot
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 from hoca.model_pool import (
     MAX_MODEL_SLOTS,
+    load_model_slots_from_env,
+    model_slot_from_env,
     model_pool_from_config,
     role_model_names_for_report,
     safe_model_pool_json,
@@ -51,6 +53,35 @@ def sample_pool(**overrides: object) -> HocaModelPool:
     }
     defaults.update(overrides)
     return HocaModelPool(**defaults)  # type: ignore[arg-type]
+
+
+class TestModelPoolEnvLoading:
+    def test_loads_five_slots_from_env_keys(self) -> None:
+        env = {
+            "HOCA_MODEL_1_NAME": "slot-1",
+            "HOCA_MODEL_1_MODEL": "provider/model-1",
+            "HOCA_MODEL_1_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_MODEL_1_API_KEY": "secret-1",
+            "HOCA_MODEL_5_NAME": "slot-5",
+            "HOCA_MODEL_5_MODEL": "provider/model-5",
+            "HOCA_MODEL_5_BASE_URL": "http://127.0.0.1:11435",
+            "HOCA_MODEL_5_API_KEY": "secret-5",
+        }
+
+        def config_value(name: str, default: str = "") -> str:
+            return env.get(name, default)
+
+        slots = load_model_slots_from_env(config_value)
+
+        assert len(slots) == 5
+        assert slots[0].name == "slot-1"
+        assert slots[0].api_key == "secret-1"
+        assert slots[4].name == "slot-5"
+        assert slots[1].is_active is False
+
+    def test_rejects_slot_index_outside_supported_range(self) -> None:
+        with pytest.raises(ValueError, match="between 1 and 5"):
+            model_slot_from_env(lambda _name, default="": default, 6)
 
 
 class TestModelPoolValidation:

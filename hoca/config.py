@@ -164,17 +164,9 @@ class HocaConfig:
 
 
 def _load_model_pool(config_value) -> ModelPoolConfig:
-    from hoca.model_pool import validate_model_pool_config
+    from hoca.model_pool import load_model_slots_from_env, validate_model_pool_config
 
-    slots = tuple(
-        ModelSlot(
-            name=config_value(f"HOCA_MODEL_{index}_NAME"),
-            model=config_value(f"HOCA_MODEL_{index}_MODEL"),
-            base_url=config_value(f"HOCA_MODEL_{index}_BASE_URL"),
-            api_key=config_value(f"HOCA_MODEL_{index}_API_KEY"),
-        )
-        for index in range(1, 6)
-    )
+    slots = load_model_slots_from_env(config_value)
     pool = ModelPoolConfig(
         slots=slots,
         manager_model=config_value("HOCA_MANAGER_MODEL"),

@@ -7,6 +7,27 @@ from hoca.config import ModelPoolConfig, ModelSlot, RoleName
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 
 MAX_MODEL_SLOTS = 5
+MODEL_SLOT_ENV_COUNT = 5
+
+
+def model_slot_from_env(config_value, index: int) -> ModelSlot:
+    if index < 1 or index > MODEL_SLOT_ENV_COUNT:
+        raise ValueError(
+            f"Model slot index must be between 1 and {MODEL_SLOT_ENV_COUNT}, got {index}"
+        )
+    prefix = f"HOCA_MODEL_{index}_"
+    return ModelSlot(
+        name=config_value(f"{prefix}NAME"),
+        model=config_value(f"{prefix}MODEL"),
+        base_url=config_value(f"{prefix}BASE_URL"),
+        api_key=config_value(f"{prefix}API_KEY"),
+    )
+
+
+def load_model_slots_from_env(config_value) -> tuple[ModelSlot, ...]:
+    return tuple(model_slot_from_env(config_value, index) for index in range(1, MODEL_SLOT_ENV_COUNT + 1))
+
+
 REDACTED_API_KEY = "***"
 UNSET_API_KEY = "(unset)"
 
