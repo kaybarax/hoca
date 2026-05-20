@@ -257,8 +257,11 @@ reviewer (see `hoca-reviewer-qa.md`):
 Invoke review only through HOCA wrappers:
 
 ```bash
-scripts/review-with-openhands.sh "$project_path" "$task" "$run_dir"
+scripts/run-reviewer-hermes.sh "$project_path" "$task_spec_path" "$run_dir" "$round"
 ```
+
+The reviewer wrapper falls back to `scripts/review-with-openhands.sh` when Hermes
+profile mode is disabled.
 
 Because `require_review_lgtm=true`, continue toward publication only when review
 returns `LGTM` or accepted findings are resolved within the round budget.

@@ -661,9 +661,9 @@ while true; do
     continue
   fi
 
-  echo "Running OpenHands review..."
+  echo "Running review..."
   set +e
-  HOCA_REVIEW_ROUND="$VALIDATION_ROUND" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$(worker_task_prompt)" "$RUN_DIR"
+  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$VALIDATION_ROUND"
   REVIEW_EXIT=$?
   set -e
   record_manager_decision_artifact "$VALIDATION_ROUND"

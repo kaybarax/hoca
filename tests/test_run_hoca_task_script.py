@@ -197,15 +197,14 @@ def test_run_hoca_task_keeps_direct_openhands_fallback_when_profiles_disabled(
 
 
 def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
-    profile_dir = hermes_home / "profiles" / "hoca-worker"
-    profile_dir.mkdir(parents=True)
+    (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
+    (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
     hermes = fake_bin / "hermes"
     hermes.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-worker" ]]; then\n'
-        "  shift 2\n"
-        "fi\n"
+        'PROFILE=""\n'
+        'if [[ "${1:-}" == "-p" ]]; then PROFILE="${2:-}"; shift 2; fi\n'
         'while [[ $# -gt 0 ]]; do\n'
         '  case "$1" in\n'
         "    -z)\n"
@@ -218,6 +217,17 @@ def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
         'PROJECT="${HERMES_TEST_PROJECT:?}"\n'
         'RUN_DIR="$(find "$PROJECT/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
         '[ -n "$RUN_DIR" ] || { echo "run dir missing" >&2; exit 1; }\n'
+        'if [[ "$PROFILE" == "hoca-reviewer" ]]; then\n'
+        '  ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
+        '  [ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
+        '  mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'
+        '  cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
+        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
+        "EOF\n"
+        '  printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked-round-${ROUND}.txt"\n'
+        '  exit 0\n'
+        'fi\n'
         'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
         '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
@@ -287,16 +297,28 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
     )
     hermes_home = tmp_path / "hermes-home"
     hermes = fake_bin / "hermes"
-    profile_dir = hermes_home / "profiles" / "hoca-worker"
-    profile_dir.mkdir(parents=True)
+    (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
+    (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
     hermes.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-worker" ]]; then shift 2; fi\n'
+        'PROFILE=""\n'
+        'if [[ "${1:-}" == "-p" ]]; then PROFILE="${2:-}"; shift 2; fi\n'
         'while [[ $# -gt 0 ]]; do case "$1" in -z) PROMPT="${2:-}"; shift 2;; *) shift;; esac; done\n'
         'PROJECT="${HERMES_TEST_PROJECT:?}"\n'
         'RUN_DIR="$(find "$PROJECT/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
         '[ -n "$RUN_DIR" ] || { echo "run dir missing" >&2; exit 1; }\n'
+        'if [[ "$PROFILE" == "hoca-reviewer" ]]; then\n'
+        '  ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
+        '  [ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
+        '  mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'
+        '  cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
+        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
+        "EOF\n"
+        '  printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked-round-${ROUND}.txt"\n'
+        '  exit 0\n'
+        'fi\n'
         'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
         '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
