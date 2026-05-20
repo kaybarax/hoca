@@ -4,6 +4,7 @@ import json
 import subprocess
 import os
 import stat
+import sys
 from pathlib import Path
 
 
@@ -173,6 +174,169 @@ def prepare_pr_ready_repo(repo: Path) -> None:
     subprocess.run(
         ["git", "push", "-u", "origin", "HEAD"], cwd=repo, check=True, stdout=subprocess.PIPE
     )
+
+
+def test_run_hoca_task_keeps_direct_openhands_fallback_when_profiles_disabled(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_HERMES_PROFILES"] = "false"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Routing worker attempt through run-worker-hermes.sh" not in result.stdout
+    assert "Running OpenHands (implementation)" in result.stdout
+
+
+def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
+    profile_dir = hermes_home / "profiles" / "hoca-worker"
+    profile_dir.mkdir(parents=True)
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-worker" ]]; then\n'
+        "  shift 2\n"
+        "fi\n"
+        'while [[ $# -gt 0 ]]; do\n'
+        '  case "$1" in\n'
+        "    -z)\n"
+        '      PROMPT="${2:-}"\n'
+        "      shift 2\n"
+        "      ;;\n"
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        'PROJECT="${HERMES_TEST_PROJECT:?}"\n'
+        'RUN_DIR="$(find "$PROJECT/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
+        '[ -n "$RUN_DIR" ] || { echo "run dir missing" >&2; exit 1; }\n'
+        'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
+        '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
+        'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
+        'printf "agent edit\\n" > "$PROJECT/README.md"\n'
+        'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-test",\n'
+        '  "round": '"${ROUND}"',\n'
+        '  "role": "worker",\n'
+        '  "status": "completed",\n'
+        '  "changed_files": ["README.md"],\n'
+        '  "summary": ["Hermes worker completed"],\n'
+        '  "commands_run": ["run-openhands-task.sh"],\n'
+        '  "tests_run": [],\n'
+        '  "known_risks": [],\n'
+        '  "blocked_reason": null,\n'
+        '  "artifact_paths": {}\n'
+        "}\n"
+        "EOF\n"
+        'printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/worker-hermes-invoked-round-${ROUND}.txt"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | stat.S_IXUSR)
+
+
+def test_run_hoca_task_routes_implementation_through_worker_hermes_when_profiles_enabled(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    hermes_home = tmp_path / "hermes-home"
+    setup_fake_hermes_worker(fake_bin, hermes_home)
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_HERMES_PROFILES"] = "true"
+    env["HERMES_HOME"] = str(hermes_home)
+    env["HOCA_PYTHON"] = sys.executable
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    env["HERMES_TEST_PROJECT"] = str(tmp_path)
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    assert result.returncode == 0, result.stderr
+    assert "Routing worker attempt through run-worker-hermes.sh" in result.stdout
+    assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
+    assert (run_dir / "logs" / "worker-hermes-invoked-round-1.txt").is_file()
+    assert (run_dir / "worker-hermes-prompt-round-1.txt").is_file()
+
+
+def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'broken\\n' > README.md\n",
+        pytest_body="grep -q '^fixed$' README.md\n",
+    )
+    hermes_home = tmp_path / "hermes-home"
+    hermes = fake_bin / "hermes"
+    profile_dir = hermes_home / "profiles" / "hoca-worker"
+    profile_dir.mkdir(parents=True)
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-worker" ]]; then shift 2; fi\n'
+        'while [[ $# -gt 0 ]]; do case "$1" in -z) PROMPT="${2:-}"; shift 2;; *) shift;; esac; done\n'
+        'PROJECT="${HERMES_TEST_PROJECT:?}"\n'
+        'RUN_DIR="$(find "$PROJECT/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
+        '[ -n "$RUN_DIR" ] || { echo "run dir missing" >&2; exit 1; }\n'
+        'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
+        '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
+        'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
+        'if [[ "$ROUND" == "2" ]]; then printf "fixed\\n" > "$PROJECT/README.md"; '
+        'else printf "broken\\n" > "$PROJECT/README.md"; fi\n'
+        'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
+        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"worker",'
+        '"status":"completed","changed_files":["README.md"],"summary":["Hermes worker completed"],'
+        '"commands_run":["run-openhands-task.sh"],"tests_run":[],"known_risks":[],'
+        '"blocked_reason":null,"artifact_paths":{}}\n'
+        "EOF\n"
+        'printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/worker-hermes-invoked-round-${ROUND}.txt"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | stat.S_IXUSR)
+
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_HERMES_PROFILES"] = "true"
+    env["HERMES_HOME"] = str(hermes_home)
+    env["HOCA_PYTHON"] = sys.executable
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    env["HOCA_MAX_REPAIR_ATTEMPTS"] = "1"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+    env["HERMES_TEST_PROJECT"] = str(tmp_path)
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    assert result.returncode == 0, result.stderr
+    assert "Running OpenHands (test repair attempt 1)" in result.stdout
+    assert "Routing worker attempt through run-worker-hermes.sh" in result.stdout
+    assert (run_dir / "repair-attempt-1.md").is_file()
+    assert (run_dir / "attempts" / "worker-attempt-2.json").is_file()
+    assert (run_dir / "logs" / "worker-hermes-invoked-round-2.txt").is_file()
+    repair_prompt = (run_dir / "logs" / "worker-hermes-invoked-round-2.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "Repair reason: tests_failed" in repair_prompt
 
 
 def test_run_hoca_task_generates_task_spec_artifacts(tmp_path: Path) -> None:

@@ -471,14 +471,46 @@ record_manager_decision_artifact() {
   record_run_artifact record-decision "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
 }
 
+hermes_profiles_enabled() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+    'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_hermes_profiles else 1)' \
+    >/dev/null 2>&1
+}
+
 run_openhands_phase() {
-  local phase_task="$1"
-  local phase_label="${2:-implementation}"
+  local phase_label="${1:-implementation}"
+  local round_number="${2:-1}"
+  local repair_brief_path="${3:-}"
+  local openhands_exit=0
+  local used_worker_hermes="false"
 
   echo "Running OpenHands ($phase_label)..."
   set +e
-  "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$phase_task" "$RUN_DIR"
-  local openhands_exit=$?
+  if hermes_profiles_enabled; then
+    used_worker_hermes="true"
+    echo "Routing worker attempt through run-worker-hermes.sh..."
+    local worker_cmd=(
+      "$SCRIPT_DIR/run-worker-hermes.sh"
+      "$PROJECT_PATH"
+      "$(task_spec_path_for_run)"
+      "$RUN_DIR"
+      "$round_number"
+    )
+    if [ -n "$repair_brief_path" ]; then
+      worker_cmd+=(--repair-brief "$repair_brief_path")
+    fi
+    "${worker_cmd[@]}"
+    openhands_exit=$?
+  else
+    local phase_task
+    if [ -n "$repair_brief_path" ]; then
+      phase_task="$(cat "$repair_brief_path")"
+    else
+      phase_task="$(worker_task_prompt)"
+    fi
+    "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$phase_task" "$RUN_DIR"
+    openhands_exit=$?
+  fi
   set -e
   if [ "$openhands_exit" -ne 0 ]; then
     if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
@@ -489,12 +521,15 @@ run_openhands_phase() {
     fi
     fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
   fi
+  if [ "$used_worker_hermes" = "true" ]; then
+    sync_run_status
+  else
+    record_worker_attempt "$round_number" "completed"
+  fi
 }
 
 WORKER_ROUND=1
-WORKER_TASK="$(worker_task_prompt)"
-run_openhands_phase "$WORKER_TASK" "implementation"
-record_worker_attempt "$WORKER_ROUND" "completed"
+run_openhands_phase "implementation" "$WORKER_ROUND"
 
 path_is_secret_like() {
   local path="$1"
@@ -611,10 +646,10 @@ while true; do
     fi
     repair_attempt=$((repair_attempt + 1))
     update_status "repairing" "tests_failed_attempt_${repair_attempt}"
-    REPAIR_TASK="$(build_repair_task "tests_failed" "$repair_attempt")"
+    build_repair_task "tests_failed" "$repair_attempt" >/dev/null
+    REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
     WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "$REPAIR_TASK" "test repair attempt $repair_attempt"
-    record_worker_attempt "$WORKER_ROUND" "completed"
+    run_openhands_phase "test repair attempt $repair_attempt" "$WORKER_ROUND" "$REPAIR_BRIEF_PATH"
     check_openhands_changed_files
     continue
   fi
@@ -631,10 +666,10 @@ while true; do
     fi
     repair_attempt=$((repair_attempt + 1))
     update_status "repairing" "review_not_lgtm_attempt_${repair_attempt}"
-    REPAIR_TASK="$(build_repair_task "review_not_lgtm" "$repair_attempt")"
+    build_repair_task "review_not_lgtm" "$repair_attempt" >/dev/null
+    REPAIR_BRIEF_PATH="$RUN_DIR/repair-attempt-${repair_attempt}.md"
     WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "$REPAIR_TASK" "review repair attempt $repair_attempt"
-    record_worker_attempt "$WORKER_ROUND" "completed"
+    run_openhands_phase "review repair attempt $repair_attempt" "$WORKER_ROUND" "$REPAIR_BRIEF_PATH"
     check_openhands_changed_files
     continue
   elif [ "$REVIEW_EXIT" -ne 0 ]; then
