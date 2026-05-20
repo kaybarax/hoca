@@ -15,6 +15,9 @@ log_skip() {
   printf '%s\n' "$1" >> "$SKIP_FILE"
 }
 
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
+
 path_is_secret_like() {
   local path="$1"
   case "$path" in
@@ -22,18 +25,7 @@ path_is_secret_like() {
       return 0
       ;;
   esac
-  local base lower
-  base="$(basename "$path")"
-  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in
-    *.example|*.sample|*.template)
-      return 1
-      ;;
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
-      return 0
-      ;;
-  esac
-  return 1
+  hoca_path_is_secret_like "$path"
 }
 
 path_is_infrastructure_sensitive() {

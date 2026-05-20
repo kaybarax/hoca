@@ -22,6 +22,7 @@ from hoca.contracts import (
     HocaValidationReport,
 )
 from hoca.hard_blockers import ValidationStatus, validation_blocker_from_monitor_stop_reason
+from hoca.security import find_secret_like_paths
 from hoca.validation_assessment import assess_validation_risks
 from hoca.run_layout import (
     ensure_run_layout,
@@ -319,6 +320,14 @@ def build_validation_status_from_run_dir(run_dir: Path) -> ValidationStatus:
     if (run_dir / "secret-detected.txt").is_file():
         hard_blockers.append("secret_file_change")
 
+    changed_files = _read_lines(run_dir / "changed-files.txt")
+    secret_paths = find_secret_like_paths(changed_files)
+    if secret_paths and "secret_file_change" not in hard_blockers:
+        hard_blockers.append("secret_file_change")
+        secret_detected_path = run_dir / "secret-detected.txt"
+        if not secret_detected_path.is_file():
+            secret_detected_path.write_text("\n".join(secret_paths) + "\n", encoding="utf-8")
+
     monitor_clean = True
     if stop_reason and stop_reason != "completed":
         monitor_clean = False
@@ -326,7 +335,6 @@ def build_validation_status_from_run_dir(run_dir: Path) -> ValidationStatus:
         if monitor_blocker:
             hard_blockers.append(monitor_blocker)
 
-    changed_files = _read_lines(run_dir / "changed-files.txt")
     risk = assess_validation_risks(run_dir, changed_files)
     if risk.scope_risk and "scope_risk" not in hard_blockers:
         hard_blockers.append("scope_risk")

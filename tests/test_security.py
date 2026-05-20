@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from hoca.security import (
+    find_secret_like_paths,
     is_allowed_repo,
     is_path_inside_repo,
     is_secret_like_path,
@@ -19,6 +20,18 @@ def test_env_files_are_secret_like() -> None:
     assert is_secret_like_path(".env")
     assert is_secret_like_path(".env.local")
     assert not is_secret_like_path(".env.example")
+
+
+def test_find_secret_like_paths_filters_changed_files() -> None:
+    changed = ["src/app.py", ".env", ".env.example", ".ssh/config"]
+    assert find_secret_like_paths(changed) == [".env", ".ssh/config"]
+
+
+def test_netrc_and_keystore_material_is_secret_like() -> None:
+    assert is_secret_like_path(".netrc")
+    assert is_secret_like_path("config/prod.jks")
+    assert is_secret_like_path("config/prod.keystore")
+    assert is_secret_like_path(".htpasswd")
 
 
 def test_key_material_is_secret_like() -> None:
@@ -193,6 +206,21 @@ def test_validate_staging_rejects_runtime_files(tmp_path: Path) -> None:
     )
     assert len(errors) == 1
     assert "runtime" in errors[0]
+
+
+def test_validate_staging_rejects_cloud_and_ssh_paths(tmp_path: Path) -> None:
+    errors = validate_staging_file_list(
+        tmp_path,
+        [".aws/credentials", ".ssh/id_rsa", ".config/gcloud/application_default_credentials.json"],
+    )
+    assert len(errors) == 3
+    assert all("secret-like" in error for error in errors)
+
+
+def test_validate_staging_allows_env_example(tmp_path: Path) -> None:
+    (tmp_path / ".env.example").write_text("TOKEN=\n", encoding="utf-8")
+    errors = validate_staging_file_list(tmp_path, [".env.example"])
+    assert errors == []
 
 
 def test_validate_staging_rejects_lock_files(tmp_path: Path) -> None:

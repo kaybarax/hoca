@@ -10,8 +10,10 @@ WEBHOOK_TIMESTAMP_MAX_AGE = 300
 
 FORBIDDEN_SECRET_FILENAMES = {
     ".env",
+    ".netrc",
     ".npmrc",
     ".pypirc",
+    ".htpasswd",
     "credentials",
     "application_default_credentials.json",
     "cookies",
@@ -21,6 +23,8 @@ FORBIDDEN_SECRET_FILENAMES = {
 }
 
 FORBIDDEN_SECRET_SUFFIXES = {
+    ".jks",
+    ".keystore",
     ".key",
     ".pem",
     ".p12",
@@ -58,6 +62,10 @@ BROWSER_COOKIE_DIRECTORIES = {
 
 def _as_posix_path(path: str | Path) -> str:
     return Path(path).as_posix().strip("/")
+
+
+def find_secret_like_paths(paths: list[str]) -> list[str]:
+    return [path for path in paths if is_secret_like_path(path)]
 
 
 def is_secret_like_path(path: str | Path) -> bool:

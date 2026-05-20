@@ -13,6 +13,8 @@ INTENDED_FILE_LIST="$4"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
 
 cd "$PROJECT_PATH"
 
@@ -292,22 +294,21 @@ fi
 
 assert_staged_path_safe() {
   local path="$1"
-  case "$path" in
-    .hoca-runtime/*|.hoca-runtime)
-      echo "Forbidden staged path (.hoca-runtime): $path" >&2
-      return 1
-      ;;
-  esac
-  local base
-  base="$(basename "$path")"
-  local lower
-  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
-      echo "Forbidden staged path (secret-like name): $path" >&2
-      return 1
-      ;;
-  esac
+  if ! hoca_validate_staging_path "$REPO_ROOT" "$path"; then
+    case "$path" in
+      .hoca-runtime/*|.hoca-runtime)
+        echo "Forbidden staged path (.hoca-runtime): $path" >&2
+        ;;
+      *)
+        if hoca_path_is_secret_like "$path"; then
+          echo "Forbidden staged path (secret-like name): $path" >&2
+        else
+          echo "Forbidden staged path: $path" >&2
+        fi
+        ;;
+    esac
+    return 1
+  fi
   return 0
 }
 

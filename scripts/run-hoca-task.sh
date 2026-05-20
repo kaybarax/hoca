@@ -584,33 +584,14 @@ run_openhands_phase() {
 WORKER_ROUND=1
 run_openhands_phase "implementation" "$WORKER_ROUND"
 
-path_is_secret_like() {
-  local path="$1"
-  local lower
-  lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
-  local base
-  base="$(basename "$lower")"
-  case "$base" in
-    *.example|*.sample|*.template)
-      return 1
-      ;;
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
-      return 0
-      ;;
-  esac
-  case "$lower" in
-    .github/secrets|.github/secrets/*)
-      return 0
-      ;;
-  esac
-  return 1
-}
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
 
 check_openhands_changed_files() {
   changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
   while IFS= read -r changed_path || [ -n "$changed_path" ]; do
     [ -z "$changed_path" ] && continue
-    if path_is_secret_like "$changed_path"; then
+    if hoca_path_is_secret_like "$changed_path"; then
       printf '%s\n' "$changed_path" > "$RUN_DIR/secret-detected.txt"
       fail_run "secret_detected" "Secret-like changed file detected after OpenHands: $changed_path. Stopping immediately."
     fi

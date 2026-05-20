@@ -27,6 +27,12 @@ done
 
 cd "$PROJECT_PATH"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || REPO_ROOT="$PROJECT_PATH"
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Not a Git repository: $PROJECT_PATH" >&2
   exit 1
@@ -60,21 +66,21 @@ git diff --cached --stat
 
 assert_cached_path_safe() {
   local path="$1"
-  case "$path" in
-    .hoca-runtime/*|.hoca-runtime)
-      echo "Refusing commit: forbidden staged path (.hoca-runtime): $path" >&2
-      return 1
-      ;;
-  esac
-  local base lower
-  base="$(basename "$path")"
-  lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
-      echo "Refusing commit: forbidden staged path (secret-like name): $path" >&2
-      return 1
-      ;;
-  esac
+  if ! hoca_validate_staging_path "$REPO_ROOT" "$path"; then
+    case "$path" in
+      .hoca-runtime/*|.hoca-runtime)
+        echo "Refusing commit: forbidden staged path (.hoca-runtime): $path" >&2
+        ;;
+      *)
+        if hoca_path_is_secret_like "$path"; then
+          echo "Refusing commit: forbidden staged path (secret-like name): $path" >&2
+        else
+          echo "Refusing commit: forbidden staged path: $path" >&2
+        fi
+        ;;
+    esac
+    return 1
+  fi
   return 0
 }
 

@@ -139,6 +139,18 @@ class TestValidationStatusIntegration:
         assert "scope_risk" in validation.hard_blockers
         assert "staging_risk" in validation.hard_blockers
 
+    def test_build_validation_status_flags_secret_like_changed_files(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run-secret"
+        ensure_run_layout(run_dir)
+        (run_dir / "changed-files.txt").write_text(".env\nREADME.md\n", encoding="utf-8")
+        (run_dir / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
+
+        validation = build_validation_status_from_run_dir(run_dir)
+
+        assert validation.secret_scan_clean is False
+        assert "secret_file_change" in validation.hard_blockers
+        assert (run_dir / "secret-detected.txt").read_text(encoding="utf-8") == ".env\n"
+
     def test_manager_arbitration_uses_scope_risk_for_repair(self, tmp_path: Path) -> None:
         run_dir = tmp_path / "run-arb"
         ensure_run_layout(run_dir)
