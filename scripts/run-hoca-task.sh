@@ -168,8 +168,12 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+worker_git() {
+  git -C "${WORKER_PROJECT_PATH:-$PROJECT_PATH}" "$@"
+}
+
 git_status_short_for_task() {
-  git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
+  worker_git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
     local path="${status_line#???}"
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
@@ -312,6 +316,7 @@ cleanup() {
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
+  remove_disposable_worktree 2>/dev/null || true
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
   fi
@@ -436,8 +441,49 @@ else
   BRANCH="feat/${SLUG:-hoca-task}"
 fi
 
-echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
-git checkout -b "$BRANCH" "$TASK_BASE_REF"
+USE_WORKTREE_SANDBOX="false"
+WORKTREE_PATH=""
+WORKER_PROJECT_PATH="$PROJECT_PATH"
+
+worktree_enabled() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+    'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_worktree_sandbox else 1)' \
+    >/dev/null 2>&1
+}
+
+create_disposable_worktree() {
+  WORKTREE_PATH="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+from hoca.worktree import create_worktree
+from pathlib import Path
+import sys
+wt = create_worktree(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
+print(wt)
+" "$PROJECT_PATH" "$RUN_ID" "$BRANCH")"
+  echo "Created disposable worktree: $WORKTREE_PATH"
+  WORKER_PROJECT_PATH="$WORKTREE_PATH"
+}
+
+remove_disposable_worktree() {
+  if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+    echo "Removing disposable worktree..."
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+from hoca.worktree import remove_worktree
+from pathlib import Path
+import sys
+remove_worktree(Path(sys.argv[1]), sys.argv[2])
+" "$PROJECT_PATH" "$RUN_ID" || true
+  fi
+}
+
+if worktree_enabled; then
+  USE_WORKTREE_SANDBOX="true"
+  echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
+  git branch "$BRANCH" "$TASK_BASE_REF"
+  create_disposable_worktree
+else
+  echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
+  git checkout -b "$BRANCH" "$TASK_BASE_REF"
+fi
 
 generate_run_task_spec
 
@@ -542,7 +588,7 @@ run_openhands_phase() {
     echo "Routing worker attempt through run-worker-hermes.sh..."
     local worker_cmd=(
       "$SCRIPT_DIR/run-worker-hermes.sh"
-      "$PROJECT_PATH"
+      "$WORKER_PROJECT_PATH"
       "$(task_spec_path_for_run)"
       "$RUN_DIR"
       "$round_number"
@@ -559,7 +605,7 @@ run_openhands_phase() {
     else
       phase_task="$(worker_task_prompt)"
     fi
-    "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$phase_task" "$RUN_DIR"
+    "$SCRIPT_DIR/run-openhands-task.sh" "$WORKER_PROJECT_PATH" "$phase_task" "$RUN_DIR"
     openhands_exit=$?
   fi
   set -e
@@ -617,7 +663,7 @@ while true; do
 
   echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
   set +e
-  "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
+  "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
   record_validation_artifact "$current_round"
@@ -656,7 +702,7 @@ while true; do
     source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
   fi
   set +e
-  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
+  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
   sync_run_status
@@ -703,13 +749,22 @@ fi
 
 echo "Inspecting changed files..."
 git_status_short_for_task | tee "$RUN_DIR/git-status.txt"
-git diff > "$RUN_DIR/git-diff.patch"
+worker_git diff > "$RUN_DIR/git-diff.patch"
 changed_files_for_task > "$RUN_DIR/changed-files.txt"
 
 if [ -z "$(git_status_short_for_task)" ]; then
   echo "No changes produced."
   update_status "no_changes"
   exit 0
+fi
+
+if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+  echo "Applying worktree changes to main checkout for staging..."
+  git -C "$PROJECT_PATH" checkout "$BRANCH"
+  git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
+  git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
+  WORKER_PROJECT_PATH="$PROJECT_PATH"
+  remove_disposable_worktree
 fi
 
 INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"

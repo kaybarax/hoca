@@ -384,6 +384,15 @@ for sandbox_script in run-openhands-sandboxed.sh sandbox-manager.sh; do
   fi
 done
 
+section "Worktree Sandbox"
+USE_WORKTREE="$(config_value HOCA_USE_WORKTREE_SANDBOX)"
+USE_WORKTREE="${USE_WORKTREE:-true}"
+if is_truthy "$USE_WORKTREE"; then
+  ok "HOCA_USE_WORKTREE_SANDBOX is enabled. Worker/reviewer use a disposable worktree."
+else
+  warn "HOCA_USE_WORKTREE_SANDBOX=false: worker/reviewer modify the active checkout directly."
+fi
+
 section "Model Pool"
 MODEL_POOL_OUTPUT="$(
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \

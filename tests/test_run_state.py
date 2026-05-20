@@ -504,6 +504,7 @@ def test_workflow_fields_from_config_defaults() -> None:
         "structured_reports": True,
         "max_total_rounds": 3,
         "sandbox_mode": "docker",
+        "worktree_mode": True,
     }
 
 

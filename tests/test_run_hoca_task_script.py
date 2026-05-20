@@ -15,6 +15,7 @@ def base_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("HOCA_DEV_BRANCH", None)
     env["HOCA_USE_SANDBOX"] = "false"
+    env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
     return env
 
 

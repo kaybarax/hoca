@@ -124,6 +124,7 @@ class HocaConfig:
     use_structured_reports: bool = True
     use_kanban: bool = False
     use_sandbox: bool = True
+    use_worktree_sandbox: bool = True
     max_total_rounds: int = 3
 
     auto_merge: bool = False
@@ -219,6 +220,9 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ),
         use_kanban=parse_bool(config_value("HOCA_USE_KANBAN") or None, default=False),
         use_sandbox=parse_bool(config_value("HOCA_USE_SANDBOX") or None, default=True),
+        use_worktree_sandbox=parse_bool(
+            config_value("HOCA_USE_WORKTREE_SANDBOX") or None, default=True
+        ),
         max_total_rounds=_resolve_max_total_rounds(config_value),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
