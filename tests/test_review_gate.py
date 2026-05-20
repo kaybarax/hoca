@@ -12,7 +12,9 @@ from hoca.review_gate import (
     evaluate_review_gate,
     legacy_text_to_report,
     main,
+    materialize_structured_report_from_text,
     task_report_review_status,
+    try_extract_structured_report,
     try_resolve_review_gate,
 )
 
@@ -142,3 +144,64 @@ def test_code_review_pr_fragment_reflects_blocked_verdict() -> None:
 
     assert "Review blocked" in code_review_pr_fragment(result)
     assert task_report_review_status(result) == "blocked"
+
+
+def test_try_extract_structured_report_from_fenced_json() -> None:
+    review_text = (
+        "Review complete.\n"
+        "```json\n"
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-1",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "fix_required",\n'
+        '  "findings": [\n'
+        "    {\n"
+        '      "id": "F1",\n'
+        '      "severity": "medium",\n'
+        '      "category": "test",\n'
+        '      "file": "tests/test_module.py",\n'
+        '      "summary": "Missing error-path coverage",\n'
+        '      "required_fix": "Add a test for invalid input"\n'
+        "    }\n"
+        "  ],\n"
+        '  "pr_notes": {"summary": ["Needs tests."], "known_followups": []}\n'
+        "}\n"
+        "```\n"
+        "Please add the missing test.\n"
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "fix_required"
+    assert report.findings[0].id == "F1"
+
+
+def test_try_extract_structured_report_rejects_random_text() -> None:
+    assert try_extract_structured_report("Looks good.\nLGTM\n") is None
+    assert try_extract_structured_report("") is None
+
+
+def test_materialize_structured_report_from_text_writes_valid_report(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    review_text = run_dir / "openhands-review.txt"
+    output_path = run_dir / "reviews" / "review-report-1.json"
+    review_text.write_text(
+        "Summary\n"
+        '{"schema_version":1,"run_id":"run-1","round":1,"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
+        '"known_followups":[]}}\n'
+        "LGTM\n",
+        encoding="utf-8",
+    )
+
+    assert materialize_structured_report_from_text(
+        review_text,
+        output_path,
+        run_id="run-1",
+        round_number=1,
+    ) is True
+    assert HocaReviewReport.from_json(output_path.read_text(encoding="utf-8")).verdict == "LGTM"

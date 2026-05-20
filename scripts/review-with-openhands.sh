@@ -57,6 +57,11 @@ fi
 REVIEW_DIR="$RUN_DIR/review"
 mkdir -p "$REVIEW_DIR"
 
+REVIEW_ROUND="${HOCA_REVIEW_ROUND:-1}"
+RUN_ID="$(basename "$RUN_DIR")"
+STRUCTURED_REPORT_PATH="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
+mkdir -p "$RUN_DIR/reviews"
+
 CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
 DIFF_FILE="$REVIEW_DIR/git-diff.patch"
 printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_FILE"
@@ -118,17 +123,54 @@ fi
 
 REVIEW_TASK="${REVIEW_TASK}
 
-Check:
-- Whether the task was fulfilled.
-- Whether the implementation is minimal and avoids unnecessary changes.
-- Whether unrelated files were changed.
-- Whether tests are sufficient.
-- Whether security risks were introduced.
-- Whether secrets or credentials were exposed.
-- Whether generated files should be excluded from the commit.
-- Whether the change is safe to commit.
-If the changes are acceptable, end your response with exactly: LGTM
-If not acceptable, list required fixes clearly."
+Review-only constraints:
+- Do not modify, stage, commit, push, merge, or open pull requests.
+- Do not implement fixes or edit repository files during this review pass.
+- Inspect the changed files, diff, and working tree only to judge the submitted work.
+
+Produce a structured HocaReviewReport as JSON (YAML is acceptable only if JSON is
+not practical). Write the report to:
+- ${STRUCTURED_REPORT_PATH}
+
+Include these fields:
+- schema_version: 1
+- run_id: ${RUN_ID}
+- round: ${REVIEW_ROUND}
+- role: reviewer
+- verdict: LGTM | fix_required | blocked
+- findings: list of classified findings (may be empty for LGTM)
+- pr_notes.summary: decision-relevant context for the manager
+- pr_notes.known_followups: deferred non-ship-blocking tech debt
+
+Each finding must include:
+- id (for example F1, F2)
+- severity: critical | high | medium | low | nit
+- category: correctness | security | test | scope | maintainability | style | tooling | environment
+- file: repo-relative path or null
+- summary: concise evidence-based description
+- required_fix: non-null only when repair is required before approval; null for observations
+
+Severity rubric:
+- critical: severe correctness, security, or data-integrity defect; hard block
+- high: material correctness or security defect; repair before LGTM
+- medium: meaningful quality gap, often missing tests; usually repair
+- low: real but often deferrable issue when the core change is sound
+- nit: observation only; never a hard blocker
+
+Distinguish blockers from PR tech debt:
+- Blockers belong in findings with required_fix set and drive fix_required or blocked.
+- PR tech debt belongs in pr_notes.known_followups with required_fix null on the finding.
+- Do not block on pure preference, naming taste, or formatting when correctness,
+  safety, tests, and scope are sound.
+
+Also include the structured JSON in your final response inside a fenced \`\`\`json block.
+
+Legacy compatibility during transition:
+- If the changes are acceptable, end your final response with exactly: LGTM
+- If not acceptable, do not emit LGTM; explain required fixes clearly."
+
+PROMPT_FILE="$REVIEW_DIR/openhands-review-prompt.txt"
+printf '%s\n' "$REVIEW_TASK" > "$PROMPT_FILE"
 
 echo "Running OpenHands review..."
 set +e
@@ -150,6 +192,16 @@ fi
 
 if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
   cp "$REVIEW_DIR/openhands-exit-code.txt" "$RUN_DIR/openhands-review-exit-code.txt"
+fi
+
+if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate \
+    "$RUN_DIR" \
+    --materialize-from-text "$RUN_DIR/openhands-review.txt" \
+    --run-id "$RUN_ID" \
+    --round "$REVIEW_ROUND" \
+    --output "$STRUCTURED_REPORT_PATH" \
+    >/dev/null 2>&1 || true
 fi
 
 if [ "$REVIEW_EXIT" -ne 0 ]; then

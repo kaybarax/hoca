@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -73,6 +75,80 @@ def _load_structured_report(path: Path) -> HocaReviewReport:
         return HocaReviewReport.from_json(path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise ReviewGateError(f"Malformed HocaReviewReport at {path}: {exc}") from exc
+
+
+def _fenced_code_blocks(text: str) -> list[str]:
+    blocks: list[str] = []
+    for match in re.finditer(
+        r"```(?:json|yaml|yml)?\s*\n(.*?)\n```",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ):
+        block = match.group(1).strip()
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def _json_object_candidates(text: str) -> list[str]:
+    decoder = json.JSONDecoder()
+    candidates: list[str] = []
+    idx = 0
+    while idx < len(text):
+        start = text.find("{", idx)
+        if start == -1:
+            break
+        try:
+            _, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            idx = start + 1
+            continue
+        candidates.append(text[start : start + end])
+        idx = start + end
+    return candidates
+
+
+def _structured_report_candidates(text: str) -> list[str]:
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for block in [
+        *_fenced_code_blocks(text),
+        text.strip(),
+        *_json_object_candidates(text),
+    ]:
+        if not block or block in seen:
+            continue
+        seen.add(block)
+        candidates.append(block)
+    return candidates
+
+
+def try_extract_structured_report(review_text: str) -> HocaReviewReport | None:
+    if not review_text.strip():
+        return None
+    for candidate in _structured_report_candidates(review_text):
+        try:
+            return HocaReviewReport.from_json(candidate)
+        except Exception:
+            continue
+    return None
+
+
+def materialize_structured_report_from_text(
+    review_text_path: Path,
+    output_path: Path,
+    *,
+    run_id: str,
+    round_number: int,
+) -> bool:
+    if not review_text_path.exists():
+        return False
+    report = try_extract_structured_report(review_text_path.read_text(encoding="utf-8"))
+    if report is None:
+        return False
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(report.to_json(), encoding="utf-8")
+    return True
 
 
 def has_review_artifacts(run_dir: Path, *, round_number: int = 1) -> bool:
@@ -179,6 +255,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=("verdict", "status", "pr-fragment"),
         help="Print only the verdict, task-report status label, or PR fragment text.",
     )
+    parser.add_argument(
+        "--materialize-from-text",
+        help="Extract a structured HocaReviewReport from review text when possible.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Output path for --materialize-from-text.",
+    )
     args = parser.parse_args(argv)
 
     run_dir = Path(args.run_dir)
@@ -188,6 +272,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.review_text
         else run_dir / "openhands-review.txt"
     )
+
+    if args.materialize_from_text:
+        output_path = (
+            Path(args.output)
+            if args.output
+            else default_report_path(run_dir, round_number)
+        )
+        if materialize_structured_report_from_text(
+            Path(args.materialize_from_text),
+            output_path,
+            run_id=args.run_id or run_dir.name,
+            round_number=round_number,
+        ):
+            print(f"Structured review report materialized at {output_path}")
+        return 0
 
     try:
         result = try_resolve_review_gate(
