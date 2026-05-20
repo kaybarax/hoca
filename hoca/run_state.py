@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from hoca.config import HocaConfig, load_config
+from hoca.security import find_secret_like_paths
 from hoca.review_gate import (
     ReviewGateError,
     code_review_error_fragment,
@@ -218,6 +219,9 @@ def summarize_run_for_pr_body(
         final_state = read_optional_report(run_dir, "final_state")
         if final_state:
             changed_files = [str(path) for path in final_state.get("changed_files", []) if path]
+    secret_paths = set(find_secret_like_paths(changed_files))
+    if secret_paths:
+        changed_files = [path for path in changed_files if path not in secret_paths]
 
     changes_parts: list[str] = []
     if changed_files:
