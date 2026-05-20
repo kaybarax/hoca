@@ -74,7 +74,15 @@ def make_fake_preflight_bin(
     )
     write_executable(fake_bin / "node", "#!/usr/bin/env bash\necho v20.0.0\n")
     write_executable(
-        fake_bin / "docker", '#!/usr/bin/env bash\n[[ "${1:-}" == info ]] && exit 0\nexit 0\n'
+        fake_bin / "docker",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "info" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "image" && "${2:-}" == "inspect" ]]; then\n'
+        '  if [[ "${3:-}" == "--format" ]]; then echo "worker"; fi\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
     )
     write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nexit 0\n")
     write_executable(

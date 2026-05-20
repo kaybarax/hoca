@@ -100,6 +100,7 @@ forbidden_for_worker_and_reviewer:
 - git add
 - git commit
 - git push
+- git merge
 - gh pr create
 - gh pr merge
 EOF

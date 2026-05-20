@@ -98,6 +98,7 @@ def build_worker_hermes_prompt(
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
         f'--round {round_number} --status <completed|failed|blocked>\n\n'
         "Safety constraints:\n"
+        "- Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.\n"
         "- Do not stage, commit, push, merge, or open pull requests.\n"
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"

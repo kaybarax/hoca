@@ -68,6 +68,8 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "[redacted: possible secret]" in prompt
     assert "run-openhands-task.sh" in prompt
     assert "worker-attempt-" in prompt
+    assert "Manager-owned Git lifecycle only" in prompt
+    assert "git add, git commit, git push" in prompt
     assert "Do not stage, commit, push" in prompt
 
 

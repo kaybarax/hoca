@@ -73,6 +73,8 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "test_summary_path:" in prompt
     assert "worker_report_path:" in prompt
     assert "required_review_report_path:" in prompt
+    assert "Manager-owned Git lifecycle only" in prompt
+    assert "git add, git commit, git push" in prompt
     assert "secret-value" not in prompt
     assert "[redacted: possible secret]" in prompt
 

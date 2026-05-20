@@ -72,6 +72,15 @@ class TestCheckDangerousCommand:
     def test_git_commit_am(self):
         assert check_dangerous_command("git commit -am 'msg'") is not None
 
+    def test_git_push_without_upstream(self):
+        assert check_dangerous_command("git push") is not None
+
+    def test_git_push_branch_without_upstream_flag(self):
+        assert check_dangerous_command("git push origin main") is not None
+
+    def test_git_merge(self):
+        assert check_dangerous_command("git merge main") is not None
+
     def test_safe_command(self):
         assert check_dangerous_command("npm test") is None
 
@@ -92,8 +101,17 @@ class TestManagerOnlyGitLifecyclePolicy:
     def test_worker_cannot_stage_files(self):
         assert check_manager_only_git_lifecycle_command("git add src/main.py", "worker") is not None
 
+    def test_worker_cannot_commit(self):
+        assert check_manager_only_git_lifecycle_command("git commit -m 'msg'", "worker") is not None
+
+    def test_worker_cannot_push_even_with_upstream(self):
+        assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "worker") is not None
+
     def test_reviewer_cannot_create_prs(self):
         assert check_manager_only_git_lifecycle_command("gh pr create --fill", "reviewer") is not None
+
+    def test_reviewer_cannot_merge_prs(self):
+        assert check_manager_only_git_lifecycle_command("gh pr merge 42", "reviewer") is not None
 
     def test_manager_can_use_git_lifecycle(self):
         assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "manager") is None

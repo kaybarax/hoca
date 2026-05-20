@@ -124,6 +124,7 @@ fi
 REVIEW_TASK="${REVIEW_TASK}
 
 Review-only constraints:
+- Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.
 - Do not modify, stage, commit, push, merge, or open pull requests.
 - Do not implement fixes or edit repository files during this review pass.
 - Inspect the changed files, diff, and working tree only to judge the submitted work.
