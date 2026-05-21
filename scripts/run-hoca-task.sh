@@ -121,10 +121,6 @@ worker_task_prompt() {
   read_task_spec_field goal "$TASK"
 }
 
-original_task_prompt() {
-  read_task_spec_field raw_request "$TASK"
-}
-
 generate_run_task_spec() {
   local generate_args=(
     "$SCRIPT_DIR/generate-task-spec.sh"
@@ -314,6 +310,9 @@ if ! (set -o noclobber; cat "$LOCK_METADATA_FILE" > "$LOCK_FILE") 2>/dev/null; t
 fi
 
 restore_dev_branch_after_run() {
+  if [ "$RESTORE_DEV_BRANCH" != "true" ]; then
+    return 0
+  fi
   if [ "$SHOULD_RESTORE_DEV_BRANCH" != "true" ]; then
     return 0
   fi
@@ -328,6 +327,7 @@ restore_dev_branch_after_run() {
   "${restore_args[@]}" || true
 }
 
+# shellcheck disable=SC2329
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
@@ -409,6 +409,7 @@ block_run() {
   exit 1
 }
 
+# shellcheck disable=SC2329
 record_failed_command() {
   local exit_code="$?"
   local command="$BASH_COMMAND"
@@ -671,7 +672,6 @@ check_openhands_changed_files() {
 check_openhands_changed_files
 
 current_round=1
-DRAFT_PR_WITH_BLOCKERS="false"
 
 while true; do
   if [ -z "$(git_status_short_for_task)" ]; then
@@ -746,9 +746,6 @@ while true; do
     block_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/openhands-review.txt."
   fi
   if [ "$ARBITRATION_ACTION" = "proceed" ]; then
-    if [ "$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field draft_pr)" = "true" ]; then
-      DRAFT_PR_WITH_BLOCKERS="true"
-    fi
     break
   fi
   if [ "$ARBITRATION_ACTION" = "repair" ]; then

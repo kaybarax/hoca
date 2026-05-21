@@ -175,12 +175,6 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
         )
 
     for role in ("manager", "worker", "reviewer", "fallback"):
-        selected_name = {
-            "manager": pool.manager_model,
-            "worker": pool.worker_model,
-            "reviewer": pool.reviewer_model,
-            "fallback": pool.fallback_model,
-        }[role]
         try:
             resolved = pool.resolve_role(role)  # type: ignore[arg-type]
         except ValueError as exc:

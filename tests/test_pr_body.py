@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from hoca.contracts import HocaReviewFinding, HocaReviewReport
 from hoca.pr_body import (
     format_hoca_review_notes_fragment,
     format_run_context_fragment,

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config
+from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 from hoca.model_pool import (
     MAX_MODEL_SLOTS,

@@ -3,11 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from hoca.arbitration import arbitrate
 from hoca.contracts import HocaReviewReport, HocaTaskSpec, HocaValidationReport
-from hoca.hard_blockers import ValidationStatus
 from hoca.run_artifacts import build_validation_status_from_run_dir, record_validation_report
 from hoca.run_layout import ensure_run_layout, validation_report_path
 from hoca.run_state import summarize_run_for_pr_body, write_json_atomic

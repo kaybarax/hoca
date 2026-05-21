@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,7 +12,6 @@ from typing import Any
 from hoca.contracts import (
     HocaAttemptReport,
     HocaManagerDecision,
-    HocaReviewFinding,
     HocaReviewReport,
     HocaRunFinalState,
     HocaTaskSpec,

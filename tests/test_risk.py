@@ -11,9 +11,6 @@ from hoca.risk import (
     classify_risk_categories,
     classify_task,
     format_risk_notes,
-    is_generated_file,
-    is_infrastructure_file,
-    is_migration_file,
     write_risk_artifacts,
 )
 

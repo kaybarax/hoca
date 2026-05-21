@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hoca.config import HocaConfig, load_config
-from hoca.env_allowlist import filter_env, redact_env_for_logging
+from hoca.env_allowlist import filter_env
 from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
 from hoca.contracts import HocaTaskSpec
 from hoca.paths import repo_root
