@@ -343,6 +343,158 @@ def test_issue_forwards_model_flag(monkeypatch, tmp_path: Path) -> None:
     ]
 
 
+def test_kanban_init_appears_in_help() -> None:
+    result = CliRunner().invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "kanban-init" in result.output
+
+
+def test_kanban_run_appears_in_help() -> None:
+    result = CliRunner().invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "kanban-run" in result.output
+
+
+def test_kanban_watch_appears_in_help() -> None:
+    result = CliRunner().invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "kanban-watch" in result.output
+
+
+def test_kanban_init_help_shows_experimental() -> None:
+    result = CliRunner().invoke(main, ["kanban-init", "--help"])
+
+    assert result.exit_code == 0
+    assert "Experimental" in result.output
+
+
+def test_kanban_run_help_shows_experimental() -> None:
+    result = CliRunner().invoke(main, ["kanban-run", "--help"])
+
+    assert result.exit_code == 0
+    assert "Experimental" in result.output
+
+
+def test_kanban_watch_help_shows_experimental() -> None:
+    result = CliRunner().invoke(main, ["kanban-watch", "--help"])
+
+    assert result.exit_code == 0
+    assert "Experimental" in result.output
+
+
+def test_kanban_init_calls_script(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["kanban-init", str(project_path)])
+
+    assert result.exit_code == 0
+    assert calls == [("kanban-init.sh", [str(project_path)])]
+
+
+def test_kanban_run_calls_script_with_task(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["kanban-run", str(project_path), "Add login feature"])
+
+    assert result.exit_code == 0
+    assert calls == [("kanban-run.sh", [str(project_path), "Add login feature"])]
+
+
+def test_kanban_watch_calls_script(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["kanban-watch", str(project_path)])
+
+    assert result.exit_code == 0
+    assert calls == [("kanban-watch.sh", [str(project_path)])]
+
+
+def test_kanban_init_rejects_non_git_directory(tmp_path: Path) -> None:
+    project_path = tmp_path / "not-a-repo"
+    project_path.mkdir()
+
+    result = CliRunner().invoke(main, ["kanban-init", str(project_path)])
+
+    assert result.exit_code != 0
+    assert "not a Git repository" in result.output
+
+
+def test_kanban_run_rejects_non_git_directory(tmp_path: Path) -> None:
+    project_path = tmp_path / "not-a-repo"
+    project_path.mkdir()
+
+    result = CliRunner().invoke(main, ["kanban-run", str(project_path), "A task"])
+
+    assert result.exit_code != 0
+    assert "not a Git repository" in result.output
+
+
+def test_kanban_watch_rejects_non_git_directory(tmp_path: Path) -> None:
+    project_path = tmp_path / "not-a-repo"
+    project_path.mkdir()
+
+    result = CliRunner().invoke(main, ["kanban-watch", str(project_path)])
+
+    assert result.exit_code != 0
+    assert "not a Git repository" in result.output
+
+
+def test_kanban_init_reports_missing_script(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    monkeypatch.setattr("hoca.cli.repo_root", lambda: tmp_path)
+
+    result = CliRunner().invoke(main, ["kanban-init", str(project_path)])
+
+    assert result.exit_code != 0
+    assert "Missing script" in result.output
+
+
+def test_kanban_init_reports_script_failure(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    failing_script = scripts_dir / "kanban-init.sh"
+    failing_script.write_text("#!/bin/sh\nexit 1\n")
+    failing_script.chmod(0o755)
+    monkeypatch.setattr("hoca.cli.repo_root", lambda: tmp_path)
+
+    result = CliRunner().invoke(main, ["kanban-init", str(project_path)])
+
+    assert result.exit_code != 0
+    assert "Command failed with exit code 1" in result.output
+
+
 def test_run_script_raises_on_missing_script(tmp_path: Path) -> None:
     from hoca.cli import run_script
 

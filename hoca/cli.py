@@ -118,5 +118,30 @@ def issue(
     run_script("run-hoca-task.sh", args)
 
 
+@main.command("kanban-init")
+@click.argument("project_path", type=click.Path(path_type=Path))
+def kanban_init(project_path: Path) -> None:
+    """[Experimental] Initialize a HOCA Kanban board for a target repository."""
+    project_path = require_target_repo(project_path)
+    run_script("kanban-init.sh", [str(project_path)])
+
+
+@main.command("kanban-run")
+@click.argument("project_path", type=click.Path(path_type=Path))
+@click.argument("task")
+def kanban_run(project_path: Path, task: str) -> None:
+    """[Experimental] Create a HOCA task on the Kanban board for a target repository."""
+    project_path = require_target_repo(project_path)
+    run_script("kanban-run.sh", [str(project_path), task])
+
+
+@main.command("kanban-watch")
+@click.argument("project_path", type=click.Path(path_type=Path))
+def kanban_watch(project_path: Path) -> None:
+    """[Experimental] Show the HOCA Kanban board status for a target repository."""
+    project_path = require_target_repo(project_path)
+    run_script("kanban-watch.sh", [str(project_path)])
+
+
 if __name__ == "__main__":
     main()
