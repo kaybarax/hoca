@@ -500,6 +500,19 @@ OpenHands and PR templates for you when they are missing.
 
 ## Development
 
+Current multi-agent development work should be read together with the workspace
+architecture and task-plan documents:
+
+- `/Users/kevin/workspace/projects/hoca-development/hoca-hermes-multi-agent-architecture-proposal.md`
+- `/Users/kevin/workspace/projects/hoca-development/hoca-hermes-multi-agent-upgrade-implementation-tasks.md`
+
+The older workspace guides,
+`/Users/kevin/workspace/projects/hoca-development/hoca-main-dev-guide.md` and
+`/Users/kevin/workspace/projects/hoca-development/hoca-supplemental-dev-guide.md`,
+are retained as historical baselines. Any Aider reviewer references in those
+guides refer to the earlier design; the current reviewer path is the
+`hoca-reviewer` Hermes profile plus `scripts/review-with-openhands.sh`.
+
 ```sh
 .venv/bin/python -m pip install -e ".[dev]"
 .venv/bin/python -m pytest
