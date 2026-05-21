@@ -112,6 +112,30 @@ def test_manager_skill_forbids_bypassing_safety_gates() -> None:
     assert "max_total_rounds" in content
 
 
+def test_manager_skill_documents_optional_kanban_orchestration() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    assert "## Kanban orchestration (optional)" in content
+    assert "HOCA_USE_KANBAN" in content
+    assert "board: hoca:<repo-slug>" in content
+    assert "hoca-manager" in content
+    assert "hoca-worker" in content
+    assert "hoca-reviewer" in content
+    assert "implement r<N>" in content
+    assert "review r<N>" in content
+    assert "repair r<N>" in content
+    for status in ("triage", "todo", "ready", "running", "blocked", "done"):
+        assert status in content
+    for prefix in ("[spec]", "[artifact]", "[validation]", "[decision]", "[round]"):
+        assert prefix in content
+    assert "current_round" in content
+    assert "max_total_rounds" in content
+    assert "kanban_complete" in content
+    assert "kanban_create" in content
+    assert "kanban_link" in content
+    lowered = content.lower()
+    assert "do not require kanban" in lowered or "without creating or updating kanban tasks" in lowered
+
+
 def test_manager_skill_distinguishes_trivial_edits_from_worker_implementation() -> None:
     content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
     lowered = content.lower()
