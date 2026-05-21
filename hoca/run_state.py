@@ -329,7 +329,7 @@ def sandbox_mode_for_run(run_dir: Path, *, cfg: HocaConfig | None = None) -> str
     return "docker" if cfg.use_sandbox else "host"
 
 
-def derived_status_fields(run_dir: Path) -> dict[str, Any]:
+def derived_status_fields(run_dir: Path, *, cfg: HocaConfig | None = None) -> dict[str, Any]:
     """Compute artifact-backed status fields from the run directory."""
     pr_url = None
     pr_url_path = run_dir / "pr-url.txt"
@@ -345,7 +345,7 @@ def derived_status_fields(run_dir: Path) -> dict[str, Any]:
         "current_round": current_run_round(run_dir),
         "final_state": final_state,
         "pr_url": pr_url,
-        "sandbox_mode": sandbox_mode_for_run(run_dir),
+        "sandbox_mode": sandbox_mode_for_run(run_dir, cfg=cfg),
     }
 
 
@@ -361,7 +361,7 @@ def merge_status_snapshot(
     data.update(updates)
     if include_workflow_fields:
         data.update(workflow_fields_from_config(cfg))
-    data.update(derived_status_fields(run_dir))
+    data.update(derived_status_fields(run_dir, cfg=cfg))
     return data
 
 
@@ -388,7 +388,7 @@ def write_initial_status(
             **fields,
         }
     )
-    data.update(derived_status_fields(run_dir))
+    data.update(derived_status_fields(run_dir, cfg=cfg))
     path = status_path(run_dir)
     write_json_atomic(path, data)
     return path

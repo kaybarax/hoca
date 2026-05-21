@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from flask import Flask, abort, request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,14 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from hoca.run_state import acquire_lock, is_duplicate_issue_run
 from hoca.security import is_allowed_repo, verify_hmac_signature, verify_timestamp
 
-load_dotenv()
+DOTENV = {key: value for key, value in dotenv_values().items() if value is not None}
+
+
+def config_value(name: str, default: str = "") -> str:
+    return os.environ.get(name, DOTENV.get(name, default))
 
 app = Flask(__name__)
 
-WEBHOOK_SECRET = os.environ.get("HOCA_WEBHOOK_SECRET", "")
-ALLOWED_REPOS = os.environ.get("HOCA_ALLOWED_REPOS", "")
-HOCA_WORKSPACE_ROOT = Path(os.environ.get("HOCA_WORKSPACE_ROOT", str(Path.home()))).expanduser()
-MAX_CONTENT_LENGTH = int(os.environ.get("HOCA_MAX_WEBHOOK_BYTES", "65536"))
+WEBHOOK_SECRET = config_value("HOCA_WEBHOOK_SECRET")
+ALLOWED_REPOS = config_value("HOCA_ALLOWED_REPOS")
+HOCA_WORKSPACE_ROOT = Path(config_value("HOCA_WORKSPACE_ROOT", str(Path.home()))).expanduser()
+MAX_CONTENT_LENGTH = int(config_value("HOCA_MAX_WEBHOOK_BYTES", "65536"))
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
