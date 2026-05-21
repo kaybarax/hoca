@@ -85,6 +85,55 @@ def test_structured_report_is_preferred_over_legacy_text(tmp_path: Path) -> None
     assert result.report.verdict == "blocked"
 
 
+def test_review_gate_downgrades_lgtm_when_changed_python_has_syntax_error(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / "calc.py").write_text(
+        "def add(a, b):\n"
+        "    return a + b\n"
+        "\n"
+        "def subtract(a, b):\n"
+        "    return a -\n",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "run-1"
+    reports = run_dir / "reviews"
+    review_dir = run_dir / "review"
+    reports.mkdir(parents=True)
+    review_dir.mkdir(parents=True)
+    (review_dir / "changed-files.txt").write_text("calc.py\n", encoding="utf-8")
+    review_text = run_dir / "openhands-review.txt"
+    review_text.write_text("LGTM\n", encoding="utf-8")
+    structured = HocaReviewReport(
+        run_id="run-1",
+        round=1,
+        role="reviewer",
+        verdict="LGTM",
+        findings=[],
+        pr_notes={"summary": ["Reviewer approved."], "known_followups": []},
+    )
+    (reports / "review-report-1.json").write_text(structured.to_json(), encoding="utf-8")
+
+    result = evaluate_review_gate(
+        run_dir,
+        review_text_path=review_text,
+        run_id="run-1",
+        project_path=project_path,
+    )
+
+    assert result.approved is False
+    assert result.report.verdict == "fix_required"
+    assert result.report.findings[0].id == "sanity-python-syntax-1"
+    assert result.report.findings[0].file == "calc.py"
+    assert "syntax error" in result.report.findings[0].summary.lower()
+    persisted = HocaReviewReport.from_json(
+        (reports / "review-report-1.json").read_text(encoding="utf-8")
+    )
+    assert persisted.verdict == "fix_required"
+
+
 def test_malformed_structured_report_fails_gracefully(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     reports = run_dir / "reviews"

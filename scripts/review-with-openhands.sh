@@ -23,6 +23,7 @@ run_review_gate() {
     --review-text "$review_text_path"
     --run-id "$(basename "$RUN_DIR")"
     --round "${HOCA_REVIEW_ROUND:-1}"
+    --project-path "$PROJECT_PATH"
   )
   if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
     REVIEW_GATE_ARGS+=(--structured-report "$HOCA_REVIEW_REPORT_PATH")

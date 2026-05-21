@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import shutil
+import ast
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from hoca.contracts import HocaReviewReport
+from hoca.contracts import HocaReviewFinding, HocaReviewReport
 from hoca.review_report_parser import (
     ReviewReportParseError,
     parse_review_report_text,
@@ -31,6 +31,83 @@ class ReviewGateResult:
 
 def default_report_path(run_dir: Path, round_number: int) -> Path:
     return run_dir / "reviews" / f"review-report-{round_number}.json"
+
+
+def _read_changed_files(run_dir: Path) -> list[str]:
+    candidates = (
+        run_dir / "review" / "changed-files.txt",
+        run_dir / "changed-files.txt",
+    )
+    for path in candidates:
+        if not path.is_file():
+            continue
+        return [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    return []
+
+
+def _python_syntax_findings(
+    *,
+    run_dir: Path,
+    project_path: Path | None,
+) -> list[HocaReviewFinding]:
+    if project_path is None:
+        return []
+
+    findings: list[HocaReviewFinding] = []
+    for rel_path in _read_changed_files(run_dir):
+        if not rel_path.endswith(".py"):
+            continue
+        source_path = (project_path / rel_path).resolve()
+        try:
+            source = source_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        try:
+            ast.parse(source, filename=rel_path)
+        except SyntaxError as exc:
+            location = f"line {exc.lineno}" if exc.lineno is not None else "unknown line"
+            findings.append(
+                HocaReviewFinding(
+                    id=f"sanity-python-syntax-{len(findings) + 1}",
+                    severity="high",
+                    category="correctness",
+                    file=rel_path,
+                    summary=f"Python syntax error in {rel_path} at {location}: {exc.msg}",
+                    required_fix="Fix the Python syntax error before approving the review.",
+                )
+            )
+    return findings
+
+
+def apply_review_sanity_checks(
+    report: HocaReviewReport,
+    *,
+    run_dir: Path,
+    project_path: Path | None = None,
+) -> HocaReviewReport:
+    """Enforce deterministic review blockers that must override live reviewer LGTM."""
+    if report.verdict != "LGTM":
+        return report
+
+    findings = _python_syntax_findings(run_dir=run_dir, project_path=project_path)
+    if not findings:
+        return report
+
+    pr_notes = {key: list(value) for key, value in report.pr_notes.items()}
+    pr_notes.setdefault("summary", []).append(
+        "Deterministic review sanity checks found blocking issues after reviewer LGTM."
+    )
+    pr_notes.setdefault("known_followups", list(report.pr_notes.get("known_followups", [])))
+    return replace(
+        report,
+        verdict="fix_required",
+        findings=[*report.findings, *findings],
+        pr_notes=pr_notes,
+    )
 
 
 def _load_structured_report(path: Path) -> HocaReviewReport:
@@ -100,6 +177,7 @@ def try_resolve_review_gate(
     run_id: str | None = None,
     round_number: int = 1,
     structured_report_path: Path | None = None,
+    project_path: Path | None = None,
 ) -> ReviewGateResult | None:
     run_dir = run_dir.resolve()
     if not has_review_artifacts(run_dir, round_number=round_number):
@@ -111,6 +189,7 @@ def try_resolve_review_gate(
         run_id=run_id,
         round_number=round_number,
         structured_report_path=structured_report_path,
+        project_path=project_path,
     )
 
 
@@ -121,6 +200,7 @@ def evaluate_review_gate(
     run_id: str | None = None,
     round_number: int = 1,
     structured_report_path: Path | None = None,
+    project_path: Path | None = None,
 ) -> ReviewGateResult:
     run_dir = run_dir.resolve()
     review_text_path = review_text_path.resolve()
@@ -130,10 +210,16 @@ def evaluate_review_gate(
 
     if report_path.exists():
         report = _load_structured_report(report_path)
+        report = apply_review_sanity_checks(
+            report,
+            run_dir=run_dir,
+            project_path=project_path,
+        )
         if report_path != output_path:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(report_path, output_path)
             report_path = output_path
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(report.to_json(), encoding="utf-8")
         return ReviewGateResult(report=report, report_path=report_path, source="structured")
 
     if not review_text_path.exists():
@@ -148,6 +234,11 @@ def evaluate_review_gate(
     except ReviewReportParseError as exc:
         raise ReviewGateError(str(exc)) from exc
     report = parsed.report
+    report = apply_review_sanity_checks(
+        report,
+        run_dir=run_dir,
+        project_path=project_path,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report.to_json(), encoding="utf-8")
     return ReviewGateResult(report=report, report_path=output_path, source=parsed.source)
@@ -160,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id")
     parser.add_argument("--round", type=int, default=1, dest="round_number")
     parser.add_argument("--structured-report")
+    parser.add_argument("--project-path")
     parser.add_argument(
         "--print",
         choices=("verdict", "status", "pr-fragment"),
@@ -207,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             structured_report_path=(
                 Path(args.structured_report) if args.structured_report else None
             ),
+            project_path=Path(args.project_path).resolve() if args.project_path else None,
         )
     except ReviewGateError as exc:
         print(str(exc), file=sys.stderr)
