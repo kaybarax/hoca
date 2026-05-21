@@ -23,7 +23,9 @@ else
 fi
 DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
 SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
+RESTORE_DEV_BRANCH="${HOCA_RESTORE_DEV_BRANCH:-true}"
 AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
+SHOULD_RESTORE_DEV_BRANCH="false"
 TASK_BASE_REF=""
 
 while [ "$#" -gt 0 ]; do
@@ -310,6 +312,21 @@ if ! (set -o noclobber; cat "$LOCK_METADATA_FILE" > "$LOCK_FILE") 2>/dev/null; t
   exit 0
 fi
 
+restore_dev_branch_after_run() {
+  if [ "$SHOULD_RESTORE_DEV_BRANCH" != "true" ]; then
+    return 0
+  fi
+  local restore_args=(
+    "$SCRIPT_DIR/restore-dev-branch.sh"
+    "$PROJECT_PATH"
+    --initial-branch "$INITIAL_BRANCH"
+  )
+  if [ -n "$DEV_BRANCH" ]; then
+    restore_args+=(--dev-branch "$DEV_BRANCH")
+  fi
+  "${restore_args[@]}" || true
+}
+
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
@@ -317,6 +334,7 @@ cleanup() {
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
   remove_disposable_worktree 2>/dev/null || true
+  restore_dev_branch_after_run
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
   fi
@@ -821,6 +839,8 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  SHOULD_RESTORE_DEV_BRANCH="true"
+  restore_dev_branch_after_run
   if [ -d ".hoca-runtime" ] && [ "${HOCA_KEEP_RUNTIME:-false}" != "true" ]; then
     echo "Cleaning up .hoca-runtime..."
     rm -rf ".hoca-runtime"

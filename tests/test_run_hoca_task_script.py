@@ -792,6 +792,35 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     assert '"reason": "pull_request_created"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
+    prepare_pr_ready_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=tmp_path, check=True)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DEV_BRANCH"] = "main"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert "Restoring development branch: main" in result.stdout
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert branch == "main"
+
+
 def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     tmp_path: Path,
 ) -> None:

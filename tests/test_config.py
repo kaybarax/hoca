@@ -43,6 +43,7 @@ class TestLoadConfigDefaults:
             "HOCA_STOP_ON_DIRTY_TREE",
             "HOCA_DEV_BRANCH",
             "HOCA_SYNC_DEV_BRANCH",
+            "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
             "HOCA_USE_HERMES_PROFILES",
             "HOCA_USE_STRUCTURED_REPORTS",
@@ -88,6 +89,7 @@ class TestLoadConfigDefaults:
         assert cfg.stop_on_dirty_tree is True
         assert cfg.dev_branch == "main"
         assert cfg.sync_dev_branch is True
+        assert cfg.restore_dev_branch is True
         assert cfg.auto_stage_reviewed_changes is True
         assert cfg.workspace_root is None
         assert cfg.ollama_base_url == "http://127.0.0.1:11434"
@@ -103,6 +105,7 @@ class TestLoadConfigDefaults:
             "OLLAMA_MODEL=custom-model\n"
             "HOCA_DEV_BRANCH=develop\n"
             "HOCA_SYNC_DEV_BRANCH=false\n"
+            "HOCA_RESTORE_DEV_BRANCH=false\n"
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES=false\n"
             "HOCA_WORKSPACE_ROOT=~/projects\n"
             "HOCA_USE_HERMES_PROFILES=true\n"
@@ -118,6 +121,7 @@ class TestLoadConfigDefaults:
             "OLLAMA_MODEL",
             "HOCA_DEV_BRANCH",
             "HOCA_SYNC_DEV_BRANCH",
+            "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
             "HOCA_WORKSPACE_ROOT",
             "HOCA_USE_HERMES_PROFILES",
@@ -137,6 +141,7 @@ class TestLoadConfigDefaults:
         assert cfg.ollama_model == "custom-model"
         assert cfg.dev_branch == "develop"
         assert cfg.sync_dev_branch is False
+        assert cfg.restore_dev_branch is False
         assert cfg.auto_stage_reviewed_changes is False
         assert cfg.workspace_root is not None
         assert "~" not in str(cfg.workspace_root)

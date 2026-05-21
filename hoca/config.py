@@ -133,6 +133,7 @@ class HocaConfig:
     stop_on_dirty_tree: bool = True
     dev_branch: str = "main"
     sync_dev_branch: bool = True
+    restore_dev_branch: bool = True
     auto_stage_reviewed_changes: bool = True
 
     workspace_root: Path | None = None
@@ -233,6 +234,9 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ),
         dev_branch=config_value("HOCA_DEV_BRANCH", "main"),
         sync_dev_branch=parse_bool(config_value("HOCA_SYNC_DEV_BRANCH") or None, default=True),
+        restore_dev_branch=parse_bool(
+            config_value("HOCA_RESTORE_DEV_BRANCH") or None, default=True
+        ),
         auto_stage_reviewed_changes=parse_bool(
             config_value("HOCA_AUTO_STAGE_REVIEWED_CHANGES") or None, default=True
         ),
