@@ -130,6 +130,7 @@ class HocaConfig:
 
     auto_merge: bool = False
     require_tests: bool = True
+    require_review: bool = True
     stop_on_dirty_tree: bool = True
     dev_branch: str = "main"
     sync_dev_branch: bool = True
@@ -138,7 +139,9 @@ class HocaConfig:
 
     workspace_root: Path | None = None
 
+    ollama_host: str = "http://127.0.0.1:11434"
     ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_api_base: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen-14b-pro"
     llm_model: str = "ollama/qwen-14b-pro"
     llm_base_url: str = "http://127.0.0.1:11434"
@@ -213,6 +216,17 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     else:
         default_base_url = ""
 
+    ollama_default = "http://127.0.0.1:11434"
+    ollama_host = config_value("OLLAMA_HOST") or ollama_default
+    ollama_base_url = config_value("OLLAMA_BASE_URL") or ollama_host
+    ollama_api_base = config_value("OLLAMA_API_BASE") or ollama_base_url
+
+    require_review_explicit = config_value("HOCA_REQUIRE_REVIEW") or None
+    require_aider_lgtm = config_value("HOCA_REQUIRE_AIDER_LGTM") or None
+    require_review = parse_bool(
+        require_review_explicit or require_aider_lgtm, default=True
+    )
+
     return HocaConfig(
         use_hermes_profiles=parse_bool(
             config_value("HOCA_USE_HERMES_PROFILES") or None, default=False
@@ -229,6 +243,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         max_total_rounds=_resolve_max_total_rounds(config_value),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
+        require_review=require_review,
         stop_on_dirty_tree=parse_bool(
             config_value("HOCA_STOP_ON_DIRTY_TREE") or None, default=True
         ),
@@ -241,7 +256,9 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
             config_value("HOCA_AUTO_STAGE_REVIEWED_CHANGES") or None, default=True
         ),
         workspace_root=workspace_root,
-        ollama_base_url=config_value("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+        ollama_host=ollama_host,
+        ollama_base_url=ollama_base_url,
+        ollama_api_base=ollama_api_base,
         ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
         llm_model=llm_model,
         llm_base_url=config_value("LLM_BASE_URL", default_base_url),

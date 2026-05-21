@@ -22,6 +22,7 @@ def test_required_defaults_are_safe() -> None:
     assert cfg.use_worktree_sandbox is True
     assert cfg.network_mode == "offline"
     assert cfg.max_total_rounds == 3
+    assert cfg.require_review is True
     assert cfg.model_pool.is_active is False
     assert DEFAULT_POLICY.auto_merge is False
     assert DEFAULT_POLICY.require_pull_request is True
