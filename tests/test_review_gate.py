@@ -6,6 +6,7 @@ import pytest
 
 from hoca.contracts import HocaReviewReport
 from hoca.review_gate import (
+    LEGACY_REVIEW_WARNING,
     ReviewGateError,
     ReviewGateResult,
     code_review_pr_fragment,
@@ -202,7 +203,44 @@ def test_cli_print_status_for_legacy_lgtm(tmp_path: Path, capsys) -> None:
         )
         == 0
     )
-    assert capsys.readouterr().out.strip() == "LGTM"
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "LGTM"
+    assert LEGACY_REVIEW_WARNING in captured.err
+
+
+def test_cli_does_not_warn_for_structured_review(tmp_path: Path, capsys) -> None:
+    run_dir = tmp_path / "run-1"
+    reports = run_dir / "reviews"
+    reports.mkdir(parents=True)
+    review_text = run_dir / "openhands-review.txt"
+    review_text.write_text("LGTM\n", encoding="utf-8")
+    structured = HocaReviewReport(
+        run_id="run-1",
+        round=1,
+        role="reviewer",
+        verdict="LGTM",
+        findings=[],
+        pr_notes={"summary": ["Structured report approved."], "known_followups": []},
+    )
+    (reports / "review-report-1.json").write_text(structured.to_json(), encoding="utf-8")
+
+    assert (
+        main(
+            [
+                str(run_dir),
+                "--review-text",
+                str(review_text),
+                "--run-id",
+                "run-1",
+                "--print",
+                "status",
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "LGTM"
+    assert LEGACY_REVIEW_WARNING not in captured.err
 
 
 def test_code_review_pr_fragment_reflects_blocked_verdict() -> None:
