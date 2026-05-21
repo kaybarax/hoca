@@ -27,14 +27,19 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO_SLUG="$(basename "$PROJECT_PATH")"
+REPO_SLUG="$(
+  basename "$PROJECT_PATH" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g'
+)"
 BOARD_NAME="hoca:${REPO_SLUG}"
 
 echo "Initializing HOCA Kanban board: $BOARD_NAME"
 echo "Project: $PROJECT_PATH"
 echo ""
 
-hermes kanban create "$BOARD_NAME" \
+hermes kanban boards create "$BOARD_NAME" \
+  --name "HOCA: $REPO_SLUG" \
   --description "HOCA engineering pipeline for $REPO_SLUG" \
   2>&1 || {
     echo ""

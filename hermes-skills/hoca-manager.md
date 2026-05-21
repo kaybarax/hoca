@@ -123,6 +123,66 @@ spaces). Example: `/path/to/todo-list-turborepo` → board `hoca:todo-list-turbo
 Pin the board when creating tasks so workers cannot see unrelated boards. Record
 the board slug and parent task id in run artifacts when a run starts.
 
+### Kanban task contract
+
+Every Kanban-backed HOCA run uses a task contract that is readable on the
+board and reconstructable from artifacts. The manager owns the contract and
+keeps it current on the parent task.
+
+The **parent task body** must include:
+
+- `human_request`: the original request or issue summary.
+- `run_id`: stable identifier for `.hoca-runtime/runs/<run_id>/`.
+- `repo_path` and `workspace`: `dir:<absolute-repo-root>` or the active
+  worktree workspace.
+- `current_round`, `max_total_rounds`, and `round_state`.
+- Role contract: parent owner, child title patterns, child linking rules, and
+  the rule that worker and reviewer profiles exchange context only through the
+  board, structured artifacts, diffs, and Kanban comments.
+- Run artifact links for `task-spec.json`,
+  `attempts/worker-attempt-<round>.json`,
+  `validation/validation-report-<round>.json`,
+  `reviews/review-report-<round>.json`,
+  `decisions/manager-decision-<round>.json`, and `final-state.json`.
+- Comment protocol prefixes so a human can scan the task history without
+  reading every raw log.
+
+The **worker child task body** must include:
+
+- `run_id`, `round`, parent task id, repo workspace, and the exact child kind
+  (`implementation` or `repair`).
+- Link to `task-spec.json` for round 1, or a focused repair brief plus prior
+  review and manager decision artifacts for repair rounds.
+- Required output artifact path:
+  `attempts/worker-attempt-<round>.json`.
+- Explicit instruction not to stage, commit, push, publish PRs, read secrets,
+  or use private profile memory as reviewer context.
+
+The **reviewer child task body** must include:
+
+- `run_id`, `round`, parent task id, repo workspace, and the exact child kind
+  (`review`).
+- Links to `task-spec.json`, the matching worker attempt artifact, validation
+  report, changed-file list or diff summary, and any prior manager decision
+  relevant to the round.
+- Required output artifact path:
+  `reviews/review-report-<round>.json`.
+- Explicit instruction to judge only the submitted change set against the task
+  contract and artifacts, not private memory or worker chat history.
+
+The **repair child task body** is a worker child with a narrower contract:
+
+- Accepted reviewer findings and manager arbitration decision.
+- The smallest repair objective that addresses those findings.
+- Links to prior review, validation, worker attempt, and manager decision
+  artifacts.
+- Required output artifact path for the new round:
+  `attempts/worker-attempt-<round>.json`.
+
+Use structured run artifacts and Kanban comments as the shared context between
+worker and reviewer. Do not require or assume direct shared memory between
+worker and reviewer profiles.
+
 ### Parent and child task conventions
 
 Create one **parent task** per HOCA run. The parent represents the full

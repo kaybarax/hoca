@@ -20,14 +20,18 @@ if ! hermes kanban -h >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO_SLUG="$(basename "$PROJECT_PATH")"
+REPO_SLUG="$(
+  basename "$PROJECT_PATH" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g'
+)"
 BOARD_NAME="hoca:${REPO_SLUG}"
 
 echo "HOCA Kanban Board: $BOARD_NAME"
 echo "Project: $PROJECT_PATH"
 echo ""
 
-hermes kanban list "$BOARD_NAME" 2>&1 || {
+hermes kanban --board "$BOARD_NAME" list 2>&1 || {
   echo ""
   echo "Failed to list Kanban tasks."
   echo "Ensure the board exists: hoca kanban-init $PROJECT_PATH"

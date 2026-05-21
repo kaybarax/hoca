@@ -115,6 +115,7 @@ def test_manager_skill_forbids_bypassing_safety_gates() -> None:
 def test_manager_skill_documents_optional_kanban_orchestration() -> None:
     content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
     assert "## Kanban orchestration (optional)" in content
+    assert "### Kanban task contract" in content
     assert "HOCA_USE_KANBAN" in content
     assert "board: hoca:<repo-slug>" in content
     assert "hoca-manager" in content
@@ -134,6 +135,26 @@ def test_manager_skill_documents_optional_kanban_orchestration() -> None:
     assert "kanban_link" in content
     lowered = content.lower()
     assert "do not require kanban" in lowered or "without creating or updating kanban tasks" in lowered
+
+
+def test_manager_skill_defines_kanban_task_contract() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    required = (
+        "The **parent task body** must include:",
+        "The **worker child task body** must include:",
+        "The **reviewer child task body** must include:",
+        "The **repair child task body** is a worker child with a narrower contract:",
+        "Run artifact links",
+        "attempts/worker-attempt-<round>.json",
+        "reviews/review-report-<round>.json",
+        "validation/validation-report-<round>.json",
+        "decisions/manager-decision-<round>.json",
+        "final-state.json",
+        "Use structured run artifacts and Kanban comments as the shared context",
+        "Do not require or assume direct shared memory",
+    )
+    for expected in required:
+        assert expected in content
 
 
 def test_manager_skill_distinguishes_trivial_edits_from_worker_implementation() -> None:
