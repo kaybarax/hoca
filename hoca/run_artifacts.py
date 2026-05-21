@@ -23,6 +23,7 @@ from hoca.contracts import (
     HocaValidationReport,
 )
 from hoca.hard_blockers import ValidationStatus, validation_blocker_from_monitor_stop_reason
+from hoca.pr_body import human_attention_required_for_run, unresolved_findings_for_run
 from hoca.risk import write_risk_artifacts
 from hoca.security import find_secret_like_paths
 from hoca.validation_assessment import assess_validation_risks
@@ -466,12 +467,15 @@ def record_final_state(run_dir: Path) -> Path:
 
     summary = [f"Run finished with status {status}."]
     reason = status_data.get("reason")
+    reason_text = None
     if reason:
-        summary.append(f"Reason: {reason}")
+        reason_text = _redact_secret_like_values(str(reason).strip()) or None
+        summary.append(f"Reason: {reason_text}")
 
     state = HocaRunFinalState(
         run_id=run_dir.name,
         status=_map_status_to_final(status),
+        reason=reason_text,
         summary=summary,
         changed_files=_read_lines(run_dir / "changed-files.txt"),
         tests_run=_read_lines(run_dir / "tests-summary.md")[:5],
@@ -479,8 +483,10 @@ def record_final_state(run_dir: Path) -> Path:
         review_reports=list_round_artifact_paths(run_dir, "reviews", "review-report-"),
         manager_decisions=list_round_artifact_paths(run_dir, "decisions", "manager-decision-"),
         pr_url=pr_url,
+        human_attention_required=human_attention_required_for_run(run_dir),
+        unresolved_findings=unresolved_findings_for_run(run_dir),
         completed_at=status_data.get("ended_at") or status_data.get("started_at"),
-        blocked_reason=str(reason) if status in ("blocked", "failed") and reason else None,
+        blocked_reason=reason_text if status in ("blocked", "failed") else None,
     )
     path = write_final_state(run_dir, state.to_dict())
     sync_status_fields(run_dir)

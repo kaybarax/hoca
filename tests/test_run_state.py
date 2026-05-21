@@ -393,6 +393,7 @@ def test_write_final_state_writes_atomic_json(tmp_path: Path) -> None:
     state = HocaRunFinalState(
         run_id="run-final",
         status="completed",
+        reason=None,
         summary=["done"],
         changed_files=["README.md"],
         tests_run=[],
@@ -400,6 +401,8 @@ def test_write_final_state_writes_atomic_json(tmp_path: Path) -> None:
         review_reports=[],
         manager_decisions=[],
         pr_url=None,
+        human_attention_required=False,
+        unresolved_findings=[],
         completed_at="2026-05-19T00:00:00Z",
         blocked_reason=None,
     )
@@ -554,6 +557,7 @@ def test_sync_status_fields_updates_artifact_backed_values(tmp_path: Path) -> No
         HocaRunFinalState(
             run_id="run-status-sync",
             status="pr_opened",
+            reason=None,
             summary=["done"],
             changed_files=[],
             tests_run=[],
@@ -561,6 +565,8 @@ def test_sync_status_fields_updates_artifact_backed_values(tmp_path: Path) -> No
             review_reports=[],
             manager_decisions=[],
             pr_url="https://example.test/pr/9",
+            human_attention_required=False,
+            unresolved_findings=[],
             completed_at="2026-05-19T00:00:00Z",
             blocked_reason=None,
         ).to_dict(),

@@ -312,10 +312,20 @@ def _format_final_state_section(run_dir: Path) -> str | None:
     lines = [
         f"- Status: {state.status}",
     ]
+    if state.reason:
+        lines.append(f"- Reason: {_redact_secret_like_values(state.reason)}")
     if state.blocked_reason:
         lines.append(f"- Blocked reason: {_redact_secret_like_values(state.blocked_reason)}")
+    lines.append(
+        f"- Human attention required: {'yes' if state.human_attention_required else 'no'}"
+    )
     if state.pr_url:
         lines.append(f"- PR URL: {state.pr_url}")
+    if state.unresolved_findings:
+        lines.append(f"- Unresolved findings: {len(state.unresolved_findings)}")
+        for finding in state.unresolved_findings[:8]:
+            location = f" ({finding.file})" if finding.file else ""
+            lines.append(f"  - {finding.id}{location}: {finding.summary}")
     if state.completed_at:
         lines.append(f"- Completed at: {state.completed_at}")
     if state.summary:

@@ -10,8 +10,10 @@ from hoca.pr_body import (
     format_hoca_review_notes_fragment,
     format_run_context_fragment,
     format_task_spec_fragment,
+    human_attention_required_for_run,
     is_draft_pr_run,
     summarize_pr_body_fragments,
+    unresolved_findings_for_run,
 )
 from hoca.run_layout import ensure_run_layout
 from hoca.run_state import optional_report_path, write_json_atomic
@@ -235,3 +237,40 @@ def test_summarize_omits_secret_like_paths_from_changes(run_dir: Path) -> None:
     fragments = summarize_pr_body_fragments(run_dir, task="Add widget")
     assert ".env" not in fragments["changes"]
     assert "src/widget.ts" in fragments["changes"]
+
+
+def test_human_attention_required_for_run_uses_manager_and_task_spec(run_dir: Path) -> None:
+    write_json_atomic(
+        run_dir / "task-spec.json",
+        _task_spec_payload(run_dir.parent, requires_human_approval=True),
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "manager_decision", round_number=1),
+        _manager_decision(human_attention_required=False),
+    )
+
+    assert human_attention_required_for_run(run_dir) is True
+
+
+def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
+    run_dir: Path,
+) -> None:
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=1),
+        _review_report(
+            verdict="fix_required",
+            findings=[_finding("F1"), _finding("F2", severity="low", required_fix=None)],
+        ),
+    )
+    write_json_atomic(
+        optional_report_path(run_dir, "manager_decision", round_number=1),
+        _manager_decision(
+            decision="repair_required",
+            accepted_findings=["F1"],
+            downgraded_to_pr_notes=["F2"],
+            next_worker_brief="Fix F1 only.",
+        ),
+    )
+
+    unresolved = unresolved_findings_for_run(run_dir)
+    assert [finding.id for finding in unresolved] == ["F1", "F2"]

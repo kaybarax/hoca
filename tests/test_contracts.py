@@ -828,6 +828,7 @@ def test_run_final_state_round_trips_json() -> None:
     state = HocaRunFinalState(
         run_id="run-123",
         status="pr_opened",
+        reason="pull_request_created",
         summary=["Run complete"],
         changed_files=["hoca/contracts.py"],
         tests_run=["pytest"],
@@ -835,6 +836,17 @@ def test_run_final_state_round_trips_json() -> None:
         review_reports=["review-1.json"],
         manager_decisions=["decision-1.json"],
         pr_url="https://example.test/pr/1",
+        human_attention_required=True,
+        unresolved_findings=[
+            HocaReviewFinding(
+                id="F1",
+                severity="medium",
+                category="test",
+                file="tests/test_feature.py",
+                summary="Missing edge-case coverage",
+                required_fix="Add invalid-input test",
+            )
+        ],
         completed_at="2026-05-19T18:00:00Z",
         blocked_reason=None,
     )

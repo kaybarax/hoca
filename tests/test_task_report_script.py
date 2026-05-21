@@ -287,7 +287,8 @@ def test_task_report_includes_structured_artifacts_and_redacts_credentials(tmp_p
             {
                 "schema_version": 1,
                 "run_id": "run-structured",
-                "status": "pr_created",
+                "status": "pr_opened",
+                "reason": "pull_request_created",
                 "summary": ["Worker completed implementation and manager opened a PR."],
                 "changed_files": ["src/feature.py"],
                 "tests_run": ["pytest"],
@@ -295,6 +296,18 @@ def test_task_report_includes_structured_artifacts_and_redacts_credentials(tmp_p
                 "review_reports": ["reviews/review-report-1.json"],
                 "manager_decisions": ["decisions/manager-decision-1.json"],
                 "pr_url": "https://github.com/org/repo/pull/99",
+                "human_attention_required": True,
+                "unresolved_findings": [
+                    {
+                        "schema_version": 1,
+                        "id": "F1",
+                        "severity": "medium",
+                        "category": "test",
+                        "file": "tests/test_feature.py",
+                        "summary": "Missing edge-case coverage",
+                        "required_fix": "Add invalid-input test",
+                    }
+                ],
                 "completed_at": "2026-05-13T02:00:00Z",
                 "blocked_reason": None,
             }
@@ -316,6 +329,9 @@ def test_task_report_includes_structured_artifacts_and_redacts_credentials(tmp_p
     assert "F1 affects test correctness" in report
     assert "https://github.com/org/repo/pull/99" in report
     assert "### Final State" in report
+    assert "- Human attention required: yes" in report
+    assert "- Unresolved findings: 1" in report
+    assert "F1" in report
 
 
 def test_write_task_report_via_module(tmp_path: Path) -> None:

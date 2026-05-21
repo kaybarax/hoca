@@ -1,0 +1,46 @@
+# Machine-readable terminal outcome for a HOCA run.
+# Runtime artifact: .hoca-runtime/runs/<run_id>/final-state.json
+
+schema_version: 1
+
+run_id: example-run-20260519-001
+
+status: pr_opened  # completed | failed | blocked | draft_pr_opened | pr_opened
+
+reason: pull_request_created  # Terminal reason from status.json; null when not recorded
+
+summary:
+  - Run finished with status pr_created.
+  - Reason: pull_request_created
+
+changed_files:
+  - src/feature.py
+
+tests_run:
+  - pytest
+
+attempt_reports:
+  - attempts/worker-attempt-1.json
+
+review_reports:
+  - reviews/review-report-1.json
+
+manager_decisions:
+  - decisions/manager-decision-1.json
+
+pr_url: https://github.com/org/repo/pull/99
+
+human_attention_required: true
+
+unresolved_findings:
+  - schema_version: 1
+    id: F1
+    severity: medium
+    category: test
+    file: tests/test_feature.py
+    summary: Missing edge-case coverage
+    required_fix: Add invalid-input test
+
+completed_at: 2026-05-19T18:00:00Z
+
+blocked_reason: null  # Detailed block/failure reason when status is blocked or failed

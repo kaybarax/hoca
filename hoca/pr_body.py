@@ -156,6 +156,56 @@ def is_draft_pr_run(run_dir: Path) -> bool:
     return decision is not None and decision.decision == "draft_pr_with_blockers"
 
 
+def human_attention_required_for_run(run_dir: Path) -> bool:
+    """Return whether the run outcome requires human attention before merge."""
+    status = read_optional_json(run_dir / "status.json") or {}
+    human_required = bool(status.get("human_attention_required"))
+
+    decision = _latest_manager_decision(run_dir)
+    if decision is not None:
+        human_required = human_required or decision.human_attention_required
+
+    spec_path = run_dir / "task-spec.json"
+    if spec_path.is_file():
+        try:
+            spec = HocaTaskSpec.from_json(spec_path.read_text(encoding="utf-8"))
+            human_required = human_required or spec.requires_human_approval
+        except ValueError:
+            pass
+
+    if is_draft_pr_run(run_dir):
+        human_required = True
+
+    return human_required
+
+
+def unresolved_findings_for_run(run_dir: Path) -> list[HocaReviewFinding]:
+    """Return structured findings still unresolved at run completion."""
+    findings_by_id = _findings_by_id_from_reports(run_dir)
+    unresolved_ids: set[str] = set()
+
+    latest_review = _load_review_report(run_dir, _latest_review_round(run_dir))
+    if latest_review is not None:
+        unresolved_ids.update(finding.id for finding in latest_review.findings)
+
+    for finding_id in _aggregate_manager_lists(run_dir, "downgraded_to_pr_notes"):
+        unresolved_ids.add(finding_id)
+
+    decision = _latest_manager_decision(run_dir)
+    if decision is not None and decision.decision == "draft_pr_with_blockers":
+        for finding_id in decision.accepted_findings:
+            if finding_id in findings_by_id and findings_by_id[finding_id].severity == "medium":
+                unresolved_ids.add(finding_id)
+
+    if is_draft_pr_run(run_dir):
+        flag = _draft_pr_flag(run_dir) or {}
+        for finding_id in flag.get("accepted_findings", []):
+            if isinstance(finding_id, str):
+                unresolved_ids.add(finding_id)
+
+    return [findings_by_id[finding_id] for finding_id in sorted(unresolved_ids) if finding_id in findings_by_id]
+
+
 def format_task_spec_fragment(run_dir: Path, *, task_oneline: str) -> str:
     spec_path = run_dir / "task-spec.json"
     if not spec_path.is_file():
@@ -319,22 +369,7 @@ def format_hoca_review_notes_fragment(run_dir: Path) -> str:
 def format_run_context_fragment(run_dir: Path) -> str:
     sandbox_mode = sandbox_mode_for_run(run_dir)
     status = read_optional_json(run_dir / "status.json") or {}
-    human_required = bool(status.get("human_attention_required"))
-
-    decision = _latest_manager_decision(run_dir)
-    if decision is not None:
-        human_required = human_required or decision.human_attention_required
-
-    spec_path = run_dir / "task-spec.json"
-    if spec_path.is_file():
-        try:
-            spec = HocaTaskSpec.from_json(spec_path.read_text(encoding="utf-8"))
-            human_required = human_required or spec.requires_human_approval
-        except ValueError:
-            pass
-
-    if is_draft_pr_run(run_dir):
-        human_required = True
+    human_required = human_attention_required_for_run(run_dir)
 
     auto_merge = status.get("auto_merge_queued") or status.get("merge_performed")
     review_round = _latest_review_round(run_dir)

@@ -631,6 +631,7 @@ class HocaManagerDecision(JsonContract):
 class HocaRunFinalState(JsonContract):
     run_id: str
     status: FinalStatus
+    reason: str | None
     summary: list[str]
     changed_files: list[str]
     tests_run: list[str]
@@ -638,12 +639,15 @@ class HocaRunFinalState(JsonContract):
     review_reports: list[str]
     manager_decisions: list[str]
     pr_url: str | None
+    human_attention_required: bool
+    unresolved_findings: list[HocaReviewFinding]
     completed_at: str | None
     blocked_reason: str | None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "run_id",
         "status",
+        "reason",
         "summary",
         "changed_files",
         "tests_run",
@@ -651,6 +655,8 @@ class HocaRunFinalState(JsonContract):
         "review_reports",
         "manager_decisions",
         "pr_url",
+        "human_attention_required",
+        "unresolved_findings",
         "completed_at",
         "blocked_reason",
     )
@@ -658,10 +664,19 @@ class HocaRunFinalState(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        unresolved_raw = data.get("unresolved_findings")
+        if unresolved_raw is None:
+            unresolved_findings: list[HocaReviewFinding] = []
+        else:
+            unresolved_findings = [
+                HocaReviewFinding.from_dict(item)
+                for item in _object_list(data, "unresolved_findings")
+            ]
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
             status=_required(data, "status"),
+            reason=None if data["reason"] is None else str(data["reason"]),
             summary=_string_list(data, "summary"),
             changed_files=_string_list(data, "changed_files"),
             tests_run=_string_list(data, "tests_run"),
@@ -669,6 +684,8 @@ class HocaRunFinalState(JsonContract):
             review_reports=_string_list(data, "review_reports"),
             manager_decisions=_string_list(data, "manager_decisions"),
             pr_url=None if data["pr_url"] is None else str(data["pr_url"]),
+            human_attention_required=bool(_required(data, "human_attention_required")),
+            unresolved_findings=unresolved_findings,
             completed_at=None if data["completed_at"] is None else str(data["completed_at"]),
             blocked_reason=None
             if data["blocked_reason"] is None
