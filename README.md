@@ -228,6 +228,20 @@ plus review, and rounds 2-3 are repair plus review cycles. The legacy
 `HOCA_MAX_REPAIR_ATTEMPTS` variable is still accepted (value + 1 = total
 rounds).
 
+### Optional Durable Kanban Mode
+
+Kanban orchestration is intentionally off by default:
+
+```env
+HOCA_USE_KANBAN=false
+```
+
+The standard `bin/hoca run /path/to/repo "Task"` workflow does not require a
+Hermes Kanban board or Kanban setup. Keep `HOCA_USE_KANBAN=false` for the
+script-backed Manager -> Worker -> Reviewer pipeline. Future Kanban commands can
+opt in to durable multi-agent coordination incrementally for longer-running work
+that needs restartable state, role handoffs, and an auditable task board.
+
 ### Docker Sandbox (recommended default)
 
 HOCA runs worker and reviewer OpenHands phases inside one HOCA-controlled Docker

@@ -205,6 +205,27 @@ def test_run_hoca_task_keeps_direct_openhands_fallback_when_profiles_disabled(
     assert "Running OpenHands (implementation)" in result.stdout
 
 
+def test_basic_run_does_not_require_kanban_when_flag_is_default_false(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'agent edit\\n' > README.md\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_HERMES_PROFILES"] = "false"
+    env["HOCA_USE_KANBAN"] = "false"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Running OpenHands (implementation)" in result.stdout
+    assert "kanban" not in result.stderr.lower()
+
+
 def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
     (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
     (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
