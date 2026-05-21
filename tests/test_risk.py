@@ -3,10 +3,15 @@ from __future__ import annotations
 import pytest
 
 from hoca.risk import (
+    RiskCategory,
     RiskLevel,
     classify_description,
+    classify_path_categories,
     classify_paths,
+    classify_risk_categories,
     classify_task,
+    format_risk_notes,
+    write_risk_artifacts,
 )
 
 
@@ -411,3 +416,99 @@ class TestClassifyTask:
         )
         assert result.level == RiskLevel.HIGH
         assert result.auto_mergeable is False
+
+
+class TestRiskCategories:
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("infra/terraform/main.tf", RiskCategory.INFRASTRUCTURE.value),
+            (".github/workflows/ci.yml", RiskCategory.INFRASTRUCTURE.value),
+            ("Dockerfile", RiskCategory.INFRASTRUCTURE.value),
+            ("db/migrations/001_init.sql", RiskCategory.MIGRATION.value),
+            ("alembic/versions/abc123.py", RiskCategory.MIGRATION.value),
+            ("src/api.generated.ts", RiskCategory.GENERATED.value),
+            ("dist/app.min.js", RiskCategory.GENERATED.value),
+            ("package-lock.json", RiskCategory.DEPENDENCY_LOCKFILE.value),
+            ("poetry.lock", RiskCategory.DEPENDENCY_LOCKFILE.value),
+        ],
+    )
+    def test_classify_path_categories(self, path: str, expected: str):
+        assert expected in classify_path_categories(path)
+
+    def test_broad_rewrite_from_description(self):
+        categories, paths, requires = classify_risk_categories(
+            description="Rewrite the entire authentication module",
+            changed_paths=["src/auth/login.py"],
+        )
+        assert RiskCategory.BROAD_REWRITE.value in categories
+        assert requires is True
+
+    def test_broad_rewrite_from_many_source_files(self):
+        paths = [f"src/module_{index}.py" for index in range(8)]
+        categories, _, requires = classify_risk_categories(changed_paths=paths)
+        assert RiskCategory.BROAD_REWRITE.value in categories
+        assert requires is True
+
+    def test_infrastructure_requires_justification_without_staging_note(self, tmp_path):
+        categories, paths, requires = classify_risk_categories(
+            changed_paths=["infra/terraform/main.tf"],
+            run_dir=tmp_path,
+        )
+        assert RiskCategory.INFRASTRUCTURE.value in categories
+        assert requires is True
+        assert "infra/terraform/main.tf" in paths
+
+    def test_lockfile_justification_clears_staging_requirement(self, tmp_path):
+        (tmp_path / "staging-justification.txt").write_text(
+            "package-lock.json: dependency lockfile updated by package manager.\n",
+            encoding="utf-8",
+        )
+        categories, paths, requires = classify_risk_categories(
+            changed_paths=["package-lock.json"],
+            run_dir=tmp_path,
+        )
+        assert RiskCategory.DEPENDENCY_LOCKFILE.value in categories
+        assert requires is False
+        assert paths == ()
+
+    def test_generated_file_requires_justification(self):
+        result = classify_task(changed_paths=["src/api.generated.ts"])
+        assert RiskCategory.GENERATED.value in result.categories
+        assert result.requires_justification is True
+        assert result.auto_mergeable is False
+
+    def test_format_risk_notes_includes_categories_and_policy(self):
+        classification = classify_task(
+            description="Update helper",
+            changed_paths=["package-lock.json"],
+        )
+        notes = format_risk_notes(classification)
+        assert "Risk level:" in notes
+        assert "Categories:" in notes
+        assert "dependency_lockfile" in notes
+        assert "Requires staging justification" in notes
+        assert "Auto-merge disabled" in notes
+
+    def test_write_risk_artifacts_records_files(self, tmp_path):
+        classification = write_risk_artifacts(
+            tmp_path,
+            changed_paths=["README.md"],
+            description="Fix typo in README",
+        )
+        assert classification.level == RiskLevel.LOW
+        assert (tmp_path / "risk-level.txt").read_text(encoding="utf-8") == "low\n"
+        notes = (tmp_path / "risk-notes.txt").read_text(encoding="utf-8")
+        assert "Risk level: low." in notes
+        assert "Auto-merge disabled" not in notes
+
+    def test_write_risk_artifacts_preserves_existing_notes(self, tmp_path):
+        (tmp_path / "risk-notes.txt").write_text("Reviewer follow-up: monitor rollout.\n", encoding="utf-8")
+        write_risk_artifacts(
+            tmp_path,
+            changed_paths=["src/auth/middleware.py"],
+            description="Fix auth middleware",
+        )
+        notes = (tmp_path / "risk-notes.txt").read_text(encoding="utf-8")
+        assert "Risk level: high." in notes
+        assert "Reviewer follow-up: monitor rollout." in notes

@@ -52,6 +52,7 @@ safe defaults are documented in `.env.example`:
 - `HOCA_NOTIFY_TELEGRAM=false`
 - `HOCA_WEBHOOK_ENABLED=false`
 - `HOCA_MAX_TOTAL_ROUNDS=3` (total worker/review/repair rounds)
+- `HOCA_USE_KANBAN=false` (optional durable multi-agent board; off by default)
 
 Use model selection only through `scripts/select-model.sh` and HOCA wrappers.
 Do not pass raw provider secrets to worker prompts or reports.
@@ -92,6 +93,230 @@ python3 -m hoca.run_artifacts record-validation "$run_dir" --round "$round"
 python3 -m hoca.run_artifacts record-decision "$run_dir" --round "$round"
 python3 -m hoca.run_artifacts record-final "$run_dir"
 ```
+
+## Kanban orchestration (optional)
+
+When `HOCA_USE_KANBAN=true`, use Hermes Kanban as the durable handoff layer
+for the Manager → Worker → Reviewer pipeline. The script-backed workflow in the
+sections below still applies for validation, safety gates, and Git operations;
+Kanban tracks role assignments, round state, and audit history across restarts.
+
+When `HOCA_USE_KANBAN=false`, follow the manager procedures directly without
+creating or updating Kanban tasks. Do not require Kanban setup for a normal run.
+
+The manager profile acts as the Kanban orchestrator: it creates and links tasks,
+assigns work to `hoca-worker` and `hoca-reviewer`, records round progress on
+the parent task, and appends artifact pointers in comments. Use `kanban_*` tools
+directly — do not shell out to `hermes kanban` from worker or reviewer profiles.
+
+### Board model
+
+Use one board per target repository:
+
+```text
+board: hoca:<repo-slug>
+```
+
+Derive `<repo-slug>` from the repository directory name (lowercase, hyphens for
+spaces). Example: `/path/to/todo-list-turborepo` → board `hoca:todo-list-turborepo`.
+
+Pin the board when creating tasks so workers cannot see unrelated boards. Record
+the board slug and parent task id in run artifacts when a run starts.
+
+### Kanban task contract
+
+Every Kanban-backed HOCA run uses a task contract that is readable on the
+board and reconstructable from artifacts. The manager owns the contract and
+keeps it current on the parent task.
+
+The **parent task body** must include:
+
+- `human_request`: the original request or issue summary.
+- `run_id`: stable identifier for `.hoca-runtime/runs/<run_id>/`.
+- `repo_path` and `workspace`: `dir:<absolute-repo-root>` or the active
+  worktree workspace.
+- `current_round`, `max_total_rounds`, and `round_state`.
+- Role contract: parent owner, child title patterns, child linking rules, and
+  the rule that worker and reviewer profiles exchange context only through the
+  board, structured artifacts, diffs, and Kanban comments.
+- Run artifact links for `task-spec.json`,
+  `attempts/worker-attempt-<round>.json`,
+  `validation/validation-report-<round>.json`,
+  `reviews/review-report-<round>.json`,
+  `decisions/manager-decision-<round>.json`, and `final-state.json`.
+- Comment protocol prefixes so a human can scan the task history without
+  reading every raw log.
+
+The **worker child task body** must include:
+
+- `run_id`, `round`, parent task id, repo workspace, and the exact child kind
+  (`implementation` or `repair`).
+- Link to `task-spec.json` for round 1, or a focused repair brief plus prior
+  review and manager decision artifacts for repair rounds.
+- Required output artifact path:
+  `attempts/worker-attempt-<round>.json`.
+- Explicit instruction not to stage, commit, push, publish PRs, read secrets,
+  or use private profile memory as reviewer context.
+
+The **reviewer child task body** must include:
+
+- `run_id`, `round`, parent task id, repo workspace, and the exact child kind
+  (`review`).
+- Links to `task-spec.json`, the matching worker attempt artifact, validation
+  report, changed-file list or diff summary, and any prior manager decision
+  relevant to the round.
+- Required output artifact path:
+  `reviews/review-report-<round>.json`.
+- Explicit instruction to judge only the submitted change set against the task
+  contract and artifacts, not private memory or worker chat history.
+
+The **repair child task body** is a worker child with a narrower contract:
+
+- Accepted reviewer findings and manager arbitration decision.
+- The smallest repair objective that addresses those findings.
+- Links to prior review, validation, worker attempt, and manager decision
+  artifacts.
+- Required output artifact path for the new round:
+  `attempts/worker-attempt-<round>.json`.
+
+Use structured run artifacts and Kanban comments as the shared context between
+worker and reviewer. Do not require or assume direct shared memory between
+worker and reviewer profiles.
+
+### Parent and child task conventions
+
+Create one **parent task** per HOCA run. The parent represents the full
+engineering request from intake through PR or block.
+
+| Field | Parent task convention |
+|-------|------------------------|
+| Assignee | `hoca-manager` |
+| Title | `HOCA: <short goal>` (under ~80 characters) |
+| Body | Human request, `run_id`, repo path, issue id when known, `max_total_rounds` |
+| Workspace | `dir:<absolute-repo-root>` or `worktree:<task-branch>` when using a worktree |
+
+Fan out **child tasks** for each role step. Link every child to the parent
+(and to prior siblings when order matters):
+
+```text
+parent (hoca-manager)
+├── child: implement r1        → hoca-worker
+├── child: review r1           → hoca-reviewer   (parents: implement r1)
+├── child: repair r2           → hoca-worker     (parents: review r1)   [when repair_required]
+├── child: review r2           → hoca-reviewer   (parents: repair r2)
+└── … up to max_total_rounds
+```
+
+Child title patterns (include round number in every title):
+
+| Child kind | Title pattern | Assignee | Typical parents |
+|------------|---------------|----------|-----------------|
+| Implementation | `implement r<N>` | `hoca-worker` | parent (round 1) or prior review (round 2+) |
+| Review | `review r<N>` | `hoca-reviewer` | matching `implement r<N>` or `repair r<N>` |
+| Repair | `repair r<N>` | `hoca-worker` | matching `review r<N-1>` when arbitration requires fixes |
+
+Create children with `kanban_create(..., parents=[...])` or link after the fact
+with `kanban_link(parent_id, child_id)`. The manager owns linking and round
+control; worker and reviewer profiles complete their assigned child only.
+
+Each child body must include:
+
+- `run_id` and `round`
+- Path to `task-spec.json` or focused repair brief
+- Explicit instruction not to stage, commit, push, or read secrets
+- Pointers to prior round artifacts when this is a repair or review handoff
+
+### Task status names
+
+Use Hermes Kanban statuses consistently. Map HOCA workflow phases as follows.
+
+**Parent task lifecycle:**
+
+| Status | HOCA meaning |
+|--------|--------------|
+| `triage` | Raw intake; task not definition-ready |
+| `todo` | Spec drafted; waiting for manager to open round 1 |
+| `ready` | Definition-ready; manager may spawn the next child |
+| `running` | A child task for the current round is active |
+| `blocked` | Hard blockers, environment failure, or human escalation |
+| `done` | Run finished (`pr_created`, `no_changes`, or accepted final state) |
+| `archived` | Optional cleanup after human acknowledgment |
+
+**Child task lifecycle:**
+
+| Status | HOCA meaning |
+|--------|--------------|
+| `todo` | Created; waiting for parent or sibling dependencies |
+| `ready` | Dependencies satisfied; dispatcher may assign the profile |
+| `running` | Worker or reviewer executing via HOCA wrappers |
+| `blocked` | Cannot proceed (`blocked_reason` required) |
+| `done` | Role step complete (`kanban_complete` with summary + metadata) |
+
+Promote the parent to `running` while any child for the current round is
+active. Return the parent to `ready` when the round's children are `done` and
+the manager is deciding the next step. Do not mark the parent `done` until PR
+publication, explicit block, or `no_changes` is recorded.
+
+### Comments and artifact linking
+
+Kanban comments are the shared protocol between roles. Structured run artifacts
+under `.hoca-runtime/runs/<run_id>/` remain the source of truth; comments carry
+pointers and short summaries, not full file contents.
+
+Use these comment prefixes so threads stay scannable:
+
+| Prefix | When to use | Example body |
+|--------|-------------|--------------|
+| `[spec]` | Task spec ready | `[spec] task-spec.json written; goal: add expiry validation` |
+| `[artifact]` | New or updated run artifact | `[artifact] attempts/worker-attempt-1.json` |
+| `[validation]` | Deterministic validation result | `[validation] round 1 passed; see validation/validation-report-1.json` |
+| `[decision]` | Manager arbitration | `[decision] repair_required; see decisions/manager-decision-1.json` |
+| `[round]` | Round boundary | `[round] starting round 2/3; repair brief attached to child body` |
+| `[escalation]` | Human attention needed | `[escalation] hard blocker: secret-like path in diff` |
+| `[pr]` | Publication outcome | `[pr] https://github.com/org/repo/pull/42` |
+
+Rules:
+
+- Always use repo-relative artifact paths from `.hoca-runtime/runs/<run_id>/`.
+- On child completion, call `kanban_complete(summary=..., metadata={...})` with
+  metadata keys aligned to HOCA reports: `changed_files`, `artifact_paths`,
+  `verdict` (reviewer), `decision` (manager), `round`, `run_id`.
+- Never paste secrets, tokens, env values, or large log dumps into comments or
+  metadata. Point to redacted artifact files instead.
+- Worker and reviewer do not share private profile memory; they exchange task
+  spec, diffs, and artifact paths through child bodies, parent comments, and
+  `kanban_show()` context.
+
+### Round count tracking
+
+Track rounds on the **parent task** body and in `[round]` comments. Defaults
+match `HOCA_MAX_TOTAL_ROUNDS` (`3`):
+
+```yaml
+run_id: hoca-20260521-001
+current_round: 1
+max_total_rounds: 3
+round_state: implementation|validation|review|arbitration|repair|pr|blocked
+```
+
+Round shape (same as the script-backed pipeline):
+
+```text
+round 1: implement r1 → validation → review r1 → arbitration
+round 2: repair r2 → validation → review r2 → arbitration   [if repair_required]
+round 3: repair r3 → validation → review r3 → final decision
+```
+
+After each arbitration:
+
+1. Increment `current_round` on the parent when opening the next worker attempt.
+2. Post `[round]` comment with `current_round/max_total_rounds` and decision.
+3. Create linked repair/review children only when `current_round <= max_total_rounds`.
+4. At the round cap, apply the same publication rules as §9 — Kanban does not
+   override hard blockers or `require_tests` / `require_review_lgtm`.
+
+When Kanban is enabled, still write the same structured JSON artifacts via HOCA
+helpers. The board reconstructs the run story; artifacts hold detailed evidence.
 
 ## Manager procedures
 
@@ -138,6 +363,7 @@ Run deterministic preflight before creating a task branch:
 
 ```bash
 cd "$project_path"
+scripts/check-definition-of-ready.sh "$project_path" "$task" [--issue-id "$issue_id"]
 scripts/hoca-doctor.sh
 git rev-parse --is-inside-work-tree
 git rev-parse --show-toplevel
@@ -256,8 +482,11 @@ reviewer (see `hoca-reviewer-qa.md`):
 Invoke review only through HOCA wrappers:
 
 ```bash
-scripts/review-with-openhands.sh "$project_path" "$task" "$run_dir"
+scripts/run-reviewer-hermes.sh "$project_path" "$task_spec_path" "$run_dir" "$round"
 ```
+
+The reviewer wrapper falls back to `scripts/review-with-openhands.sh` when Hermes
+profile mode is disabled.
 
 Because `require_review_lgtm=true`, continue toward publication only when review
 returns `LGTM` or accepted findings are resolved within the round budget.

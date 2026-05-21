@@ -64,7 +64,7 @@ def test_stage_safe_files_rejects_absolute_paths(tmp_path: Path) -> None:
     result = run_stage_safe_files(tmp_path, file_list)
 
     assert result.returncode != 0
-    assert "Refusing absolute path" in result.stderr
+    assert "absolute paths are not allowed" in result.stderr
     assert staged_files(tmp_path) == []
 
 
@@ -76,7 +76,7 @@ def test_stage_safe_files_rejects_path_traversal(tmp_path: Path) -> None:
     result = run_stage_safe_files(tmp_path, file_list)
 
     assert result.returncode != 0
-    assert "Refusing path traversal" in result.stderr
+    assert "path traversal is not allowed" in result.stderr
     assert staged_files(tmp_path) == []
 
 
@@ -90,6 +90,49 @@ def test_stage_safe_files_rejects_secret_paths(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "secret-like file" in result.stderr
+    assert staged_files(tmp_path) == []
+
+
+def test_stage_safe_files_allows_env_example(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / ".env.example").write_text("TOKEN=\n", encoding="utf-8")
+    file_list = tmp_path / "files.txt"
+    file_list.write_text(".env.example\n", encoding="utf-8")
+
+    result = run_stage_safe_files(tmp_path, file_list)
+
+    assert result.returncode == 0, result.stderr
+    assert staged_files(tmp_path) == [".env.example"]
+
+
+def test_stage_safe_files_rejects_ssh_and_cloud_credential_paths(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    for path in (".ssh/config", ".aws/credentials"):
+        file_path = tmp_path / path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("secret\n", encoding="utf-8")
+
+    for blocked in (".ssh/config", ".aws/credentials"):
+        file_list = tmp_path / f"files-{blocked.replace('/', '-')}.txt"
+        file_list.write_text(f"{blocked}\n", encoding="utf-8")
+        result = run_stage_safe_files(tmp_path, file_list)
+        assert result.returncode != 0
+        assert "secret-like file" in result.stderr
+        assert staged_files(tmp_path) == []
+
+
+def test_stage_safe_files_rejects_runtime_metadata(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    runtime_file = tmp_path / ".hoca-runtime" / "runs" / "run-1" / "status.json"
+    runtime_file.parent.mkdir(parents=True)
+    runtime_file.write_text("{}\n", encoding="utf-8")
+    file_list = tmp_path / "files.txt"
+    file_list.write_text(".hoca-runtime/runs/run-1/status.json\n", encoding="utf-8")
+
+    result = run_stage_safe_files(tmp_path, file_list)
+
+    assert result.returncode != 0
+    assert "runtime file" in result.stderr
     assert staged_files(tmp_path) == []
 
 

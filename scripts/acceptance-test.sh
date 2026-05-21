@@ -117,6 +117,14 @@ set -euo pipefail
 if [ "${1:-}" = "info" ]; then
   exit 0
 fi
+if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
+  if [ "${3:-}" = "--format" ]; then
+    printf 'worker\n'
+  else
+    printf '[]\n'
+  fi
+  exit 0
+fi
 exit 0
 EOS
 
@@ -140,6 +148,10 @@ if [ "${1:-}" = "--help" ]; then
   printf 'openhands --headless --task --override-with-envs --json\n'
   exit 0
 fi
+if [ "${HOCA_AGENT_ROLE:-}" = "reviewer" ]; then
+  printf 'Structured review artifact is authoritative.\nLGTM\n'
+  exit 0
+fi
 RUN_DIR="$(find .hoca-runtime/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
 {
   printf '\n## Local Development\n\n'
@@ -161,6 +173,10 @@ add_python_shim
 
 if [ "$USE_FAKE_TOOLS" = "true" ]; then
   print_step "Installing fake acceptance tools"
+  export HOCA_USE_SANDBOX=false
+  export HOCA_USE_WORKTREE_SANDBOX=false
+  export HOCA_KEEP_RUNTIME=true
+  export HOCA_RESTORE_DEV_BRANCH=false
   make_fake_tools
 fi
 
@@ -221,6 +237,8 @@ assert_file_exists "$RUN_DIR/pr-url.txt" "pull request URL"
 assert_file_contains "$RUN_DIR/openhands-exit-code.txt" '^0$' "OpenHands exit code"
 assert_file_contains "$RUN_DIR/tests-summary.md" 'no-tests-detected' "no-test project summary"
 assert_file_contains "$RUN_DIR/openhands-review.txt" 'LGTM' "Code review"
+assert_file_exists "$RUN_DIR/reviews/review-report-1.json" "structured review report"
+assert_file_contains "$RUN_DIR/reviews/review-report-1.json" '"verdict": "LGTM"' "structured review verdict"
 assert_file_contains "$RUN_DIR/pr-url.txt" '^https://github.com/example/disposable/pull/1$' "pull request URL"
 assert_file_contains "$TEST_REPO/README.md" 'Local Development' "README update"
 

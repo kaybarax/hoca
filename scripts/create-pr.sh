@@ -175,19 +175,6 @@ if ! git push -u "$REMOTE_NAME" HEAD; then
   exit 1
 fi
 
-write_fragment() {
-  local name="$1"
-  shift
-  local f="$RUN_DIR/pr-fragment-${name}.txt"
-  : > "$f"
-  while [ "$#" -gt 0 ]; do
-    printf '%s\n' "$1" >> "$f"
-    shift
-  done
-}
-
-write_fragment "summary" "$TASK_ONELINE"
-
 if git rev-parse --verify "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
   BASE_REF="origin/${DEFAULT_BRANCH}"
 elif git rev-parse --verify "${DEFAULT_BRANCH}" >/dev/null 2>&1; then
@@ -196,6 +183,7 @@ else
   BASE_REF=""
 fi
 
+CHANGES_FILE="$RUN_DIR/pr-fragment-changes.txt"
 {
   echo '```text'
   if [ -n "$BASE_REF" ]; then
@@ -209,38 +197,25 @@ fi
     git log -15 --oneline
   fi
   echo '```'
-} > "$RUN_DIR/pr-fragment-changes.txt"
+} > "$CHANGES_FILE"
 
-if [ -f "$RUN_DIR/tests-summary.md" ]; then
-  cp "$RUN_DIR/tests-summary.md" "$RUN_DIR/pr-fragment-validation.txt"
-else
-  write_fragment "validation" "_No \`tests-summary.md\` found in the run directory._"
-fi
-
-if [ -f "$RUN_DIR/openhands-review.txt" ]; then
-  {
-    if grep -q "LGTM" "$RUN_DIR/openhands-review.txt"; then
-      echo "**Status**: LGTM present in code review output."
-    else
-      echo "**Status**: LGTM not detected in code review output (human review recommended)."
-    fi
-    echo ""
-    echo "Full review output is saved in the HOCA run artifacts."
-  } > "$RUN_DIR/pr-fragment-code-review.txt"
-else
-  write_fragment "code-review" "_No \`openhands-review.txt\` found in the run directory._"
-fi
-
-if [ -f "$RUN_DIR/risk-notes.txt" ]; then
-  cp "$RUN_DIR/risk-notes.txt" "$RUN_DIR/pr-fragment-risk.txt"
-else
-  write_fragment "risk" "None noted in run metadata."
-fi
-
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PR_FRAGMENT_ARGS=(
+  --task "$TASK_ONELINE"
+  --changes-file "$CHANGES_FILE"
+)
 if [ -n "$ISSUE_ID" ]; then
-  write_fragment "linked-issue" "Issue #${ISSUE_ID}"
-else
-  write_fragment "linked-issue" "None"
+  PR_FRAGMENT_ARGS+=(--issue-id "$ISSUE_ID")
+fi
+if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.pr_body "$RUN_DIR" \
+  "${PR_FRAGMENT_ARGS[@]}" >/dev/null; then
+  echo "Failed to build PR body fragments from run artifacts." >&2
+  exit 1
+fi
+
+DRAFT_PR_FLAG=""
+if [ -f "$RUN_DIR/draft-pr-with-blockers.flag" ]; then
+  DRAFT_PR_FLAG="--draft"
 fi
 
 slug_heading() {
@@ -275,7 +250,7 @@ PR_BODY_FILE="$RUN_DIR/pr-body.md"
 
 echo "Creating pull request (base: ${DEFAULT_BRANCH})..."
 set +e
-GH_OUT="$(gh pr create --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --base "$DEFAULT_BRANCH" 2>&1)"
+GH_OUT="$(gh pr create --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --base "$DEFAULT_BRANCH" $DRAFT_PR_FLAG 2>&1)"
 GH_EC=$?
 set -e
 printf '%s\n' "$GH_OUT" | tee "$RUN_DIR/gh-pr-create.log"

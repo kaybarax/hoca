@@ -38,6 +38,10 @@ GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS: list[re.Pattern[str]] = [
 ]
 
 MANAGER_ONLY_GIT_LIFECYCLE_ROLES = frozenset({"worker", "reviewer", "openhands"})
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_COMMAND_LINE_PREFIX = re.compile(
+    r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+"
+)
 
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset({
@@ -142,8 +146,11 @@ def check_manager_only_git_lifecycle_command(line: str, actor_role: str) -> str 
     role = actor_role.strip().lower()
     if role not in MANAGER_ONLY_GIT_LIFECYCLE_ROLES:
         return None
+    normalized = _ANSI_ESCAPE.sub("", line).strip(" │")
+    if not _COMMAND_LINE_PREFIX.search(normalized):
+        return None
     for pattern in GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS:
-        if pattern.search(line):
+        if pattern.search(normalized):
             return pattern.pattern
     return None
 
@@ -162,13 +169,21 @@ def check_secret_access(line: str, project_path: str) -> str | None:
     return None
 
 
-def check_unrelated_directory(line: str, project_path: str) -> str | None:
+def check_unrelated_directory(
+    line: str,
+    project_path: str,
+    allowed_paths: list[str] | tuple[str, ...] = (),
+) -> str | None:
     abs_refs = re.findall(r"(?:cd|cat|ls|rm|cp|mv|vi|vim|nano|open)\s+(/[^\s;|&]+)", line)
-    project_resolved = os.path.realpath(project_path)
+    allowed_roots = [os.path.realpath(project_path)]
+    allowed_roots.extend(os.path.realpath(path) for path in allowed_paths)
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
         ref_resolved = os.path.realpath(ref)
-        if not ref_resolved.startswith(project_resolved + "/") and ref_resolved != project_resolved:
+        if not any(
+            ref_resolved == root or ref_resolved.startswith(root + "/")
+            for root in allowed_roots
+        ):
             if any(ref_resolved == t or ref_resolved.startswith(t + "/") for t in tmp_prefixes):
                 continue
             return ref
@@ -186,7 +201,7 @@ def should_scan_line_for_policy(line: str) -> bool:
         return True
     kind = str(event.get("kind", ""))
     source = str(event.get("source", ""))
-    if source == "environment" or kind.endswith("ObservationEvent"):
+    if source in {"environment", "user"} or kind.endswith(("ObservationEvent", "MessageEvent")):
         return False
     return True
 
@@ -329,7 +344,7 @@ def monitor_process_stream(
                     stop_reason = "secret_access"
                     break
 
-                unrelated = check_unrelated_directory(line, project_path)
+                unrelated = check_unrelated_directory(line, project_path, (str(run_dir),))
                 if unrelated:
                     _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
                     stop_reason = "unrelated_directory"
@@ -392,6 +407,7 @@ def monitor_process(
     stop_reason = "completed"
     watchdog_reason: list[str] = []
     lock = threading.Lock()
+    watchdog_stop = threading.Event()
 
     _record(
         events,
@@ -400,8 +416,9 @@ def monitor_process(
     )
 
     def _watchdog() -> None:
-        while process.poll() is None:
-            time.sleep(STALL_CHECK_INTERVAL)
+        while process.poll() is None and not watchdog_stop.is_set():
+            if watchdog_stop.wait(STALL_CHECK_INTERVAL):
+                break
             if process.poll() is not None:
                 break
             elapsed = _now() - start_time
@@ -463,7 +480,7 @@ def monitor_process(
                     stop_reason = "secret_access"
                     break
 
-                unrelated = check_unrelated_directory(line, project_path)
+                unrelated = check_unrelated_directory(line, project_path, (str(run_dir),))
                 if unrelated:
                     _record(events, "unrelated_directory", f"Access outside project: {unrelated}")
                     stop_reason = "unrelated_directory"
@@ -490,6 +507,7 @@ def monitor_process(
         _kill_process(process)
 
     exit_code = process.wait()
+    watchdog_stop.set()
     watchdog_thread.join(timeout=5)
     _record(events, "exit", f"Process exited with code {exit_code}")
 

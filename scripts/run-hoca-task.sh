@@ -6,7 +6,7 @@ if [ "$#" -lt 2 ]; then
   exit 1
 fi
 
-PROJECT_PATH="$(cd "$1" && pwd)"
+RAW_PROJECT_PATH="$1"
 TASK="$2"
 shift 2
 
@@ -14,10 +14,18 @@ ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 REQUESTED_MODEL=""
-MAX_REPAIR_ATTEMPTS="${HOCA_MAX_REPAIR_ATTEMPTS:-2}"
+if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
+  MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
+elif [ -n "${HOCA_MAX_REPAIR_ATTEMPTS:-}" ]; then
+  MAX_TOTAL_ROUNDS="$((HOCA_MAX_REPAIR_ATTEMPTS + 1))"
+else
+  MAX_TOTAL_ROUNDS=3
+fi
 DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
 SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
+RESTORE_DEV_BRANCH="${HOCA_RESTORE_DEV_BRANCH:-true}"
 AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
+SHOULD_RESTORE_DEV_BRANCH="false"
 TASK_BASE_REF=""
 
 while [ "$#" -gt 0 ]; do
@@ -55,12 +63,84 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
+
+run_definition_of_ready_check() {
+  local dor_args=(
+    "$SCRIPT_DIR/check-definition-of-ready.sh"
+    "$1"
+    "$2"
+  )
+  if [ -n "${3:-}" ]; then
+    dor_args+=(--issue-id "$3")
+  fi
+  if [ -n "${4:-}" ]; then
+    dor_args+=(--run-dir "$4")
+  fi
+  "${dor_args[@]}"
+}
+
+echo "Checking definition of ready..."
+set +e
+DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID")"
+DOR_EXIT=$?
+set -e
+printf '%s\n' "$DOR_OUTPUT"
+if [ "$DOR_EXIT" -ne 0 ]; then
+  if [ "$DOR_EXIT" -eq 2 ]; then
+    echo "Stopping because the task needs clarification before HOCA can proceed safely." >&2
+  else
+    echo "Stopping because the task failed definition-of-ready checks." >&2
+  fi
+  exit "$DOR_EXIT"
+fi
+
+PROJECT_PATH="$(cd "$RAW_PROJECT_PATH" && pwd)"
 
 record_run_artifact() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.run_artifacts "$@"
 }
 
+task_spec_path_for_run() {
+  printf '%s\n' "$RUN_DIR/task-spec.json"
+}
+
+read_task_spec_field() {
+  local field="$1"
+  local fallback="$2"
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ -f "$spec_path" ] && command -v jq >/dev/null 2>&1; then
+    jq -r --arg field "$field" --arg fallback "$fallback" '.[$field] // $fallback' "$spec_path"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+worker_task_prompt() {
+  read_task_spec_field goal "$TASK"
+}
+
+generate_run_task_spec() {
+  local generate_args=(
+    "$SCRIPT_DIR/generate-task-spec.sh"
+    "$PROJECT_PATH"
+    "$TASK"
+    "$PROJECT_PATH/$RUN_DIR"
+    --run-id "$RUN_ID"
+    --base-branch "$TASK_BASE_REF"
+    --task-branch "$BRANCH"
+    --max-total-rounds "$MAX_TOTAL_ROUNDS"
+  )
+  if [ -n "$ISSUE_ID" ]; then
+    generate_args+=(--issue-id "$ISSUE_ID")
+  fi
+  echo "Generating task spec..."
+  "${generate_args[@]}"
+}
+
 if [ -n "$REQUESTED_MODEL" ]; then
+  export HOCA_CLI_MODEL_OVERRIDE=1
   export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
   case "$REQUESTED_MODEL" in
     openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
@@ -87,8 +167,12 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+worker_git() {
+  git -C "${WORKER_PROJECT_PATH:-$PROJECT_PATH}" "$@"
+}
+
 git_status_short_for_task() {
-  git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
+  worker_git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
     local path="${status_line#???}"
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
@@ -202,6 +286,10 @@ fi
 
 RUN_DIR=".hoca-runtime/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
+printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
+
+echo "Recording definition-of-ready artifact..."
+run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$PROJECT_PATH/$RUN_DIR" >/dev/null
 
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
@@ -221,12 +309,33 @@ if ! (set -o noclobber; cat "$LOCK_METADATA_FILE" > "$LOCK_FILE") 2>/dev/null; t
   exit 0
 fi
 
+restore_dev_branch_after_run() {
+  if [ "$RESTORE_DEV_BRANCH" != "true" ]; then
+    return 0
+  fi
+  if [ "$SHOULD_RESTORE_DEV_BRANCH" != "true" ]; then
+    return 0
+  fi
+  local restore_args=(
+    "$SCRIPT_DIR/restore-dev-branch.sh"
+    "$PROJECT_PATH"
+    --initial-branch "$INITIAL_BRANCH"
+  )
+  if [ -n "$DEV_BRANCH" ]; then
+    restore_args+=(--dev-branch "$DEV_BRANCH")
+  fi
+  "${restore_args[@]}" || true
+}
+
+# shellcheck disable=SC2329
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
     record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
+  remove_disposable_worktree 2>/dev/null || true
+  restore_dev_branch_after_run
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
   fi
@@ -235,6 +344,25 @@ trap cleanup EXIT
 trap 'cleanup; exit 129' HUP
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
+
+EARLY_INIT_STATUS_ARGS=(
+  init-status "$RUN_DIR"
+  --run-id "$RUN_ID"
+  --task "$TASK"
+  --max-total-rounds "$MAX_TOTAL_ROUNDS"
+  --auto-merge "$AUTO_MERGE"
+  --notify-telegram "$NOTIFY_TELEGRAM"
+  --requested-model "$REQUESTED_MODEL"
+  --repo-root "$REPO_ROOT"
+  --starting-branch "$INITIAL_BRANCH"
+  --task-base-branch "$TASK_BASE_REF"
+  --dev-branch "$DEV_BRANCH"
+  --started-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+)
+if [ -n "$ISSUE_ID" ]; then
+  EARLY_INIT_STATUS_ARGS+=(--issue-id "$ISSUE_ID")
+fi
+record_run_artifact "${EARLY_INIT_STATUS_ARGS[@]}" >/dev/null 2>&1 || true
 
 update_status() {
   local new_status="$1"
@@ -281,6 +409,7 @@ block_run() {
   exit 1
 }
 
+# shellcheck disable=SC2329
 record_failed_command() {
   local exit_code="$?"
   local command="$BASH_COMMAND"
@@ -307,7 +436,7 @@ echo "HOCA run started: $RUN_ID"
 } > "$RUN_DIR/workspace-validation.txt"
 
 echo "Running HOCA doctor preflight..."
-if ! "$SCRIPT_DIR/hoca-doctor.sh" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
+if ! "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
   cat "$RUN_DIR/doctor-output.log"
   cat "$RUN_DIR/doctor-stderr.log" >&2
   fail_run "doctor_failed" "HOCA doctor failed. Stop and follow the install guidance above before running this task again."
@@ -332,28 +461,57 @@ else
   BRANCH="feat/${SLUG:-hoca-task}"
 fi
 
-echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
-git checkout -b "$BRANCH" "$TASK_BASE_REF"
+USE_WORKTREE_SANDBOX="false"
+WORKTREE_PATH=""
+WORKER_PROJECT_PATH="$PROJECT_PATH"
 
-INIT_ARGS=(
-  init "$RUN_DIR"
-  --run-id "$RUN_ID"
-  --repo-root "$REPO_ROOT"
-  --base-branch "$TASK_BASE_REF"
-  --task-branch "$BRANCH"
-  --task "$TASK"
-  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
-)
-if [ -n "$ISSUE_ID" ]; then
-  INIT_ARGS+=(--issue-id "$ISSUE_ID")
+worktree_enabled() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+    'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_worktree_sandbox else 1)' \
+    >/dev/null 2>&1
+}
+
+create_disposable_worktree() {
+  WORKTREE_PATH="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+from hoca.worktree import create_worktree
+from pathlib import Path
+import sys
+wt = create_worktree(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
+print(wt)
+" "$PROJECT_PATH" "$RUN_ID" "$BRANCH")"
+  echo "Created disposable worktree: $WORKTREE_PATH"
+  WORKER_PROJECT_PATH="$WORKTREE_PATH"
+}
+
+remove_disposable_worktree() {
+  if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+    echo "Removing disposable worktree..."
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+from hoca.worktree import remove_worktree
+from pathlib import Path
+import sys
+remove_worktree(Path(sys.argv[1]), sys.argv[2])
+" "$PROJECT_PATH" "$RUN_ID" || true
+  fi
+}
+
+if worktree_enabled; then
+  USE_WORKTREE_SANDBOX="true"
+  echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
+  git branch "$BRANCH" "$TASK_BASE_REF"
+  create_disposable_worktree
+else
+  echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
+  git checkout -b "$BRANCH" "$TASK_BASE_REF"
 fi
-record_run_artifact "${INIT_ARGS[@]}"
+
+generate_run_task_spec
 
 INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
   --run-id "$RUN_ID"
   --task "$TASK"
-  --max-total-rounds "$((MAX_REPAIR_ATTEMPTS + 1))"
+  --max-total-rounds "$MAX_TOTAL_ROUNDS"
   --auto-merge "$AUTO_MERGE"
   --notify-telegram "$NOTIFY_TELEGRAM"
   --requested-model "$REQUESTED_MODEL"
@@ -381,62 +539,130 @@ record_validation_artifact() {
   sync_run_status
 }
 
-record_manager_decision_artifact() {
-  local round_number="$1"
-  record_run_artifact record-decision "$RUN_DIR" --round "$round_number" >/dev/null 2>&1 || true
+resolve_round_loop() {
+  local phase="$1"
+  local round_number="$2"
+  local failure_type="${3:-}"
+  local cmd=(
+    python3
+    -m hoca.round_loop
+    "$phase"
+    "$RUN_DIR"
+    --round "$round_number"
+    --max-rounds "$MAX_TOTAL_ROUNDS"
+  )
+  if [ "$phase" = "after-validation" ] && [ -n "$failure_type" ]; then
+    cmd+=(--failure-type "$failure_type")
+  fi
+  if [ "$phase" = "after-arbitration" ]; then
+    cmd+=(--mark-draft)
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "${cmd[@]}"
+}
+
+round_loop_action() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["action"])'
+}
+
+round_loop_field() {
+  local field="$1"
+  python3 -c "import json,sys; value=json.load(sys.stdin).get('$field'); print('' if value is None else value)"
+}
+
+apply_round_loop_repair() {
+  local decision_json="$1"
+  local next_round
+  local repair_brief_path
+  local status_detail
+  next_round="$(printf '%s' "$decision_json" | round_loop_field next_round)"
+  repair_brief_path="$(printf '%s' "$decision_json" | round_loop_field repair_brief_path)"
+  status_detail="$(printf '%s' "$decision_json" | round_loop_field status_detail)"
+  current_round="$next_round"
+  update_status "repairing" "$status_detail"
+  run_openhands_phase "repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$repair_brief_path"
+  check_openhands_changed_files
+  sync_run_status
+}
+
+hermes_profiles_enabled() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+    'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_hermes_profiles else 1)' \
+    >/dev/null 2>&1
 }
 
 run_openhands_phase() {
-  local phase_task="$1"
-  local phase_label="${2:-implementation}"
+  local phase_label="${1:-implementation}"
+  local round_number="${2:-1}"
+  local repair_brief_path="${3:-}"
+  local openhands_exit=0
+  local used_worker_hermes="false"
 
   echo "Running OpenHands ($phase_label)..."
+  if [ -z "$REQUESTED_MODEL" ]; then
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
+  fi
   set +e
-  "$SCRIPT_DIR/run-openhands-task.sh" "$PROJECT_PATH" "$phase_task" "$RUN_DIR"
-  local openhands_exit=$?
+  if hermes_profiles_enabled; then
+    used_worker_hermes="true"
+    echo "Routing worker attempt through run-worker-hermes.sh..."
+    local worker_cmd=(
+      "$SCRIPT_DIR/run-worker-hermes.sh"
+      "$WORKER_PROJECT_PATH"
+      "$(task_spec_path_for_run)"
+      "$RUN_DIR"
+      "$round_number"
+    )
+    if [ -n "$repair_brief_path" ]; then
+      worker_cmd+=(--repair-brief "$repair_brief_path")
+    fi
+    "${worker_cmd[@]}"
+    openhands_exit=$?
+  else
+    local phase_task
+    if [ -n "$repair_brief_path" ]; then
+      phase_task="$(cat "$repair_brief_path")"
+    else
+      phase_task="$(worker_task_prompt)"
+    fi
+    "$SCRIPT_DIR/run-openhands-task.sh" "$WORKER_PROJECT_PATH" "$phase_task" "$RUN_DIR"
+    openhands_exit=$?
+  fi
   set -e
   if [ "$openhands_exit" -ne 0 ]; then
+    local failure_status="failed"
     if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
       STOP_REASON="$(jq -r '.stop_reason // "unknown"' "$RUN_DIR/monitor-result.json")"
       if [ "$STOP_REASON" != "completed" ]; then
-        block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
+        failure_status="blocked"
       fi
     fi
+    if [ "$used_worker_hermes" != "true" ]; then
+      record_worker_attempt "$round_number" "$failure_status"
+    fi
+    if [ "$failure_status" = "blocked" ]; then
+      block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
+    fi
     fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
+  fi
+  if [ "$used_worker_hermes" = "true" ]; then
+    sync_run_status
+  else
+    record_worker_attempt "$round_number" "completed"
   fi
 }
 
 WORKER_ROUND=1
-run_openhands_phase "$TASK" "implementation"
-record_worker_attempt "$WORKER_ROUND" "completed"
+run_openhands_phase "implementation" "$WORKER_ROUND"
 
-path_is_secret_like() {
-  local path="$1"
-  local lower
-  lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
-  local base
-  base="$(basename "$lower")"
-  case "$base" in
-    *.example|*.sample|*.template)
-      return 1
-      ;;
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa.*|id_ed25519|id_ed25519.*|*.kubeconfig|*.keystore|*.jks|*credentials*|*.secret|*.secrets|.netrc|.npmrc|.pypirc|.htpasswd)
-      return 0
-      ;;
-  esac
-  case "$lower" in
-    .github/secrets|.github/secrets/*)
-      return 0
-      ;;
-  esac
-  return 1
-}
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
 
 check_openhands_changed_files() {
   changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
   while IFS= read -r changed_path || [ -n "$changed_path" ]; do
     [ -z "$changed_path" ] && continue
-    if path_is_secret_like "$changed_path"; then
+    if hoca_path_is_secret_like "$changed_path"; then
       printf '%s\n' "$changed_path" > "$RUN_DIR/secret-detected.txt"
       fail_run "secret_detected" "Secret-like changed file detected after OpenHands: $changed_path. Stopping immediately."
     fi
@@ -445,58 +671,7 @@ check_openhands_changed_files() {
 
 check_openhands_changed_files
 
-build_repair_task() {
-  local reason="$1"
-  local attempt="$2"
-  local repair_file="$RUN_DIR/repair-attempt-${attempt}.md"
-
-  {
-    echo "Continue this HOCA task by fixing the current repository changes; do not start over."
-    echo ""
-    echo "Original task:"
-    echo "$TASK"
-    echo ""
-    echo "Repair reason: $reason"
-    echo "Repair attempt: $attempt of $MAX_REPAIR_ATTEMPTS"
-    echo ""
-    echo "Current git status:"
-    git status --short
-    echo ""
-    echo "Current diff:"
-    git diff
-    echo ""
-    if [ -f "$RUN_DIR/tests-summary.md" ]; then
-      echo "Test summary:"
-      cat "$RUN_DIR/tests-summary.md"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/failed-command.txt" ]; then
-      echo "Failed command:"
-      cat "$RUN_DIR/failed-command.txt"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/tests-output.log" ]; then
-      echo "Recent test output:"
-      tail -n 120 "$RUN_DIR/tests-output.log"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/tests-stderr.log" ]; then
-      echo "Recent test stderr:"
-      tail -n 120 "$RUN_DIR/tests-stderr.log"
-      echo ""
-    fi
-    if [ -f "$RUN_DIR/openhands-review.txt" ]; then
-      echo "Review feedback:"
-      cat "$RUN_DIR/openhands-review.txt"
-      echo ""
-    fi
-    echo "Fix only issues needed to make validation and review pass. If the failure is caused by missing local services, missing dependencies, credentials, or another human-only environment problem, explain that clearly and make no unrelated changes."
-  } > "$repair_file"
-
-  cat "$repair_file"
-}
-
-repair_attempt=0
+current_round=1
 
 while true; do
   if [ -z "$(git_status_short_for_task)" ]; then
@@ -505,71 +680,107 @@ while true; do
     exit 0
   fi
 
-  VALIDATION_ROUND="$((repair_attempt + 1))"
-  echo "Running tests..."
+  echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
   set +e
-  "$SCRIPT_DIR/run-tests.sh" "$PROJECT_PATH" "$RUN_DIR"
+  "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
-  record_validation_artifact "$VALIDATION_ROUND"
+  record_validation_artifact "$current_round"
+  sync_run_status
   if [ "$TESTS_EXIT" -ne 0 ]; then
     FAILURE_TYPE=""
     if [ -f "$RUN_DIR/tests-summary.md" ]; then
       FAILURE_TYPE="$(awk -F': ' '/Failure type/ { gsub(/\r/, "", $2); print $2; exit }' "$RUN_DIR/tests-summary.md" | tr -d '*')"
     fi
-    if [ "$FAILURE_TYPE" = "environment" ] || [ "$FAILURE_TYPE" = "pre-existing" ]; then
-      block_run "tests_${FAILURE_TYPE}" "Tests failed due to $FAILURE_TYPE conditions. Human intervention is needed; see $RUN_DIR/tests-summary.md."
+    VALIDATION_DECISION_JSON=""
+    set +e
+    VALIDATION_DECISION_JSON="$(resolve_round_loop after-validation "$current_round" "$FAILURE_TYPE")"
+    VALIDATION_LOOP_EXIT=$?
+    set -e
+    VALIDATION_ACTION="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_action)"
+    if [ "$VALIDATION_ACTION" = "block" ]; then
+      BLOCK_REASON="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_field block_reason)"
+      BLOCK_MESSAGE="$(printf '%s' "$VALIDATION_DECISION_JSON" | round_loop_field block_message)"
+      if [ "$BLOCK_REASON" = "tests_failed" ]; then
+        fail_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/tests-summary.md."
+      fi
+      block_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/tests-summary.md."
     fi
-    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
-      fail_run "tests_failed" "Tests still failed after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/tests-summary.md."
+    if [ "$VALIDATION_ACTION" = "repair" ]; then
+      apply_round_loop_repair "$VALIDATION_DECISION_JSON"
+      continue
     fi
-    repair_attempt=$((repair_attempt + 1))
-    update_status "repairing" "tests_failed_attempt_${repair_attempt}"
-    REPAIR_TASK="$(build_repair_task "tests_failed" "$repair_attempt")"
-    WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "$REPAIR_TASK" "test repair attempt $repair_attempt"
-    record_worker_attempt "$WORKER_ROUND" "completed"
-    check_openhands_changed_files
-    continue
+    if [ "$VALIDATION_LOOP_EXIT" -ne 0 ]; then
+      fail_run "tests_failed" "Tests failed and round loop resolution failed; see $RUN_DIR/tests-summary.md."
+    fi
   fi
 
-  echo "Running OpenHands review..."
+  echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  if [ -z "$REQUESTED_MODEL" ]; then
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+  fi
   set +e
-  HOCA_REVIEW_ROUND="$VALIDATION_ROUND" "$SCRIPT_DIR/review-with-openhands.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR"
+  "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
-  record_manager_decision_artifact "$VALIDATION_ROUND"
-  if [ "$REVIEW_EXIT" -eq 2 ]; then
-    if [ "$repair_attempt" -ge "$MAX_REPAIR_ATTEMPTS" ]; then
-      block_run "review_not_lgtm" "Review still did not return LGTM after $repair_attempt repair attempt(s). Human review is needed; see $RUN_DIR/openhands-review.txt."
-    fi
-    repair_attempt=$((repair_attempt + 1))
-    update_status "repairing" "review_not_lgtm_attempt_${repair_attempt}"
-    REPAIR_TASK="$(build_repair_task "review_not_lgtm" "$repair_attempt")"
-    WORKER_ROUND="$((repair_attempt + 1))"
-    run_openhands_phase "$REPAIR_TASK" "review repair attempt $repair_attempt"
-    record_worker_attempt "$WORKER_ROUND" "completed"
-    check_openhands_changed_files
-    continue
-  elif [ "$REVIEW_EXIT" -ne 0 ]; then
+  sync_run_status
+  ARBITRATION_DECISION_JSON=""
+  set +e
+  ARBITRATION_DECISION_JSON="$(resolve_round_loop after-arbitration "$current_round")"
+  ARBITRATION_LOOP_EXIT=$?
+  set -e
+  if [ -z "$ARBITRATION_DECISION_JSON" ]; then
     if [ "$REVIEW_EXIT" -eq 4 ]; then
       block_run "review_blocked" "OpenHands review reported a blocked verdict. Human intervention is needed; see $RUN_DIR/openhands-review.txt."
     fi
+    if [ "$REVIEW_EXIT" -ne 0 ]; then
+      block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
+    fi
+    block_run "review_failed" "Manager arbitration could not resolve the next loop action."
+  fi
+  ARBITRATION_ACTION="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_action)"
+  if [ "$ARBITRATION_ACTION" = "block" ]; then
+    BLOCK_REASON="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field block_reason)"
+    BLOCK_MESSAGE="$(printf '%s' "$ARBITRATION_DECISION_JSON" | round_loop_field block_message)"
+    block_run "$BLOCK_REASON" "$BLOCK_MESSAGE; see $RUN_DIR/openhands-review.txt."
+  fi
+  if [ "$ARBITRATION_ACTION" = "proceed" ]; then
+    break
+  fi
+  if [ "$ARBITRATION_ACTION" = "repair" ]; then
+    apply_round_loop_repair "$ARBITRATION_DECISION_JSON"
+    continue
+  fi
+  if [ "$ARBITRATION_LOOP_EXIT" -ne 0 ]; then
     block_run "review_failed" "OpenHands review failed with exit code $REVIEW_EXIT. Human intervention may be needed; see $RUN_DIR/openhands-review.txt."
   fi
-
   break
 done
 
+if [ -z "$REQUESTED_MODEL" ]; then
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/clear-role-model-env.sh"
+fi
+
 echo "Inspecting changed files..."
 git_status_short_for_task | tee "$RUN_DIR/git-status.txt"
-git diff > "$RUN_DIR/git-diff.patch"
+worker_git diff > "$RUN_DIR/git-diff.patch"
 changed_files_for_task > "$RUN_DIR/changed-files.txt"
 
 if [ -z "$(git_status_short_for_task)" ]; then
   echo "No changes produced."
   update_status "no_changes"
   exit 0
+fi
+
+if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+  echo "Applying worktree changes to main checkout for staging..."
+  git -C "$PROJECT_PATH" checkout "$BRANCH"
+  git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
+  git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
+  WORKER_PROJECT_PATH="$PROJECT_PATH"
+  remove_disposable_worktree
 fi
 
 INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
@@ -590,7 +801,7 @@ fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."
-  if HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+  if HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
     update_status "staged" "safe_staging_completed"
   else
     STAGING_EXIT=$?
@@ -613,6 +824,7 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   if [ -n "$ISSUE_ID" ]; then
     COMMIT_ARGS=(--issue-id "$ISSUE_ID")
   fi
+  COMMIT_ARGS+=(--run-id "$RUN_ID")
   "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${COMMIT_ARGS[@]}"
   update_status "committed" "commit_created"
 
@@ -621,10 +833,12 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   if [ -n "$ISSUE_ID" ]; then
     PR_ARGS=(--issue-id "$ISSUE_ID")
   fi
-  HOCA_REVIEW_ROUND="$((repair_attempt + 1))" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  SHOULD_RESTORE_DEV_BRANCH="true"
+  restore_dev_branch_after_run
   if [ -d ".hoca-runtime" ] && [ "${HOCA_KEEP_RUNTIME:-false}" != "true" ]; then
     echo "Cleaning up .hoca-runtime..."
     rm -rf ".hoca-runtime"
@@ -633,3 +847,4 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
 else
   echo "HOCA run completed up to review. Human staging required."
 fi
+exit 0

@@ -124,18 +124,24 @@ class HocaConfig:
     use_structured_reports: bool = True
     use_kanban: bool = False
     use_sandbox: bool = True
+    use_worktree_sandbox: bool = True
+    network_mode: str = "offline"
     max_total_rounds: int = 3
 
     auto_merge: bool = False
     require_tests: bool = True
+    require_review: bool = True
     stop_on_dirty_tree: bool = True
     dev_branch: str = "main"
     sync_dev_branch: bool = True
+    restore_dev_branch: bool = True
     auto_stage_reviewed_changes: bool = True
 
     workspace_root: Path | None = None
 
+    ollama_host: str = "http://127.0.0.1:11434"
     ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_api_base: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen-14b-pro"
     llm_model: str = "ollama/qwen-14b-pro"
     llm_base_url: str = "http://127.0.0.1:11434"
@@ -164,17 +170,9 @@ class HocaConfig:
 
 
 def _load_model_pool(config_value) -> ModelPoolConfig:
-    from hoca.model_pool import validate_model_pool_config
+    from hoca.model_pool import load_model_slots_from_env, validate_model_pool_config
 
-    slots = tuple(
-        ModelSlot(
-            name=config_value(f"HOCA_MODEL_{index}_NAME"),
-            model=config_value(f"HOCA_MODEL_{index}_MODEL"),
-            base_url=config_value(f"HOCA_MODEL_{index}_BASE_URL"),
-            api_key=config_value(f"HOCA_MODEL_{index}_API_KEY"),
-        )
-        for index in range(1, 6)
-    )
+    slots = load_model_slots_from_env(config_value)
     pool = ModelPoolConfig(
         slots=slots,
         manager_model=config_value("HOCA_MANAGER_MODEL"),
@@ -184,6 +182,16 @@ def _load_model_pool(config_value) -> ModelPoolConfig:
     )
     validate_model_pool_config(pool)
     return pool
+
+
+def _resolve_max_total_rounds(config_value) -> int:
+    explicit = config_value("HOCA_MAX_TOTAL_ROUNDS")
+    if explicit:
+        return int(explicit)
+    legacy = config_value("HOCA_MAX_REPAIR_ATTEMPTS")
+    if legacy:
+        return int(legacy) + 1
+    return 3
 
 
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
@@ -208,6 +216,17 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     else:
         default_base_url = ""
 
+    ollama_default = "http://127.0.0.1:11434"
+    ollama_host = config_value("OLLAMA_HOST") or ollama_default
+    ollama_base_url = config_value("OLLAMA_BASE_URL") or ollama_host
+    ollama_api_base = config_value("OLLAMA_API_BASE") or ollama_base_url
+
+    require_review_explicit = config_value("HOCA_REQUIRE_REVIEW") or None
+    require_aider_lgtm = config_value("HOCA_REQUIRE_AIDER_LGTM") or None
+    require_review = parse_bool(
+        require_review_explicit or require_aider_lgtm, default=True
+    )
+
     return HocaConfig(
         use_hermes_profiles=parse_bool(
             config_value("HOCA_USE_HERMES_PROFILES") or None, default=False
@@ -217,19 +236,29 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ),
         use_kanban=parse_bool(config_value("HOCA_USE_KANBAN") or None, default=False),
         use_sandbox=parse_bool(config_value("HOCA_USE_SANDBOX") or None, default=True),
-        max_total_rounds=int(config_value("HOCA_MAX_TOTAL_ROUNDS", "3")),
+        use_worktree_sandbox=parse_bool(
+            config_value("HOCA_USE_WORKTREE_SANDBOX") or None, default=True
+        ),
+        network_mode=config_value("HOCA_NETWORK_MODE", "offline"),
+        max_total_rounds=_resolve_max_total_rounds(config_value),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
+        require_review=require_review,
         stop_on_dirty_tree=parse_bool(
             config_value("HOCA_STOP_ON_DIRTY_TREE") or None, default=True
         ),
         dev_branch=config_value("HOCA_DEV_BRANCH", "main"),
         sync_dev_branch=parse_bool(config_value("HOCA_SYNC_DEV_BRANCH") or None, default=True),
+        restore_dev_branch=parse_bool(
+            config_value("HOCA_RESTORE_DEV_BRANCH") or None, default=True
+        ),
         auto_stage_reviewed_changes=parse_bool(
             config_value("HOCA_AUTO_STAGE_REVIEWED_CHANGES") or None, default=True
         ),
         workspace_root=workspace_root,
-        ollama_base_url=config_value("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+        ollama_host=ollama_host,
+        ollama_base_url=ollama_base_url,
+        ollama_api_base=ollama_api_base,
         ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
         llm_model=llm_model,
         llm_base_url=config_value("LLM_BASE_URL", default_base_url),

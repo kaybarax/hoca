@@ -33,6 +33,9 @@ VALID_MANAGER_DECISIONS: frozenset[str] = frozenset(
     ("proceed_to_pr", "repair_required", "blocked", "draft_pr_with_blockers")
 )
 NetworkMode = Literal["offline", "package-install", "github-only", "full"]
+VALID_NETWORK_MODES: frozenset[str] = frozenset(
+    ("offline", "package-install", "github-only", "full")
+)
 FinalStatus = Literal["completed", "failed", "blocked", "draft_pr_opened", "pr_opened"]
 
 
@@ -77,6 +80,14 @@ def _single_line_string(value: Any, field: str) -> str:
 
 def _single_line_string_list(data: dict[str, Any], field: str) -> list[str]:
     return [_single_line_string(item, field) for item in _string_list(data, field)]
+
+
+def _coerce_string_list(value: Any, field: str) -> list[str]:
+    if isinstance(value, str):
+        return [_single_line_string(value, field)]
+    if not isinstance(value, list):
+        raise ValueError(f"Contract field must be a string or list: {field}")
+    return [_single_line_string(item, field) for item in value]
 
 
 def _artifact_path_map(data: dict[str, Any], field: str) -> dict[str, str]:
@@ -132,10 +143,15 @@ class HocaSandboxPolicy(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        network_mode = str(_required(data, "network_mode"))
+        if network_mode not in VALID_NETWORK_MODES:
+            raise ValueError(
+                f"network_mode must be one of {sorted(VALID_NETWORK_MODES)}, got: {network_mode!r}"
+            )
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             enabled=bool(_required(data, "enabled")),
-            network_mode=_required(data, "network_mode"),
+            network_mode=network_mode,  # type: ignore[arg-type]
         )
 
     @classmethod
@@ -487,7 +503,10 @@ class HocaReviewReport(JsonContract):
             findings=[
                 HocaReviewFinding.from_dict(item) for item in _object_list(data, "findings")
             ],
-            pr_notes={str(key): [str(item) for item in value] for key, value in pr_notes.items()},
+            pr_notes={
+                str(key): _coerce_string_list(value, f"pr_notes.{key}")
+                for key, value in pr_notes.items()
+            },
         )
 
     @classmethod
@@ -623,6 +642,7 @@ class HocaManagerDecision(JsonContract):
 class HocaRunFinalState(JsonContract):
     run_id: str
     status: FinalStatus
+    reason: str | None
     summary: list[str]
     changed_files: list[str]
     tests_run: list[str]
@@ -630,12 +650,15 @@ class HocaRunFinalState(JsonContract):
     review_reports: list[str]
     manager_decisions: list[str]
     pr_url: str | None
+    human_attention_required: bool
+    unresolved_findings: list[HocaReviewFinding]
     completed_at: str | None
     blocked_reason: str | None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "run_id",
         "status",
+        "reason",
         "summary",
         "changed_files",
         "tests_run",
@@ -643,6 +666,8 @@ class HocaRunFinalState(JsonContract):
         "review_reports",
         "manager_decisions",
         "pr_url",
+        "human_attention_required",
+        "unresolved_findings",
         "completed_at",
         "blocked_reason",
     )
@@ -650,10 +675,19 @@ class HocaRunFinalState(JsonContract):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         cls._validate_required(data)
+        unresolved_raw = data.get("unresolved_findings")
+        if unresolved_raw is None:
+            unresolved_findings: list[HocaReviewFinding] = []
+        else:
+            unresolved_findings = [
+                HocaReviewFinding.from_dict(item)
+                for item in _object_list(data, "unresolved_findings")
+            ]
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
             status=_required(data, "status"),
+            reason=None if data["reason"] is None else str(data["reason"]),
             summary=_string_list(data, "summary"),
             changed_files=_string_list(data, "changed_files"),
             tests_run=_string_list(data, "tests_run"),
@@ -661,6 +695,8 @@ class HocaRunFinalState(JsonContract):
             review_reports=_string_list(data, "review_reports"),
             manager_decisions=_string_list(data, "manager_decisions"),
             pr_url=None if data["pr_url"] is None else str(data["pr_url"]),
+            human_attention_required=bool(_required(data, "human_attention_required")),
+            unresolved_findings=unresolved_findings,
             completed_at=None if data["completed_at"] is None else str(data["completed_at"]),
             blocked_reason=None
             if data["blocked_reason"] is None

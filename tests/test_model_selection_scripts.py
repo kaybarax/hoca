@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import subprocess
@@ -37,7 +38,10 @@ def make_fake_curl(fake_bin: Path, *, succeeds: bool = True) -> None:
     curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
 
 
-def make_fake_openhands(fake_bin: Path) -> None:
+def make_fake_openhands(fake_bin: Path, *, env_capture: Path | None = None) -> None:
+    capture_line = ""
+    if env_capture is not None:
+        capture_line = f'env | sort > "{env_capture}"\n'
     openhands = fake_bin / "openhands"
     openhands.write_text(
         "#!/usr/bin/env bash\n"
@@ -46,6 +50,7 @@ def make_fake_openhands(fake_bin: Path) -> None:
         '  echo "openhands --headless --task --override-with-envs --json"\n'
         "  exit 0\n"
         "fi\n"
+        f"{capture_line}"
         "echo 'OpenHands fake run complete.'\n",
         encoding="utf-8",
     )
@@ -207,6 +212,59 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
 
 
+def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_USE_SANDBOX": "false",
+            "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "GITHUB_TOKEN=" not in captured
+
+
+def test_openhands_wrapper_strips_github_token_for_reviewer(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_AGENT_ROLE": "reviewer",
+            "HOCA_USE_SANDBOX": "false",
+            "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
+        },
+        args=[str(project), "Review changes", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "GITHUB_TOKEN=" not in captured
+
+
 def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
     make_fake_curl(fake_bin)
@@ -245,6 +303,61 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert (run_dir / "review" / "git-diff.patch").is_file()
     assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    prompt = (run_dir / "review" / "openhands-review-prompt.txt").read_text(encoding="utf-8")
+    assert "HocaReviewReport" in prompt
+    assert "Do not implement fixes" in prompt
+    assert "Severity rubric:" in prompt
+    assert "PR tech debt" in prompt
+    assert "end your final response with exactly: LGTM" in prompt
+
+
+def test_review_with_openhands_materializes_structured_json_from_output(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "cat <<'EOF'\n"
+        "Review complete.\n"
+        "```json\n"
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "LGTM",\n'
+        '  "findings": [],\n'
+        '  "pr_notes": {"summary": ["Looks good."], "known_followups": ["Rename helper later"]}\n'
+        "}\n"
+        "```\n"
+        "LGTM\n"
+        "EOF\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+
+    result = run_script(
+        "review-with-openhands.sh",
+        fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false"},
+        args=[str(project), "Review project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "source: structured" in result.stdout
+    report = json.loads((run_dir / "reviews" / "review-report-1.json").read_text(encoding="utf-8"))
+    assert report["verdict"] == "LGTM"
+    assert report["pr_notes"]["known_followups"] == ["Rename helper later"]
+    assert "LGTM" in (run_dir / "openhands-review.txt").read_text(encoding="utf-8")
 
 
 def test_review_with_openhands_prefers_structured_report(tmp_path: Path) -> None:

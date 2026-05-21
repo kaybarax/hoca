@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from hoca.doctor import DoctorReport, parse_doctor_output, run_doctor
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_parse_doctor_output_extracts_tagged_checks() -> None:
@@ -80,6 +83,46 @@ def test_parse_doctor_output_includes_browsing_when_available() -> None:
     caps_check = [c for c in checks if "capabilities:" in c.message]
     assert len(caps_check) == 1
     assert "enable-browsing" in caps_check[0].message
+
+
+def test_doctor_output_includes_model_pool_section_when_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOCA_MODEL_1_NAME", "local-coder")
+    monkeypatch.setenv("HOCA_MODEL_1_MODEL", "ollama/qwen-14b-pro")
+    monkeypatch.setenv("HOCA_MODEL_1_API_KEY", "secret-key")
+    monkeypatch.setenv("HOCA_FALLBACK_MODEL", "local-coder")
+
+    from hoca.role_model_env import model_pool_doctor_lines
+    from hoca.config import load_config
+
+    lines = model_pool_doctor_lines(load_config())
+
+    assert any("Model pool active" in message for _, message in lines)
+    assert all("secret-key" not in message for _, message in lines)
+
+
+def test_hoca_doctor_script_includes_sandbox_section() -> None:
+    script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
+    content = script.read_text(encoding="utf-8")
+    assert 'section "Sandbox"' in content
+    assert "hoca.sandbox_doctor doctor-checks" in content
+    assert "podman" in content
+    assert "docker" in content
+
+
+def test_hoca_doctor_script_accepts_docker_or_podman() -> None:
+    script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
+    content = script.read_text(encoding="utf-8")
+    assert "Neither docker nor podman found" in content
+
+
+def test_create_pr_script_uses_manager_gh_auth_not_sandbox_token() -> None:
+    script = REPO_ROOT / "scripts" / "create-pr.sh"
+    content = script.read_text(encoding="utf-8")
+    assert "gh auth status" in content
+    assert "gh pr create" in content
+    assert "GITHUB_TOKEN" not in content
 
 
 def test_run_doctor_invokes_shell_source_of_truth(

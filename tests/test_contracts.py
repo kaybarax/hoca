@@ -624,6 +624,25 @@ def test_review_report_low_priority_findings_downgraded_to_pr_notes() -> None:
     assert len(report.pr_notes["known_followups"]) == 1
 
 
+def test_review_report_coerces_string_pr_notes_to_single_item_lists() -> None:
+    report = HocaReviewReport.from_dict(
+        {
+            "schema_version": 1,
+            "run_id": "run-1",
+            "round": 1,
+            "role": "reviewer",
+            "verdict": "LGTM",
+            "findings": [],
+            "pr_notes": {
+                "summary": "Looks good.",
+                "known_followups": [],
+            },
+        }
+    )
+
+    assert report.pr_notes["summary"] == ["Looks good."]
+
+
 def test_review_report_lgtm_with_non_blocking_followups() -> None:
     report = HocaReviewReport.from_dict(
         _review_report(
@@ -828,6 +847,7 @@ def test_run_final_state_round_trips_json() -> None:
     state = HocaRunFinalState(
         run_id="run-123",
         status="pr_opened",
+        reason="pull_request_created",
         summary=["Run complete"],
         changed_files=["hoca/contracts.py"],
         tests_run=["pytest"],
@@ -835,6 +855,17 @@ def test_run_final_state_round_trips_json() -> None:
         review_reports=["review-1.json"],
         manager_decisions=["decision-1.json"],
         pr_url="https://example.test/pr/1",
+        human_attention_required=True,
+        unresolved_findings=[
+            HocaReviewFinding(
+                id="F1",
+                severity="medium",
+                category="test",
+                file="tests/test_feature.py",
+                summary="Missing edge-case coverage",
+                required_fix="Add invalid-input test",
+            )
+        ],
         completed_at="2026-05-19T18:00:00Z",
         blocked_reason=None,
     )

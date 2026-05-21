@@ -9,11 +9,18 @@ COMMIT_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "commit-after-
 
 
 def run_commit(
-    repo: Path, task: str, run_dir: Path, *, issue_id: str | None = None
+    repo: Path,
+    task: str,
+    run_dir: Path,
+    *,
+    issue_id: str | None = None,
+    run_id: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     cmd = [str(COMMIT_SCRIPT), str(repo), task, str(run_dir)]
     if issue_id:
         cmd.extend(["--issue-id", issue_id])
+    if run_id:
+        cmd.extend(["--run-id", run_id])
     return subprocess.run(
         cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
@@ -121,3 +128,88 @@ def test_commit_includes_issue_id_in_subject(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     msg = (run_dir / "commit-message.txt").read_text(encoding="utf-8").strip()
     assert "(#42)" in msg
+
+
+def test_commit_includes_hoca_run_trailer_from_argument(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    result = run_commit(tmp_path, "Update README", run_dir, run_id="run_123")
+
+    assert result.returncode == 0, result.stderr
+    msg = (run_dir / "commit-message.txt").read_text(encoding="utf-8")
+    assert "\nHOCA-Run: run_123\n" in msg
+    assert "Looks good" not in msg
+
+
+def test_commit_includes_hoca_run_trailer_from_task_spec(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "task-spec.json").write_text(
+        '{"run_id": "hoca-20260521-001", "goal": "Fix checkout failure"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    result = run_commit(tmp_path, "Verbose task text that should not win", run_dir)
+
+    assert result.returncode == 0, result.stderr
+    msg = (run_dir / "commit-message.txt").read_text(encoding="utf-8")
+    assert msg.startswith("fix: Fix checkout failure")
+    assert "\nHOCA-Run: hoca-20260521-001\n" in msg
+
+
+def test_commit_uses_first_summary_line_not_run_logs(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    task = "Update README\n\npytest output: failed"
+    assert run_safe_stage(tmp_path, task, run_dir).returncode == 0
+
+    result = run_commit(tmp_path, task, run_dir)
+
+    assert result.returncode == 0, result.stderr
+    msg = (run_dir / "commit-message.txt").read_text(encoding="utf-8")
+    assert msg.startswith("docs: Update README")
+    assert "pytest output" not in msg
+
+
+def test_commit_refuses_unsafe_issue_id(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    result = run_commit(tmp_path, "Update README", run_dir, issue_id="42 password=secret")
+
+    assert result.returncode != 0
+    assert "Issue id must be numeric" in result.stderr
+
+
+def test_commit_refuses_secret_like_task_spec_goal(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "task-spec.json").write_text(
+        '{"run_id": "run-1", "goal": "Rotate password=secret"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    assert run_safe_stage(tmp_path, "Update README", run_dir).returncode == 0
+
+    result = run_commit(tmp_path, "Update README", run_dir)
+
+    assert result.returncode != 0
+    assert "Task summary looks like it may contain secrets" in result.stderr

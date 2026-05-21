@@ -138,7 +138,9 @@ scripts/commit-after-staging.sh "$project_path" "$task" "$run_dir"
 ```
 
 Pass `--issue-id "$issue_id"` when present. The script verifies the staged index
-matches `intended-files.normalized.txt`. Record the commit hash in run artifacts.
+matches `intended-files.normalized.txt`, keeps the commit message to a concise
+task summary, refuses unsafe identifiers, and adds a `HOCA-Run: <run_id>` trailer
+when the run id is available. Record the commit hash in run artifacts.
 
 ### 5. Create pull request
 

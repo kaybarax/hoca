@@ -95,6 +95,7 @@ def test_manager_skill_uses_wrapper_scripts_not_raw_openhands() -> None:
     content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
     assert "scripts/run-openhands-task.sh" in content
     assert "scripts/review-with-openhands.sh" in content
+    assert "scripts/check-definition-of-ready.sh" in content
     assert "scripts/hoca-doctor.sh" in content
     assert "scripts/run-tests.sh" in content
     lowered = content.lower()
@@ -109,6 +110,51 @@ def test_manager_skill_forbids_bypassing_safety_gates() -> None:
     assert "require_tests=true" in content
     assert "require_review_lgtm=true" in content
     assert "max_total_rounds" in content
+
+
+def test_manager_skill_documents_optional_kanban_orchestration() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    assert "## Kanban orchestration (optional)" in content
+    assert "### Kanban task contract" in content
+    assert "HOCA_USE_KANBAN" in content
+    assert "board: hoca:<repo-slug>" in content
+    assert "hoca-manager" in content
+    assert "hoca-worker" in content
+    assert "hoca-reviewer" in content
+    assert "implement r<N>" in content
+    assert "review r<N>" in content
+    assert "repair r<N>" in content
+    for status in ("triage", "todo", "ready", "running", "blocked", "done"):
+        assert status in content
+    for prefix in ("[spec]", "[artifact]", "[validation]", "[decision]", "[round]"):
+        assert prefix in content
+    assert "current_round" in content
+    assert "max_total_rounds" in content
+    assert "kanban_complete" in content
+    assert "kanban_create" in content
+    assert "kanban_link" in content
+    lowered = content.lower()
+    assert "do not require kanban" in lowered or "without creating or updating kanban tasks" in lowered
+
+
+def test_manager_skill_defines_kanban_task_contract() -> None:
+    content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
+    required = (
+        "The **parent task body** must include:",
+        "The **worker child task body** must include:",
+        "The **reviewer child task body** must include:",
+        "The **repair child task body** is a worker child with a narrower contract:",
+        "Run artifact links",
+        "attempts/worker-attempt-<round>.json",
+        "reviews/review-report-<round>.json",
+        "validation/validation-report-<round>.json",
+        "decisions/manager-decision-<round>.json",
+        "final-state.json",
+        "Use structured run artifacts and Kanban comments as the shared context",
+        "Do not require or assume direct shared memory",
+    )
+    for expected in required:
+        assert expected in content
 
 
 def test_manager_skill_distinguishes_trivial_edits_from_worker_implementation() -> None:
@@ -338,9 +384,133 @@ def test_pr_publisher_defines_cleanup_and_branch_restoration() -> None:
     assert "HOCA_KEEP_RUNTIME" in content
 
 
-def test_sandbox_policy_documents_isolation() -> None:
+def test_sandbox_policy_documents_defaults() -> None:
     content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
-    assert "HOCA_USE_SANDBOX" in content or "sandbox" in content.lower()
+    assert "## Sandbox defaults" in content
+    assert "HOCA_USE_SANDBOX" in content
+    assert "sandbox-policy.json" in content
+    assert "templates/HocaSandboxPolicy.yaml" in content
     assert "run-openhands-sandboxed.sh" in content
+
+
+def test_sandbox_policy_documents_network_modes() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Network modes" in content
+    assert "HOCA_NETWORK_MODE" in content
+    assert "## Docker implementation" in content
+    for mode in ("offline", "package-install", "github-only", "full"):
+        assert mode in content
+
+
+def test_sandbox_policy_documents_forbidden_mounts() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Forbidden mounts and access" in content
+    lowered = content.lower()
+    assert "docker socket" in lowered
+    assert "ssh" in lowered or "gpg" in lowered
+    assert "forbidden" in lowered
+
+
+def test_sandbox_policy_documents_credential_isolation() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Credential isolation" in content
     assert "GITHUB_TOKEN" in content
-    assert "forbidden" in content.lower() or "Forbidden" in content
+    lowered = content.lower()
+    assert "never forward" in lowered or "must not receive" in lowered
+    assert "LLM_API_KEY" in content
+
+
+def test_sandbox_policy_documents_host_execution() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Host execution" in content
+    assert "HOCA_USE_SANDBOX=false" in content
+    assert "run-openhands-task.sh" in content
+    assert "host-execution-warning.txt" in content
+
+
+def test_sandbox_policy_documents_nested_sandboxes() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Nested sandboxes and Hermes-in-Docker" in content
+    assert "one explicit HOCA-controlled" in content
+    assert "task worktree" in content
+
+
+def test_sandbox_policy_documents_unsafe_activity_stop() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Stop on unsafe activity" in content
+    assert "monitor-stop.json" in content
+    lowered = content.lower()
+    assert "blocked" in lowered
+    assert "do not stage" in lowered or "do not stage, commit" in lowered
+
+
+def test_sandbox_policy_links_role_skills() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Related skills" in content
+    for skill in (
+        "hoca-manager.md",
+        "hoca-worker-openhands.md",
+        "hoca-reviewer-qa.md",
+        "hoca-pr-publisher.md",
+    ):
+        assert skill in content
+
+
+def test_sandbox_policy_aligns_with_scripts() -> None:
+    content = (SKILLS_DIR / "hoca-sandbox-policy.md").read_text(encoding="utf-8")
+    assert "## Alignment with scripts" in content
+    assert "sandbox-manager.sh" in content
+    assert "HocaSandboxPolicy" in content
+
+
+def test_sandbox_scripts_do_not_forward_github_token() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "GITHUB_TOKEN" not in content, f"{script_name} must not forward GITHUB_TOKEN"
+
+
+def test_sandbox_scripts_drop_capabilities_without_net_raw() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "--cap-drop=ALL" in content, f"{script_name} must drop all capabilities"
+        assert "NET_RAW" not in content, f"{script_name} must not grant NET_RAW"
+        assert "--cap-add=" not in content, f"{script_name} must not add Linux capabilities"
+
+
+def test_sandbox_scripts_run_as_non_root() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "--user root" not in content, f"{script_name} must not run as root"
+        assert 'sandbox_resolve_user' in content, f"{script_name} must resolve a non-root user"
+        assert "--user" in content, f"{script_name} must pass --user to docker run"
+
+
+def test_sandbox_scripts_apply_network_modes() -> None:
+    for script_name in ("run-openhands-sandboxed.sh", "sandbox-manager.sh"):
+        script = REPO_ROOT / "scripts" / script_name
+        content = script.read_text(encoding="utf-8")
+        assert "sandbox_resolve_network_mode" in content, script_name
+        assert "sandbox_docker_network_args" in content, script_name
+    sandboxed = (REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh").read_text(encoding="utf-8")
+    assert "sandbox_record_network_policy" in sandboxed
+
+
+def test_sandbox_scripts_avoid_runtime_root_package_install() -> None:
+    sandboxed = (REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh").read_text(encoding="utf-8")
+    assert "apt-get" not in sandboxed
+    assert "pip install" not in sandboxed
+
+
+def test_sandbox_dockerfile_defines_worker_and_openhands() -> None:
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.sandbox").read_text(encoding="utf-8")
+    assert "useradd" in dockerfile and "worker" in dockerfile
+    assert "USER worker" in dockerfile
+    assert "python3-venv" in dockerfile
+    assert "UV_TOOL_DIR" in dockerfile
+    assert "uv tool install openhands --python 3.12 --with openhands-ai" in dockerfile
+    assert "openhands-ai" in dockerfile
+    assert "openhands --help" in dockerfile
+    assert "apt-get" not in dockerfile.split("USER worker", 1)[-1]

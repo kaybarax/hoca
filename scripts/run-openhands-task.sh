@@ -15,6 +15,23 @@ mkdir -p "$RUN_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
+
+case "$AGENT_ROLE" in
+  worker|reviewer)
+    unset GITHUB_TOKEN 2>/dev/null || true
+    ;;
+esac
+
+# Drop pooled credentials so only the active role's LLM_* values are forwarded.
+for _pool_index in 1 2 3 4 5; do
+  unset "HOCA_MODEL_${_pool_index}_API_KEY" 2>/dev/null || true
+done
+
+if [ "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" != "true" ]; then
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/resolve-role-model-env.sh" "$AGENT_ROLE"
+fi
 
 case "${LLM_MODEL:-}" in
   deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
@@ -48,7 +65,16 @@ esac
 TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
 STALL="${HOCA_OPENHANDS_STALL:-300}"
 USE_SANDBOX="${HOCA_USE_SANDBOX:-true}"
-AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
+
+warn_host_execution() {
+  local reason="$1"
+  {
+    echo "[WARN] HOCA host execution (higher risk): $reason"
+    echo "[WARN] OpenHands will run on the host with access to the project worktree and your shell environment."
+    echo "[WARN] Prefer HOCA_USE_SANDBOX=true (default) and a running Docker daemon for worker/reviewer rounds."
+    echo "[WARN] To keep host execution, set HOCA_USE_SANDBOX=false explicitly in .env or the environment."
+  } | tee -a "$RUN_DIR/host-execution-warning.txt" >&2
+}
 
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
@@ -58,6 +84,14 @@ echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
 echo "  SANDBOX=$USE_SANDBOX"
 echo "  ROLE=$AGENT_ROLE"
+if [ "$USE_SANDBOX" = "true" ] && [ -x "$SCRIPT_DIR/run-openhands-sandboxed.sh" ]; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    # shellcheck source=scripts/sandbox-docker-env.sh
+    source "$SCRIPT_DIR/sandbox-docker-env.sh"
+    SANDBOX_NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
+    echo "  NETWORK_MODE=$SANDBOX_NETWORK_MODE"
+  fi
+fi
 
 cat > "$RUN_DIR/agent-role-policy.txt" <<EOF
 role: $AGENT_ROLE
@@ -66,17 +100,26 @@ forbidden_for_worker_and_reviewer:
 - git add
 - git commit
 - git push
+- git merge
 - gh pr create
 - gh pr merge
 EOF
 
 # --- Sandbox mode: run everything inside a Docker container ---
-if [ "$USE_SANDBOX" = "true" ] && command -v docker >/dev/null 2>&1; then
-  SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
-  if [ -x "$SANDBOX_SCRIPT" ]; then
-    exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
+if [ "$USE_SANDBOX" = "true" ]; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    SANDBOX_SCRIPT="$SCRIPT_DIR/run-openhands-sandboxed.sh"
+    if [ -x "$SANDBOX_SCRIPT" ]; then
+      exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
+    fi
+    warn_host_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found; falling back to host execution."
+  elif ! command -v docker >/dev/null 2>&1; then
+    warn_host_execution "HOCA_USE_SANDBOX=true but docker is not installed; falling back to host execution."
+  else
+    warn_host_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running; falling back to host execution."
   fi
-  echo "Warning: HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found. Falling back to host execution."
+else
+  warn_host_execution "HOCA_USE_SANDBOX is not enabled (explicit host-local opt-in)."
 fi
 
 if ! command -v openhands >/dev/null 2>&1; then
@@ -184,6 +227,8 @@ actor_role = sys.argv[6]
 oh_args = sys.argv[7:]
 
 env_override = dict(__import__('os').environ)
+if '${AGENT_ROLE}' in ('worker', 'reviewer'):
+    env_override.pop('GITHUB_TOKEN', None)
 env_override['LLM_MODEL'] = '${MODEL}'
 if '${BASE_URL}':
     env_override['LLM_BASE_URL'] = '${BASE_URL}'

@@ -51,7 +51,12 @@ def _print_failure(result: CommandResult) -> None:
         print(result.stderr.rstrip(), file=sys.stderr)
 
 
-def run_command(command: Command, *, cwd: str | Path | None = None) -> CommandResult:
+def run_command(
+    command: Command,
+    *,
+    cwd: str | Path | None = None,
+    env: dict[str, str] | None = None,
+) -> CommandResult:
     command_tuple = _validate_command(command)
     completed = subprocess.run(
         command_tuple,
@@ -59,6 +64,7 @@ def run_command(command: Command, *, cwd: str | Path | None = None) -> CommandRe
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
     return CommandResult(
         command=command_tuple,

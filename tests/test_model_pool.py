@@ -4,12 +4,15 @@ import json
 
 import pytest
 
-from hoca.config import ModelPoolConfig, ModelSlot
+from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 from hoca.model_pool import (
     MAX_MODEL_SLOTS,
+    load_model_slots_from_env,
+    model_slot_from_env,
     model_pool_from_config,
     role_model_names_for_report,
+    role_model_names_for_task_spec,
     safe_model_pool_json,
     validate_model_pool,
     validate_model_pool_config,
@@ -51,6 +54,35 @@ def sample_pool(**overrides: object) -> HocaModelPool:
     }
     defaults.update(overrides)
     return HocaModelPool(**defaults)  # type: ignore[arg-type]
+
+
+class TestModelPoolEnvLoading:
+    def test_loads_five_slots_from_env_keys(self) -> None:
+        env = {
+            "HOCA_MODEL_1_NAME": "slot-1",
+            "HOCA_MODEL_1_MODEL": "provider/model-1",
+            "HOCA_MODEL_1_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_MODEL_1_API_KEY": "secret-1",
+            "HOCA_MODEL_5_NAME": "slot-5",
+            "HOCA_MODEL_5_MODEL": "provider/model-5",
+            "HOCA_MODEL_5_BASE_URL": "http://127.0.0.1:11435",
+            "HOCA_MODEL_5_API_KEY": "secret-5",
+        }
+
+        def config_value(name: str, default: str = "") -> str:
+            return env.get(name, default)
+
+        slots = load_model_slots_from_env(config_value)
+
+        assert len(slots) == 5
+        assert slots[0].name == "slot-1"
+        assert slots[0].api_key == "secret-1"
+        assert slots[4].name == "slot-5"
+        assert slots[1].is_active is False
+
+    def test_rejects_slot_index_outside_supported_range(self) -> None:
+        with pytest.raises(ValueError, match="between 1 and 5"):
+            model_slot_from_env(lambda _name, default="": default, 6)
 
 
 class TestModelPoolValidation:
@@ -163,9 +195,19 @@ class TestModelPoolConfigBridge:
         config = ModelPoolConfig(
             slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
             worker_model="missing",
+            fallback_model="local-coder",
         )
 
         with pytest.raises(ValueError, match="must reference a configured model name"):
+            validate_model_pool_config(config)
+
+    def test_active_pool_requires_fallback_at_load_time(self) -> None:
+        config = ModelPoolConfig(
+            slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
+            worker_model="local-coder",
+        )
+
+        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
             validate_model_pool_config(config)
 
     def test_role_names_for_report_exclude_credentials(self) -> None:
@@ -187,6 +229,85 @@ class TestModelPoolConfigBridge:
             "fallback": "local-fast",
         }
         assert "secret" not in json.dumps(names)
+
+
+class TestRoleModelSelection:
+    def test_worker_and_reviewer_can_use_different_configured_models(self) -> None:
+        config = ModelPoolConfig(
+            slots=(
+                ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),
+                ModelSlot(name="reviewer-strong", model="openai/gpt-oss-20b"),
+                ModelSlot(name="local-fast", model="ollama/qwen-7b-pro"),
+            ),
+            worker_model="local-coder",
+            reviewer_model="reviewer-strong",
+            fallback_model="local-fast",
+        )
+
+        assert config.resolve_role("worker").model == "ollama/qwen-14b-pro"
+        assert config.resolve_role("reviewer").model == "openai/gpt-oss-20b"
+        assert config.resolve_role("manager").name == "local-fast"
+
+    def test_role_model_names_for_task_spec_uses_legacy_llm_model(self) -> None:
+        cfg = HocaConfig(llm_model="openai/gpt-oss-20b")
+
+        names = role_model_names_for_task_spec(cfg)
+
+        assert names == {
+            "manager": "openai/gpt-oss-20b",
+            "worker": "openai/gpt-oss-20b",
+            "reviewer": "openai/gpt-oss-20b",
+            "fallback": "openai/gpt-oss-20b",
+        }
+
+    def test_role_model_names_for_task_spec_resolves_inherited_roles(self) -> None:
+        cfg = HocaConfig(
+            model_pool=ModelPoolConfig(
+                slots=(
+                    ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),
+                    ModelSlot(name="reviewer-strong", model="openai/gpt-oss-20b"),
+                    ModelSlot(name="local-fast", model="ollama/qwen-7b-pro"),
+                ),
+                worker_model="local-coder",
+                reviewer_model="reviewer-strong",
+                fallback_model="local-fast",
+            )
+        )
+
+        names = role_model_names_for_task_spec(cfg)
+
+        assert names == {
+            "manager": "local-fast",
+            "worker": "local-coder",
+            "reviewer": "reviewer-strong",
+            "fallback": "local-fast",
+        }
+        assert "secret" not in str(names)
+
+
+class TestModelPoolLegacyAndScale:
+    def test_one_configured_model_serves_all_roles(self) -> None:
+        config = ModelPoolConfig(
+            slots=(ModelSlot(name="solo", model="ollama/qwen-14b-pro", api_key="secret"),),
+            fallback_model="solo",
+        )
+        pool = model_pool_from_config(config)
+
+        assert pool is not None
+        assert pool.roles.manager == "solo"
+        assert pool.roles.worker == "solo"
+        assert pool.roles.reviewer == "solo"
+
+    def test_five_configured_models_load(self) -> None:
+        slots = tuple(
+            ModelSlot(name=f"slot-{index}", model=f"provider/model-{index}", api_key="secret")
+            for index in range(1, 6)
+        )
+        config = ModelPoolConfig(slots=slots, fallback_model="slot-1")
+        pool = model_pool_from_config(config)
+
+        assert pool is not None
+        assert len(pool.active_models()) == 5
 
 
 class TestModelPoolSafeSerialization:

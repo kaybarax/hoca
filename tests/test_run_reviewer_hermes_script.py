@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from tests.test_run_worker_hermes_script import (
+    HOCA_ROOT,
+    init_repo,
+    make_fake_ollama,
+    write_task_spec,
+)
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-reviewer-hermes.sh"
+
+
+def make_fake_review_openhands(fake_bin: Path) -> None:
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "echo 'Review complete.'\n"
+        "echo 'LGTM'\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | 0o100)
+
+
+def run_script(
+    *args: str,
+    extra_env: dict[str, str] | None = None,
+    fake_bin: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(HOCA_ROOT)
+    env["HOCA_PYTHON"] = sys.executable
+    env["HOCA_USE_HERMES_PROFILES"] = "false"
+    env["HOCA_USE_SANDBOX"] = "false"
+    if fake_bin is not None:
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [str(SCRIPT), *args],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=env,
+        cwd=HOCA_ROOT,
+    )
+
+
+def test_script_legacy_mode_writes_review_report(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    make_fake_ollama(fake_bin)
+    make_fake_review_openhands(fake_bin)
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-shell"
+    run_dir.mkdir(parents=True)
+    task_spec_path = write_task_spec(run_dir)
+
+    result = run_script(
+        str(project),
+        str(task_spec_path),
+        str(run_dir),
+        "1",
+        fake_bin=fake_bin,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = run_dir / "reviews" / "review-report-1.json"
+    assert report.is_file()
+    assert json.loads(report.read_text(encoding="utf-8"))["verdict"] == "LGTM"
+
+
+def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-profile"
+    run_dir.mkdir(parents=True)
+    task_spec_path = write_task_spec(run_dir)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+
+    result = run_script(
+        str(project),
+        str(task_spec_path),
+        str(run_dir),
+        "1",
+        extra_env={
+            "PATH": f"{empty_bin}:/usr/bin:/bin",
+            "HOCA_USE_HERMES_PROFILES": "true",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "hermes command not found" in result.stderr
+
+
+def test_script_documents_required_behavior() -> None:
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "hoca.reviewer_hermes" in script
+    assert "HOCA_USE_HERMES_PROFILES" in script
+    assert "Not a Git repository" in script

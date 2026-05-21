@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
+
+import pytest
 
 
 from hoca.monitor import (
@@ -69,6 +72,15 @@ class TestCheckDangerousCommand:
     def test_git_commit_am(self):
         assert check_dangerous_command("git commit -am 'msg'") is not None
 
+    def test_git_push_without_upstream(self):
+        assert check_dangerous_command("git push") is not None
+
+    def test_git_push_branch_without_upstream_flag(self):
+        assert check_dangerous_command("git push origin main") is not None
+
+    def test_git_merge(self):
+        assert check_dangerous_command("git merge main") is not None
+
     def test_safe_command(self):
         assert check_dangerous_command("npm test") is None
 
@@ -89,14 +101,31 @@ class TestManagerOnlyGitLifecyclePolicy:
     def test_worker_cannot_stage_files(self):
         assert check_manager_only_git_lifecycle_command("git add src/main.py", "worker") is not None
 
+    def test_worker_cannot_commit(self):
+        assert check_manager_only_git_lifecycle_command("git commit -m 'msg'", "worker") is not None
+
+    def test_worker_cannot_push_even_with_upstream(self):
+        assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "worker") is not None
+
     def test_reviewer_cannot_create_prs(self):
         assert check_manager_only_git_lifecycle_command("gh pr create --fill", "reviewer") is not None
+
+    def test_reviewer_cannot_merge_prs(self):
+        assert check_manager_only_git_lifecycle_command("gh pr merge 42", "reviewer") is not None
 
     def test_manager_can_use_git_lifecycle(self):
         assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "manager") is None
 
     def test_unrelated_command_is_allowed_for_worker(self):
         assert check_manager_only_git_lifecycle_command("npm test", "worker") is None
+
+    def test_passive_prompt_text_is_allowed_for_worker(self):
+        line = "Use `git commit -a` whenever files are already tracked."
+        assert check_manager_only_git_lifecycle_command(line, "worker") is None
+
+    def test_rich_box_prompt_text_is_allowed_for_worker(self):
+        line = "\x1b[36m│\x1b[0m stage files. Use `git commit -a` whenever possible"
+        assert check_manager_only_git_lifecycle_command(line, "worker") is None
 
 
 class TestCheckSecretAccess:
@@ -132,6 +161,14 @@ class TestCheckUnrelatedDirectory:
         result = check_unrelated_directory("cd /project/src", "/project")
         assert result is None
 
+    def test_allowed_run_artifact_access(self):
+        result = check_unrelated_directory(
+            "cat /runs/run-1/review/git-diff.patch",
+            "/project",
+            ("/runs/run-1",),
+        )
+        assert result is None
+
     def test_tmp_access_allowed(self):
         result = check_unrelated_directory("cd /tmp/build", "/project")
         assert result is None
@@ -161,6 +198,16 @@ class TestShouldScanLineForPolicy:
                 "kind": "ObservationEvent",
                 "source": "environment",
                 "observation": {"content": "package script contains rm -rf build/"},
+            }
+        )
+        assert should_scan_line_for_policy(line) is False
+
+    def test_user_message_event_is_not_scanned(self):
+        line = json.dumps(
+            {
+                "kind": "MessageEvent",
+                "source": "user",
+                "llm_message": {"content": "never run gh pr merge"},
             }
         )
         assert should_scan_line_for_policy(line) is False
@@ -210,6 +257,30 @@ class TestSaveStopReason:
 
 
 class TestMonitorProcess:
+    def test_completed_process_does_not_wait_for_watchdog_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr("hoca.monitor.STALL_CHECK_INTERVAL", 60)
+        proc = subprocess.Popen(
+            ["printf", "done\n"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        started = time.monotonic()
+        result = monitor_process(
+            proc,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+
+        assert result.exit_code == 0
+        assert result.stop_reason == "completed"
+        assert time.monotonic() - started < 2
+
     def test_clean_exit(self, tmp_path: Path):
         proc = subprocess.Popen(
             ["printf", "line1\nline2\nline3\n"],

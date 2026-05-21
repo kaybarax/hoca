@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from hoca.config import HocaConfig, load_config
+from hoca.security import find_secret_like_paths
+from hoca.review_gate import (
+    ReviewGateError,
+    code_review_error_fragment,
+    code_review_pr_fragment,
+    try_resolve_review_gate,
+)
 from hoca.run_layout import (
     ensure_run_layout,
     final_state_path,
@@ -212,6 +219,9 @@ def summarize_run_for_pr_body(
         final_state = read_optional_report(run_dir, "final_state")
         if final_state:
             changed_files = [str(path) for path in final_state.get("changed_files", []) if path]
+    secret_paths = set(find_secret_like_paths(changed_files))
+    if secret_paths:
+        changed_files = [path for path in changed_files if path not in secret_paths]
 
     changes_parts: list[str] = []
     if changed_files:
@@ -239,6 +249,15 @@ def summarize_run_for_pr_body(
             )
             if report:
                 lines = [f"- **Tests passed**: {report.get('tests_passed')}"]
+                failure_type = report.get("test_failure_type")
+                if failure_type:
+                    lines.append(f"- **Failure type**: {failure_type}")
+                lines.append(f"- **Secret scan clean**: {report.get('secret_scan_clean')}")
+                lines.append(f"- **Monitor clean**: {report.get('monitor_clean')}")
+                if report.get("scope_risk"):
+                    lines.append("- **Scope risk**: true")
+                if report.get("staging_risk"):
+                    lines.append("- **Staging risk**: true")
                 blockers = report.get("hard_blockers") or []
                 if blockers:
                     lines.append(f"- **Hard blockers**: {', '.join(blockers)}")
@@ -247,37 +266,22 @@ def summarize_run_for_pr_body(
         validation_text or "_No `tests-summary.md` found in the run directory._"
     )
 
-    review_text = _read_text_artifact(run_dir / "openhands-review.txt")
-    if not review_text:
-        review_round = current_round(run_dir, prefix="review-report-", subdir="reviews")
-        if review_round:
-            report = read_optional_report(
-                run_dir, "review_report", round_number=review_round
-            )
-            if report:
-                verdict = report.get("verdict", "unknown")
-                pr_notes = report.get("pr_notes") or {}
-                notes = pr_notes.get("summary") or []
-                review_lines = [f"**Verdict**: {verdict}"]
-                review_lines.extend(f"- {note}" for note in notes)
-                review_text = "\n".join(review_lines)
+    review_round = current_round(run_dir, prefix="review-report-", subdir="reviews") or 1
+    review_gate_error = False
+    review_result = None
+    try:
+        review_result = try_resolve_review_gate(run_dir, round_number=review_round)
+    except ReviewGateError:
+        review_gate_error = True
 
-    if review_text:
-        if "LGTM" in review_text.upper():
-            fragments["code-review"] = (
-                "**Status**: LGTM present in code review output.\n\n"
-                "Full review output is saved in the HOCA run artifacts."
-            )
-        else:
-            fragments["code-review"] = (
-                "**Status**: LGTM not detected in code review output "
-                "(human review recommended).\n\n"
-                "Full review output is saved in the HOCA run artifacts."
-            )
-    else:
+    if review_gate_error:
+        fragments["code-review"] = code_review_error_fragment()
+    elif review_result is None:
         fragments["code-review"] = (
             "_No `openhands-review.txt` found in the run directory._"
         )
+    else:
+        fragments["code-review"] = code_review_pr_fragment(review_result)
 
     fragments["risk"] = _read_text_artifact(run_dir / "risk-notes.txt") or (
         "None noted in run metadata."
@@ -313,6 +317,7 @@ def workflow_fields_from_config(cfg: HocaConfig | None = None) -> dict[str, Any]
         "structured_reports": cfg.use_structured_reports,
         "max_total_rounds": cfg.max_total_rounds,
         "sandbox_mode": "docker" if cfg.use_sandbox else "host",
+        "worktree_mode": cfg.use_worktree_sandbox,
     }
 
 
@@ -324,7 +329,7 @@ def sandbox_mode_for_run(run_dir: Path, *, cfg: HocaConfig | None = None) -> str
     return "docker" if cfg.use_sandbox else "host"
 
 
-def derived_status_fields(run_dir: Path) -> dict[str, Any]:
+def derived_status_fields(run_dir: Path, *, cfg: HocaConfig | None = None) -> dict[str, Any]:
     """Compute artifact-backed status fields from the run directory."""
     pr_url = None
     pr_url_path = run_dir / "pr-url.txt"
@@ -340,7 +345,7 @@ def derived_status_fields(run_dir: Path) -> dict[str, Any]:
         "current_round": current_run_round(run_dir),
         "final_state": final_state,
         "pr_url": pr_url,
-        "sandbox_mode": sandbox_mode_for_run(run_dir),
+        "sandbox_mode": sandbox_mode_for_run(run_dir, cfg=cfg),
     }
 
 
@@ -356,7 +361,7 @@ def merge_status_snapshot(
     data.update(updates)
     if include_workflow_fields:
         data.update(workflow_fields_from_config(cfg))
-    data.update(derived_status_fields(run_dir))
+    data.update(derived_status_fields(run_dir, cfg=cfg))
     return data
 
 
@@ -383,7 +388,7 @@ def write_initial_status(
             **fields,
         }
     )
-    data.update(derived_status_fields(run_dir))
+    data.update(derived_status_fields(run_dir, cfg=cfg))
     path = status_path(run_dir)
     write_json_atomic(path, data)
     return path

@@ -113,7 +113,7 @@ env_file_value() {
 resolve_path() {
   local path="$1"
   case "$path" in
-    "~/"*)
+    \~/*)
       printf '%s\n' "${HOME}${path#\~}"
       ;;
     "~")

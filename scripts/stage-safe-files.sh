@@ -21,69 +21,31 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 
-SECRET_PATTERNS=(
-  '.env' '.env.*'
-  '*.pem' '*.key' '*.p12' '*.pfx'
-  'id_rsa' 'id_rsa.*' 'id_ed25519' 'id_ed25519.*'
-  '*.kubeconfig'
-  '*.keystore' '*.jks'
-  '*credentials*'
-  '*.secret' '*.secrets'
-  '.netrc' '.npmrc' '.pypirc'
-  '.htpasswd'
-)
-
-is_secret_like() {
-  local filename
-  filename="$(basename "$1")"
-  local lower
-  lower="$(printf '%s' "$filename" | tr '[:upper:]' '[:lower:]')"
-
-  case "$lower" in
-    *.example|*.sample|*.template)
-      return 1
-      ;;
-  esac
-
-  for pattern in "${SECRET_PATTERNS[@]}"; do
-    # shellcheck disable=SC2254
-    case "$lower" in
-      $pattern) return 0 ;;
-    esac
-  done
-  return 1
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/hoca-security.sh
+source "$SCRIPT_DIR/lib/hoca-security.sh"
 
 UNSAFE=0
 
 while IFS= read -r file || [ -n "$file" ]; do
   [ -z "$file" ] && continue
 
-  if [[ "$file" = /* ]]; then
-    echo "Refusing absolute path: $file" >&2
+  if ! hoca_validate_staging_path "$REPO_ROOT" "$file"; then
+    case "$file" in
+      .hoca-runtime/*|.hoca-runtime)
+        echo "Refusing to stage runtime file: $file" >&2
+        ;;
+      *)
+        if hoca_path_is_secret_like "$file"; then
+          echo "Refusing to stage secret-like file: $file" >&2
+        else
+          echo "Refusing to stage unsafe file: $file" >&2
+        fi
+        ;;
+    esac
     UNSAFE=1
-    continue
   fi
-
-  if [[ "$file" == *..* ]]; then
-    echo "Refusing path traversal: $file" >&2
-    UNSAFE=1
-    continue
-  fi
-
-  resolved="$(cd "$REPO_ROOT" && python3 -c "import os,sys; print(os.path.normpath(os.path.join(sys.argv[1], sys.argv[2])))" "$REPO_ROOT" "$file")" || resolved=""
-  if [ -z "$resolved" ] || [[ "$resolved" != "$REPO_ROOT"/* ]]; then
-    echo "Refusing path outside repository: $file" >&2
-    UNSAFE=1
-    continue
-  fi
-
-  if is_secret_like "$file"; then
-    echo "Refusing to stage secret-like file: $file" >&2
-    UNSAFE=1
-    continue
-  fi
-
 done < "$FILE_LIST"
 
 if [ "$UNSAFE" -ne 0 ]; then

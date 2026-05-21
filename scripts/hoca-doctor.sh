@@ -103,6 +103,9 @@ DOCTOR_LLM_MODEL="${DOCTOR_LLM_MODEL:-ollama/qwen-14b-pro}"
 DOCTOR_LLM_BASE_URL="$(config_value LLM_BASE_URL)"
 DOCTOR_LLM_API_KEY="$(config_value LLM_API_KEY)"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "HOCA Doctor"
 echo "==========="
 
@@ -148,7 +151,16 @@ check_command node "Install Node.js."
 check_command jq "Install jq: brew install jq"
 check_command curl "Install curl."
 check_command openssl "Install OpenSSL."
-check_command docker "Install Docker Desktop or Colima."
+if command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1; then
+    ok "docker found: $(command -v docker)"
+  fi
+  if command -v podman >/dev/null 2>&1; then
+    ok "podman found: $(command -v podman)"
+  fi
+else
+  fail "Neither docker nor podman found. Install Docker Desktop, Colima, or Podman."
+fi
 check_command openhands "Install OpenHands CLI."
 
 section "GitHub CLI"
@@ -163,14 +175,20 @@ else
 fi
 
 section "Docker"
+CONTAINER_RUNTIME=""
 if command -v docker >/dev/null 2>&1; then
-  if docker info >/dev/null 2>&1; then
-    ok "Docker daemon is running."
+  CONTAINER_RUNTIME="docker"
+elif command -v podman >/dev/null 2>&1; then
+  CONTAINER_RUNTIME="podman"
+fi
+if [ -n "$CONTAINER_RUNTIME" ]; then
+  if "$CONTAINER_RUNTIME" info >/dev/null 2>&1; then
+    ok "$CONTAINER_RUNTIME daemon is running."
   else
-    fail "Docker is installed but the daemon is not running."
+    fail "$CONTAINER_RUNTIME is installed but the daemon is not running."
   fi
 else
-  warn "Skipping Docker daemon check because docker is missing."
+  warn "Skipping container runtime daemon check because docker and podman are missing."
 fi
 
 section "Ollama"
@@ -323,6 +341,61 @@ if is_truthy "$TELEGRAM_ENABLED" || [ -n "$TELEGRAM_BOT_TOKEN" ] || [ -n "$TELEG
   fi
 else
   warn "Telegram notifications are not enabled; skipping Telegram variable requirements."
+fi
+
+section "Sandbox"
+SANDBOX_OUTPUT="$(
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.sandbox_doctor doctor-checks 2>/dev/null || true
+)"
+if [ -n "$SANDBOX_OUTPUT" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "[OK]"*)
+        ok "${line#\[OK\] }"
+        ;;
+      "[WARN]"*)
+        warn "${line#\[WARN\] }"
+        ;;
+      "[FAIL]"*)
+        fail "${line#\[FAIL\] }"
+        ;;
+    esac
+  done <<< "$SANDBOX_OUTPUT"
+else
+  warn "Sandbox doctor checks could not run."
+fi
+
+section "Worktree Sandbox"
+USE_WORKTREE="$(config_value HOCA_USE_WORKTREE_SANDBOX)"
+USE_WORKTREE="${USE_WORKTREE:-true}"
+if is_truthy "$USE_WORKTREE"; then
+  ok "HOCA_USE_WORKTREE_SANDBOX is enabled. Worker/reviewer use a disposable worktree."
+else
+  warn "HOCA_USE_WORKTREE_SANDBOX=false: worker/reviewer modify the active checkout directly."
+fi
+
+section "Model Pool"
+MODEL_POOL_OUTPUT="$(
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.role_model_env doctor-checks 2>/dev/null || true
+)"
+if [ -n "$MODEL_POOL_OUTPUT" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "[OK]"*)
+        ok "${line#\[OK\] }"
+        ;;
+      "[WARN]"*)
+        warn "${line#\[WARN\] }"
+        ;;
+      "[FAIL]"*)
+        fail "${line#\[FAIL\] }"
+        ;;
+    esac
+  done <<< "$MODEL_POOL_OUTPUT"
+else
+  warn "Model pool doctor checks could not run."
 fi
 
 section "Summary"
