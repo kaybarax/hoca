@@ -18,16 +18,16 @@ review, and stopped before merge by default.
 Human or GitHub Issue
         │
         ▼
-  Hermes Manager        ← plans work, delegates, coordinates review
+  Hermes Manager        ← plans work, delegates, arbitrates review
         │
         ▼
-  OpenHands Worker      ← implements changes inside the target repo
+  Hermes Worker         ← coordinates OpenHands implementation
         │
         ▼
   Tests + Diff Check    ← runs project tests, inspects changes
         │
         ▼
-  OpenHands Reviewer    ← independent code review for quality and security
+  Hermes Reviewer       ← coordinates independent QA/security review
         │
         ▼
   Safe Git Staging      ← selective staging, rejects secrets and blind adds
@@ -43,11 +43,17 @@ Human or GitHub Issue
 
 | Component | Role |
 |-----------|------|
-| **Hermes** | Manager. Plans work, delegates bounded tasks, inspects state, coordinates review, manages the Git and PR lifecycle. |
-| **OpenHands** | Worker. Performs implementation inside the target repository under the Manager's constraints. |
-| **OpenHands** (review mode) | Reviewer. Provides independent quality, correctness, security, and unnecessary-edit review before changes are accepted. |
+| **`hoca-manager` Hermes profile** | Engineering manager, team lead, and product-owner delegate. Plans work, creates the task spec, assigns implementation and review, arbitrates findings, and owns staging, commit, PR publication, and final reporting. |
+| **`hoca-worker` Hermes profile** | Principal engineer lane. Converts the task spec into an OpenHands implementation prompt, monitors the worker run, and returns a structured attempt report. |
+| **`hoca-reviewer` Hermes profile** | QA, security, and release-quality lane. Reviews the diff and validation output, classifies findings, and returns a structured review report. |
+| **OpenHands** | Execution engine used by worker and reviewer profiles for code changes and independent review inside the scoped target repository. |
 | **Ollama / LM Studio / Cloud** | LLM runtime. Runs models locally (Ollama, LM Studio) or via cloud APIs (DeepSeek, Gemini, etc.). |
 | **Git + GitHub CLI** | Version control and pull request layer. |
+
+The profile-backed workflow is enabled with `HOCA_USE_HERMES_PROFILES=true`.
+When it is disabled, HOCA keeps the compatibility path: the script-backed
+Manager -> OpenHands Worker -> OpenHands Reviewer pipeline still works with the
+legacy `LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` settings.
 
 ## Requirements
 
@@ -86,6 +92,48 @@ your machine can comfortably run the 32B model, HOCA also supports it:
 Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
 be used by setting the `LLM_MODEL` and `OLLAMA_MODEL` environment variables in
 your `.env` file.
+
+### Five-Slot Model Pool
+
+HOCA can route manager, worker, and reviewer phases through a small configured
+model pool. Up to five slots can be defined in `.env`:
+
+```env
+HOCA_MODEL_1_NAME=local-coder
+HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro
+HOCA_MODEL_1_BASE_URL=http://127.0.0.1:11434
+HOCA_MODEL_1_API_KEY=ollama
+
+HOCA_MODEL_2_NAME=local-fast
+HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro
+HOCA_MODEL_2_BASE_URL=http://127.0.0.1:11434
+HOCA_MODEL_2_API_KEY=ollama
+
+HOCA_MODEL_3_NAME=reviewer-strong
+HOCA_MODEL_3_MODEL=
+HOCA_MODEL_3_BASE_URL=
+HOCA_MODEL_3_API_KEY=
+```
+
+Slots 4 and 5 use the same `HOCA_MODEL_<N>_*` shape and can stay empty. Empty
+slots are ignored. If no pool slots are active, HOCA preserves the older global
+`LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` behavior.
+
+Select models by role using the slot names:
+
+```env
+HOCA_MANAGER_MODEL=local-coder
+HOCA_WORKER_MODEL=local-coder
+HOCA_REVIEWER_MODEL=reviewer-strong
+HOCA_FALLBACK_MODEL=local-fast
+```
+
+The manager can use a balanced planning model, the worker can use a
+coding-specialized model, and the reviewer can use a stronger reasoning model
+when available. If a role-specific variable is empty, HOCA uses
+`HOCA_FALLBACK_MODEL`; when any pool slot is active, that fallback must be set.
+Only the selected role model's credentials are forwarded to that phase, and API
+keys are redacted from reports and logs.
 
 ### LM Studio (Local OpenAI-compatible)
 
@@ -151,6 +199,32 @@ After installation:
 1. Start Ollama: `ollama serve`
 2. Start Docker: open Docker Desktop, or run `colima start --cpu 6 --memory 16`
 3. Authenticate GitHub: `gh auth login`
+
+### Hermes Profiles
+
+To use the upgraded multi-agent workflow, install or refresh the bundled Hermes
+profiles:
+
+```sh
+scripts/setup-hermes-profiles.sh
+```
+
+The setup creates profile scaffolding for:
+
+- `hoca-manager`
+- `hoca-worker`
+- `hoca-reviewer`
+
+Then enable profile dispatch:
+
+```env
+HOCA_USE_HERMES_PROFILES=true
+```
+
+Profiles give each role its own instructions, identity, and default behavior.
+They are not security sandboxes by themselves; HOCA still relies on scoped
+working directories, environment allowlists, Docker sandboxing, safe staging,
+and manager-only PR publication for safety.
 
 ## Health Check
 
@@ -219,6 +293,11 @@ When OpenHands produces changes but tests fail because of the current task, or
 the code review requests fixes, HOCA gives OpenHands a repair brief containing
 the failure summary, recent logs, review feedback, and current diff. It repeats
 validation after each repair pass.
+
+The manager is the final arbiter for each reviewer finding. It can accept a
+finding and send a repair brief, reject an invalid finding with a recorded
+reason, downgrade low-impact follow-up work, or stop the run when the task is no
+longer safe to continue automatically.
 
 HOCA stops for human intervention when the failure is classified as
 environmental or pre-existing, when the review tool itself crashes, or when
@@ -300,6 +379,12 @@ validation results, code review status, and risk assessment. Worker and
 reviewer sandboxes do not receive `GITHUB_TOKEN`; only the manager PR phase
 uses GitHub credentials.
 
+PR publication is deliberately manager-owned rather than delegated to another
+Hermes profile. Worker and reviewer lanes may provide summaries, validation
+notes, risk notes, and follow-up suggestions, but deterministic HOCA scripts do
+the mechanical staging, commit, push, and PR creation after the manager accepts
+the run state.
+
 ### Auto-Merge
 
 Auto-merge is **disabled by default**. When enabled with `--auto-merge`, HOCA
@@ -314,6 +399,10 @@ runs additional guards before merging:
 
 Auto-merge is **never** allowed for authentication, authorization, payment,
 database migration, infrastructure, or security-sensitive changes.
+
+Human review remains the default release gate. A successful HOCA run opens a PR
+for inspection; it does not merge that PR unless `--auto-merge` is explicitly
+requested and all guarded merge checks pass.
 
 ## GitHub Issue Automation
 
