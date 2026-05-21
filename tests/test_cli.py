@@ -8,6 +8,22 @@ from click.testing import CliRunner
 
 from hoca.cli import main
 
+LEGACY_CLI_COMMANDS = {
+    "doctor": "Check local HOCA dependencies",
+    "init-project": "Install HOCA project-level templates",
+    "run": "Run a HOCA task against a target repository",
+    "issue": "Run a HOCA task for a GitHub issue",
+}
+
+LEGACY_DIRECT_ENTRYPOINTS = [
+    "bin/hoca",
+    "scripts/hoca-doctor.sh",
+    "scripts/init-project.sh",
+    "scripts/run-hoca-task.sh",
+    "scripts/run-openhands-task.sh",
+    "scripts/review-with-openhands.sh",
+]
+
 
 def test_cli_main_is_callable() -> None:
     assert callable(main)
@@ -24,6 +40,33 @@ def test_cli_help_displays_group_help() -> None:
     assert "issue" in result.output
     assert "setup-profiles" in result.output
     assert "report" in result.output
+
+
+def test_legacy_cli_commands_remain_registered() -> None:
+    for command, help_text in LEGACY_CLI_COMMANDS.items():
+        result = CliRunner().invoke(main, [command, "--help"])
+
+        assert result.exit_code == 0
+        assert help_text in result.output
+
+
+def test_legacy_direct_entrypoints_remain_executable_and_parseable() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    for relative_path in LEGACY_DIRECT_ENTRYPOINTS:
+        entrypoint = repo_root / relative_path
+
+        assert entrypoint.is_file()
+        assert os.access(entrypoint, os.X_OK)
+
+        result = subprocess.run(
+            ["bash", "-n", str(entrypoint)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
 
 
 def test_setup_profiles_help_displays_command_help() -> None:
