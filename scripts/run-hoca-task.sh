@@ -63,6 +63,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 
 run_definition_of_ready_check() {
   local dor_args=(
@@ -434,7 +435,7 @@ echo "HOCA run started: $RUN_ID"
 } > "$RUN_DIR/workspace-validation.txt"
 
 echo "Running HOCA doctor preflight..."
-if ! "$SCRIPT_DIR/hoca-doctor.sh" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
+if ! "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
   cat "$RUN_DIR/doctor-output.log"
   cat "$RUN_DIR/doctor-stderr.log" >&2
   fail_run "doctor_failed" "HOCA doctor failed. Stop and follow the install guidance above before running this task again."

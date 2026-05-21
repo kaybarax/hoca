@@ -3,30 +3,46 @@ from __future__ import annotations
 import json
 import subprocess
 import os
+import shutil
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-hoca-task.sh"
+_TEMPLATE_REPO: Path | None = None
 
 
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("HOCA_DEV_BRANCH", None)
+    env["HOCA_DOCTOR_SCRIPT"] = "true"
     env["HOCA_USE_SANDBOX"] = "false"
     env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
     return env
 
 
 def init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
-    subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True)
-    (path / ".gitignore").write_text(".hoca-runtime/\n", encoding="utf-8")
-    (path / "README.md").write_text("initial\n", encoding="utf-8")
-    subprocess.run(["git", "add", "--", ".gitignore", "README.md"], cwd=path, check=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
+    template = _template_repo()
+    shutil.copytree(template, path, dirs_exist_ok=True)
+
+
+def _template_repo() -> Path:
+    global _TEMPLATE_REPO
+    if _TEMPLATE_REPO is not None:
+        return _TEMPLATE_REPO
+
+    root = Path(tempfile.mkdtemp(prefix="hoca-run-task-template-"))
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=root, check=True)
+    (root / ".gitignore").write_text(".hoca-runtime/\n", encoding="utf-8")
+    (root / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", ".gitignore", "README.md"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=root, check=True)
+    _TEMPLATE_REPO = root
+    return root
 
 
 def run_hoca_task(repo: Path, task: str) -> subprocess.CompletedProcess[str]:
@@ -548,9 +564,9 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
 def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
-    (fake_bin / "docker").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DOCTOR_SCRIPT"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
