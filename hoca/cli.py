@@ -118,6 +118,31 @@ def issue(
     run_script("run-hoca-task.sh", args)
 
 
+@main.command()
+@click.argument("project_path", type=click.Path(path_type=Path))
+@click.argument("run_id")
+@click.option("--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts.")
+def report(project_path: Path, run_id: str, regenerate: bool) -> None:
+    """Show or regenerate the task report for a past HOCA run."""
+    from hoca.run_state import RUN_STATE_DIRNAME
+    from hoca.task_report import build_task_report_markdown
+
+    project_path = require_target_repo(project_path)
+    run_dir = project_path / RUN_STATE_DIRNAME / "runs" / run_id
+
+    if not run_dir.is_dir():
+        raise click.ClickException(f"Run directory not found: {run_dir}")
+
+    report_path = run_dir / "task-report.md"
+
+    if regenerate or not report_path.is_file():
+        content = build_task_report_markdown(project_path, run_dir)
+        report_path.write_text(content, encoding="utf-8")
+        click.echo(f"Report regenerated: {report_path}")
+    else:
+        click.echo(f"Report: {report_path}")
+
+
 @main.command("kanban-init")
 @click.argument("project_path", type=click.Path(path_type=Path))
 def kanban_init(project_path: Path) -> None:

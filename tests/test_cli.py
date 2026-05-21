@@ -23,6 +23,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "run" in result.output
     assert "issue" in result.output
     assert "setup-profiles" in result.output
+    assert "report" in result.output
 
 
 def test_setup_profiles_help_displays_command_help() -> None:
@@ -493,6 +494,82 @@ def test_kanban_init_reports_script_failure(monkeypatch, tmp_path: Path) -> None
 
     assert result.exit_code != 0
     assert "Command failed with exit code 1" in result.output
+
+
+def test_report_help_displays_command_help() -> None:
+    result = CliRunner().invoke(main, ["report", "--help"])
+
+    assert result.exit_code == 0
+    assert "Show or regenerate the task report" in result.output
+    assert "--regenerate" in result.output
+
+
+def test_report_shows_existing_report(tmp_path: Path) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    run_dir = project_path / ".hoca-runtime" / "runs" / "run-12345"
+    run_dir.mkdir(parents=True)
+    report_file = run_dir / "task-report.md"
+    report_file.write_text("## HOCA Task Report\n")
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-12345"])
+
+    assert result.exit_code == 0
+    assert "Report:" in result.output
+    assert "run-12345" in result.output
+
+
+def test_report_regenerates_when_flag_set(tmp_path: Path) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    run_dir = project_path / ".hoca-runtime" / "runs" / "run-12345"
+    run_dir.mkdir(parents=True)
+    report_file = run_dir / "task-report.md"
+    report_file.write_text("old content")
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-12345", "--regenerate"])
+
+    assert result.exit_code == 0
+    assert "Report regenerated:" in result.output
+    content = report_file.read_text()
+    assert "## HOCA Task Report" in content
+
+
+def test_report_regenerates_when_no_report_exists(tmp_path: Path) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    run_dir = project_path / ".hoca-runtime" / "runs" / "run-12345"
+    run_dir.mkdir(parents=True)
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-12345"])
+
+    assert result.exit_code == 0
+    assert "Report regenerated:" in result.output
+    assert (run_dir / "task-report.md").is_file()
+
+
+def test_report_fails_for_missing_run_dir(tmp_path: Path) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-nonexistent"])
+
+    assert result.exit_code != 0
+    assert "Run directory not found" in result.output
+
+
+def test_report_fails_for_non_repo(tmp_path: Path) -> None:
+    project_path = tmp_path / "not-a-repo"
+    project_path.mkdir()
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-12345"])
+
+    assert result.exit_code != 0
+    assert "not a Git repository" in result.output
 
 
 def test_run_script_raises_on_missing_script(tmp_path: Path) -> None:
