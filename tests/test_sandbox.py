@@ -57,3 +57,16 @@ def test_sandbox_wrapper_keeps_container_hardened() -> None:
     assert "--user \"$SANDBOX_USER\"" in script
     assert "--memory=\"${HOCA_SANDBOX_MEMORY:-8g}\"" in script
     assert "--pids-limit=\"${HOCA_SANDBOX_PIDS:-512}\"" in script
+
+
+def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert "DOCKER_RUN_ARGS=(" in script
+    assert "--workdir /workspace" in script
+    assert '-v "${PROJECT_PATH}:/workspace"' in script
+    assert '-v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}"' in script
+    assert "TASK_CONTENT=\\$(cat /workspace/.hoca-runtime/runs/${RUN_ID}/task-input.txt)" in script
+    assert 'openhands --headless --task \\"\\$TASK_CONTENT\\" --override-with-envs --json' in script
+    assert "monitor_process_stream(" in script
+    assert "actor_role=actor_role" in script

@@ -871,6 +871,7 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
 
     staged = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
@@ -885,6 +886,12 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     assert '"reason": "selective_staging_required"' in latest_status(tmp_path)
     assert staged.stdout == ""
     assert "type=needs-review" in latest_notification_result(tmp_path)
+    assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    assert (run_dir / "decisions" / "manager-decision-1.json").is_file()
+    assert (run_dir / "validation" / "validation-report-1.json").is_file()
+    assert (run_dir / "final-state.json").is_file()
+    assert '"current_round": 1' in latest_status(tmp_path)
 
 
 def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
