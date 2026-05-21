@@ -808,6 +808,7 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   if [ -n "$ISSUE_ID" ]; then
     COMMIT_ARGS=(--issue-id "$ISSUE_ID")
   fi
+  COMMIT_ARGS+=(--run-id "$RUN_ID")
   "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${COMMIT_ARGS[@]}"
   update_status "committed" "commit_created"
 

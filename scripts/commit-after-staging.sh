@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 3 ]; then
-  echo "Usage: commit-after-staging.sh /path/to/project \"task\" /path/to/run-dir [--issue-id ID]" >&2
+  echo "Usage: commit-after-staging.sh /path/to/project \"task\" /path/to/run-dir [--issue-id ID] [--run-id ID]" >&2
   exit 1
 fi
 
@@ -12,10 +12,23 @@ RUN_DIR="$(cd "$3" && pwd)"
 shift 3
 
 ISSUE_ID=""
+RUN_ID=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --issue-id)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --issue-id" >&2
+        exit 1
+      fi
       ISSUE_ID="$2"
+      shift 2
+      ;;
+    --run-id)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --run-id" >&2
+        exit 1
+      fi
+      RUN_ID="$2"
       shift 2
       ;;
     *)
@@ -105,13 +118,75 @@ if [ -z "$TASK_ONELINE" ]; then
   exit 1
 fi
 
-LOWER_TASK="$(printf '%s' "$TASK_ONELINE" | tr '[:upper:]' '[:lower:]')"
+SECRET_PATTERN='(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|bearer[[:space:]]+[a-z0-9_-]{10,}|password[[:space:]]*=[[:space:]]*[^[:space:]]|-----BEGIN[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY-----)'
 
-if printf '%s' "$TASK_ONELINE" | grep -qiE \
+if printf '%s' "$TASK" | grep -qiE \
   '(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|bearer[[:space:]]+[a-z0-9_-]{10,}|password[[:space:]]*=[[:space:]]*[^[:space:]]|-----BEGIN[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY-----)'; then
   echo "Task text looks like it may contain secrets; refusing to generate a commit message automatically." >&2
   exit 1
 fi
+
+if [ -n "$ISSUE_ID" ] && ! printf '%s' "$ISSUE_ID" | grep -Eq '^[0-9]+$'; then
+  echo "Issue id must be numeric before it can be included in a commit message." >&2
+  exit 1
+fi
+
+if [ -z "$RUN_ID" ] && [ -f "$RUN_DIR/task-spec.json" ]; then
+  RUN_ID="$(python3 - "$RUN_DIR/task-spec.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        value = json.load(fh).get("run_id", "")
+except (OSError, json.JSONDecodeError):
+    value = ""
+print(str(value or ""))
+PY
+)"
+fi
+
+if [ -n "$RUN_ID" ]; then
+  if ! printf '%s' "$RUN_ID" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+    echo "Run id contains unsafe characters; refusing to include it in the commit message." >&2
+    exit 1
+  fi
+  if printf '%s' "$RUN_ID" | grep -qiE "$SECRET_PATTERN"; then
+    echo "Run id looks like it may contain secrets; refusing to include it in the commit message." >&2
+    exit 1
+  fi
+fi
+
+SUMMARY_SOURCE="$TASK"
+if [ -f "$RUN_DIR/task-spec.json" ]; then
+  SPEC_GOAL="$(python3 - "$RUN_DIR/task-spec.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        value = json.load(fh).get("goal", "")
+except (OSError, json.JSONDecodeError):
+    value = ""
+print(str(value or ""))
+PY
+)"
+  if [ -n "$SPEC_GOAL" ]; then
+    SUMMARY_SOURCE="$SPEC_GOAL"
+  fi
+fi
+
+TASK_SUMMARY="$(printf '%s\n' "$SUMMARY_SOURCE" | sed -n '/[^[:space:]]/{s/^[[:space:]]*//;s/[[:space:]]*$//;p;q;}')"
+TASK_SUMMARY="$(printf '%s' "$TASK_SUMMARY" | tr '\r\n' '  ' | sed 's/[[:space:]]\{2,\}/ /g')"
+if [ -z "$TASK_SUMMARY" ]; then
+  TASK_SUMMARY="$TASK_ONELINE"
+fi
+if printf '%s' "$TASK_SUMMARY" | grep -qiE "$SECRET_PATTERN"; then
+  echo "Task summary looks like it may contain secrets; refusing to generate a commit message automatically." >&2
+  exit 1
+fi
+
+LOWER_TASK="$(printf '%s' "$TASK_SUMMARY" | tr '[:upper:]' '[:lower:]')"
 
 CONVENTIONAL_PREFIX="feat"
 case "$LOWER_TASK" in
@@ -132,7 +207,7 @@ case "$LOWER_TASK" in
     ;;
 esac
 
-DESC="$TASK_ONELINE"
+DESC="$TASK_SUMMARY"
 case "$DESC" in
   fix:*|feat:*|docs:*|test:*|refactor:*|chore:*)
     DESC="${DESC#*:}"
@@ -151,12 +226,23 @@ fi
 
 MAX_SUBJECT_LEN=100
 if [ "${#SUBJECT}" -gt "$MAX_SUBJECT_LEN" ]; then
-  TRUNC_LEN=$((MAX_SUBJECT_LEN - 3))
-  SUBJECT="${SUBJECT:0:$TRUNC_LEN}..."
+  ISSUE_SUFFIX=""
+  if [ -n "$ISSUE_ID" ]; then
+    ISSUE_SUFFIX=" (#${ISSUE_ID})"
+  fi
+  TRUNC_LEN=$((MAX_SUBJECT_LEN - ${#ISSUE_SUFFIX} - 3))
+  if [ "$TRUNC_LEN" -lt 20 ]; then
+    TRUNC_LEN=20
+  fi
+  SUBJECT="${CONVENTIONAL_PREFIX}: ${DESC}"
+  SUBJECT="${SUBJECT:0:$TRUNC_LEN}...${ISSUE_SUFFIX}"
 fi
 
 COMMIT_MSG_FILE="$RUN_DIR/commit-message.txt"
 printf '%s\n' "$SUBJECT" > "$COMMIT_MSG_FILE"
+if [ -n "$RUN_ID" ]; then
+  printf '\nHOCA-Run: %s\n' "$RUN_ID" >> "$COMMIT_MSG_FILE"
+fi
 
 if ! git commit -F "$COMMIT_MSG_FILE"; then
   echo "git commit failed." >&2
