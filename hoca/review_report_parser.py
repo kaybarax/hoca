@@ -94,6 +94,30 @@ def _json_object_candidates(text: str) -> list[str]:
     return candidates
 
 
+def _openhands_message_text_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    for raw in _json_object_candidates(text):
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("kind") != "MessageEvent":
+            continue
+        message = event.get("llm_message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            value = part.get("text")
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip())
+    return candidates
+
+
 def _dedupe_candidates(candidates: list[str]) -> list[str]:
     seen: set[str] = set()
     deduped: list[str] = []
@@ -111,6 +135,7 @@ def _json_candidates(text: str) -> list[str]:
         [
             *_fenced_code_blocks(text, ("json",)),
             text.strip(),
+            *_openhands_message_text_candidates(text),
             *_json_object_candidates(text),
         ]
     )

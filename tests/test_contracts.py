@@ -624,6 +624,25 @@ def test_review_report_low_priority_findings_downgraded_to_pr_notes() -> None:
     assert len(report.pr_notes["known_followups"]) == 1
 
 
+def test_review_report_coerces_string_pr_notes_to_single_item_lists() -> None:
+    report = HocaReviewReport.from_dict(
+        {
+            "schema_version": 1,
+            "run_id": "run-1",
+            "round": 1,
+            "role": "reviewer",
+            "verdict": "LGTM",
+            "findings": [],
+            "pr_notes": {
+                "summary": "Looks good.",
+                "known_followups": [],
+            },
+        }
+    )
+
+    assert report.pr_notes["summary"] == ["Looks good."]
+
+
 def test_review_report_lgtm_with_non_blocking_followups() -> None:
     report = HocaReviewReport.from_dict(
         _review_report(

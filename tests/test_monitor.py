@@ -119,6 +119,14 @@ class TestManagerOnlyGitLifecyclePolicy:
     def test_unrelated_command_is_allowed_for_worker(self):
         assert check_manager_only_git_lifecycle_command("npm test", "worker") is None
 
+    def test_passive_prompt_text_is_allowed_for_worker(self):
+        line = "Use `git commit -a` whenever files are already tracked."
+        assert check_manager_only_git_lifecycle_command(line, "worker") is None
+
+    def test_rich_box_prompt_text_is_allowed_for_worker(self):
+        line = "\x1b[36m│\x1b[0m stage files. Use `git commit -a` whenever possible"
+        assert check_manager_only_git_lifecycle_command(line, "worker") is None
+
 
 class TestCheckSecretAccess:
     def test_env_file(self):
@@ -153,6 +161,14 @@ class TestCheckUnrelatedDirectory:
         result = check_unrelated_directory("cd /project/src", "/project")
         assert result is None
 
+    def test_allowed_run_artifact_access(self):
+        result = check_unrelated_directory(
+            "cat /runs/run-1/review/git-diff.patch",
+            "/project",
+            ("/runs/run-1",),
+        )
+        assert result is None
+
     def test_tmp_access_allowed(self):
         result = check_unrelated_directory("cd /tmp/build", "/project")
         assert result is None
@@ -182,6 +198,16 @@ class TestShouldScanLineForPolicy:
                 "kind": "ObservationEvent",
                 "source": "environment",
                 "observation": {"content": "package script contains rm -rf build/"},
+            }
+        )
+        assert should_scan_line_for_policy(line) is False
+
+    def test_user_message_event_is_not_scanned(self):
+        line = json.dumps(
+            {
+                "kind": "MessageEvent",
+                "source": "user",
+                "llm_message": {"content": "never run gh pr merge"},
             }
         )
         assert should_scan_line_for_policy(line) is False

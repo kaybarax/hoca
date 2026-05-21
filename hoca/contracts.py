@@ -82,6 +82,14 @@ def _single_line_string_list(data: dict[str, Any], field: str) -> list[str]:
     return [_single_line_string(item, field) for item in _string_list(data, field)]
 
 
+def _coerce_string_list(value: Any, field: str) -> list[str]:
+    if isinstance(value, str):
+        return [_single_line_string(value, field)]
+    if not isinstance(value, list):
+        raise ValueError(f"Contract field must be a string or list: {field}")
+    return [_single_line_string(item, field) for item in value]
+
+
 def _artifact_path_map(data: dict[str, Any], field: str) -> dict[str, str]:
     paths = {
         key: _single_line_string(value, field)
@@ -495,7 +503,10 @@ class HocaReviewReport(JsonContract):
             findings=[
                 HocaReviewFinding.from_dict(item) for item in _object_list(data, "findings")
             ],
-            pr_notes={str(key): [str(item) for item in value] for key, value in pr_notes.items()},
+            pr_notes={
+                str(key): _coerce_string_list(value, f"pr_notes.{key}")
+                for key, value in pr_notes.items()
+            },
         )
 
     @classmethod

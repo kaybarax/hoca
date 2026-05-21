@@ -218,6 +218,26 @@ def test_try_extract_structured_report_prefers_json_before_yaml() -> None:
     assert report.verdict == "LGTM"
 
 
+def test_try_extract_structured_report_from_openhands_message_event() -> None:
+    review_text = (
+        '{"kind":"MessageEvent","source":"user","llm_message":{"content":[{"text":"'
+        'Legacy prompt says LGTM | fix_required | blocked"}]}}\n'
+        '{"kind":"MessageEvent","source":"agent","llm_message":{"content":[{"text":'
+        '"{\\"schema_version\\":1,\\"run_id\\":\\"run-1\\",\\"round\\":1,'
+        '\\"role\\":\\"reviewer\\",\\"verdict\\":\\"fix_required\\",'
+        '\\"findings\\":[{\\"id\\":\\"F1\\",\\"severity\\":\\"high\\",'
+        '\\"category\\":\\"correctness\\",\\"file\\":\\"calc.py\\",'
+        '\\"summary\\":\\"Syntax error\\",\\"required_fix\\":\\"Complete expression\\"}],'
+        '\\"pr_notes\\":{\\"summary\\":[\\"Needs repair.\\"],\\"known_followups\\":[]}}"}]}}\n'
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "fix_required"
+    assert report.findings[0].id == "F1"
+
+
 def test_try_extract_structured_report_from_dependency_free_yaml() -> None:
     review_text = (
         "Review complete.\n"

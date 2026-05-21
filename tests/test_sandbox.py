@@ -64,9 +64,18 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
 
     assert "DOCKER_RUN_ARGS=(" in script
     assert "--workdir /workspace" in script
+    assert 'PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"' in script
+    assert 'RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"' in script
     assert '-v "${PROJECT_PATH}:/workspace"' in script
-    assert '-v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}"' in script
-    assert "TASK_CONTENT=\\$(cat /workspace/.hoca-runtime/runs/${RUN_ID}/task-input.txt)" in script
+    assert '-v "${RUN_DIR}:/hoca-run"' in script
+    assert '-v "${RUN_DIR}:${RUN_DIR}"' in script
+    assert "TASK_CONTENT=\\$(cat /hoca-run/task-input.txt)" in script
+    assert "OPENHANDS_PERSISTENCE_DIR=/hoca-run/openhands-persistence" in script
+    assert "OPENHANDS_PYTHON=/opt/openhands-tools/openhands/bin/python" in script
+    assert "reasoning_effort=None" in script
+    assert "enable_encrypted_reasoning=False" in script
+    assert "extended_thinking_budget=None" in script
     assert 'openhands --headless --task \\"\\$TASK_CONTENT\\" --override-with-envs --json' in script
+    assert '"kind": "ConversationErrorEvent"' in script
     assert "monitor_process_stream(" in script
     assert "actor_role=actor_role" in script

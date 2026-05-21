@@ -39,7 +39,8 @@ fi
 CONTAINER_BASE_URL="${BASE_URL//127.0.0.1/host.docker.internal}"
 CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 
-PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
+RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
 SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
 SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
 NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
@@ -97,7 +98,8 @@ DOCKER_RUN_ARGS=(
   --hostname "hoca-sandbox"
   --workdir /workspace
   -v "${PROJECT_PATH}:/workspace"
-  -v "${RUN_DIR}:/workspace/.hoca-runtime/runs/${RUN_ID}"
+  -v "${RUN_DIR}:/hoca-run"
+  -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
   -e "LLM_MODEL=${MODEL}"
   -e "LLM_BASE_URL=${CONTAINER_BASE_URL}"
@@ -128,9 +130,39 @@ docker run \
       exit 127
     }
 
-    bash /workspace/.hoca-runtime/runs/${RUN_ID}/sandbox-setup.sh
+    bash /hoca-run/sandbox-setup.sh
 
-    TASK_CONTENT=\$(cat /workspace/.hoca-runtime/runs/${RUN_ID}/task-input.txt)
+    OPENHANDS_PERSISTENCE_DIR=/hoca-run/openhands-persistence
+    export OPENHANDS_PERSISTENCE_DIR
+    mkdir -p \"\$OPENHANDS_PERSISTENCE_DIR\"
+    OPENHANDS_PYTHON=/opt/openhands-tools/openhands/bin/python
+    if [ ! -x \"\$OPENHANDS_PYTHON\" ]; then
+      OPENHANDS_PYTHON=python3
+    fi
+    \"\$OPENHANDS_PYTHON\" - \"${MODEL}\" \"${CONTAINER_BASE_URL}\" \"${API_KEY}\" \"\$OPENHANDS_PERSISTENCE_DIR/agent_settings.json\" <<'PY'
+import sys
+from pathlib import Path
+
+from openhands.sdk import LLM
+from openhands_cli.utils import get_default_cli_agent
+
+model, base_url, api_key, settings_path = sys.argv[1:5]
+llm = LLM(
+    model=model,
+    base_url=base_url if base_url else None,
+    api_key=api_key,
+    usage_id=\"agent\",
+    reasoning_effort=None,
+    enable_encrypted_reasoning=False,
+    extended_thinking_budget=None,
+    timeout=600,
+)
+agent = get_default_cli_agent(llm)
+Path(settings_path).write_text(agent.model_dump_json(), encoding=\"utf-8\")
+PY
+    echo \"Using isolated OpenHands config: \$OPENHANDS_PERSISTENCE_DIR\"
+
+    TASK_CONTENT=\$(cat /hoca-run/task-input.txt)
 
     openhands --headless --task \"\$TASK_CONTENT\" --override-with-envs --json
   " 2>"$RUN_DIR/openhands-stderr.log" | \
@@ -186,6 +218,12 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   fi
   echo "Logs: $RUN_DIR/"
   exit "$EXIT_CODE"
+fi
+
+if grep -q '"kind": "ConversationErrorEvent"' "$RUN_DIR/openhands-output.jsonl"; then
+  echo "OpenHands reported a conversation error event." | tee "$RUN_DIR/openhands-error.txt"
+  echo "Logs: $RUN_DIR/"
+  exit 1
 fi
 
 echo "OpenHands (sandboxed) completed successfully."
