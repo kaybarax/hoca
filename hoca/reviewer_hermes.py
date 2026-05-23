@@ -12,7 +12,13 @@ from pathlib import Path
 
 from hoca.config import load_config
 from hoca.env_allowlist import filter_env
-from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
+from hoca.role_model_env import (
+    apply_role_to_env,
+    hermes_provider_for_model,
+    log_line_for_selection,
+    resolve_role_llm,
+    strip_pool_credentials,
+)
 from hoca.contracts import HocaReviewFinding, HocaReviewReport, HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_REVIEWER, hermes_installed, profile_exists
@@ -212,7 +218,11 @@ def _invoke_hermes_reviewer(
     selection = resolve_role_llm("reviewer", cfg)
     if selection.llm_model.strip():
         command.extend(["--model", selection.llm_model])
-    env = apply_role_to_env("reviewer", cfg, os.environ.copy())
+    provider = hermes_provider_for_model(selection.llm_model)
+    if provider:
+        command.extend(["--provider", provider])
+    env = strip_pool_credentials(apply_role_to_env("reviewer", cfg, os.environ.copy()))
+    env.update(selection.env_vars())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
     env = filter_env(env, "reviewer")

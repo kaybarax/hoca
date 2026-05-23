@@ -23,6 +23,15 @@ class TestWorkerReviewerAllowlist:
         result = filter_env(env, "worker")
         assert result == env
 
+    def test_provider_api_keys_for_active_model_are_allowed(self) -> None:
+        env = {
+            "LLM_MODEL": "deepseek/deepseek-v4-flash",
+            "LLM_API_KEY": "secret-model-key",
+            "DEEPSEEK_API_KEY": "secret-model-key",
+        }
+        result = filter_env(env, "worker")
+        assert result == env
+
     def test_github_token_is_blocked(self) -> None:
         env = {
             "GITHUB_TOKEN": "ghp_secret123",

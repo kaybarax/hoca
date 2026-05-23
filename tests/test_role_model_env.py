@@ -8,6 +8,7 @@ from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config
 from hoca.role_model_env import (
     apply_role_to_env,
     export_shell,
+    hermes_provider_for_model,
     model_pool_doctor_lines,
     pool_credential_env_keys,
     resolve_role_llm,
@@ -84,6 +85,7 @@ class TestRoleModelResolution:
             "HOCA_REVIEWER_MODEL_API_KEY": "secret-reviewer",
             "HOCA_MANAGER_MODEL_API_KEY": "secret-fast",
             "LLM_API_KEY": "stale",
+            "OPENAI_API_KEY": "stale-openai",
         }
 
         worker_env = apply_role_to_env("worker", cfg, env)
@@ -92,11 +94,34 @@ class TestRoleModelResolution:
         assert worker_env["LLM_API_KEY"] == "secret-worker"
         assert "HOCA_WORKER_MODEL_API_KEY" not in worker_env
         assert "HOCA_REVIEWER_MODEL_API_KEY" not in worker_env
+        assert "OPENAI_API_KEY" not in worker_env
 
         reviewer_env = apply_role_to_env("reviewer", cfg, env)
 
         assert reviewer_env["LLM_API_KEY"] == "secret-reviewer"
         assert reviewer_env["LLM_MODEL"] == "openai/gpt-oss-20b"
+        assert reviewer_env["OPENAI_API_KEY"] == "secret-reviewer"
+
+    def test_apply_role_adds_provider_specific_key_for_hermes_profiles(self) -> None:
+        cfg = HocaConfig(
+            model_pool=ModelPoolConfig(
+                slots=(
+                    ModelSlot(
+                        name="worker-cloud",
+                        model="deepseek/deepseek-v4-flash",
+                        api_key="secret-worker",
+                    ),
+                ),
+                worker_model="worker-cloud",
+                fallback_model="worker-cloud",
+            )
+        )
+
+        worker_env = apply_role_to_env("worker", cfg, {})
+
+        assert worker_env["LLM_API_KEY"] == "secret-worker"
+        assert worker_env["DEEPSEEK_API_KEY"] == "secret-worker"
+        assert "OPENAI_API_KEY" not in worker_env
 
     def test_export_shell_omits_legacy_mode(self) -> None:
         cfg = HocaConfig(llm_model="ollama/qwen-14b-pro")
@@ -111,6 +136,26 @@ class TestRoleModelResolution:
         assert "export OLLAMA_MODEL=qwen-14b-pro" in exports
         assert "secret-worker" in exports
         assert "secret-reviewer" not in exports
+
+    def test_export_shell_sets_provider_alias_for_cloud_model(self) -> None:
+        cfg = HocaConfig(
+            model_pool=ModelPoolConfig(
+                slots=(
+                    ModelSlot(
+                        name="worker-cloud",
+                        model="deepseek/deepseek-v4-flash",
+                        api_key="secret-worker",
+                    ),
+                ),
+                worker_model="worker-cloud",
+                fallback_model="worker-cloud",
+            )
+        )
+
+        exports = export_shell("worker", config=cfg)
+
+        assert "export LLM_API_KEY=secret-worker" in exports
+        assert "export DEEPSEEK_API_KEY=secret-worker" in exports
 
 
 class TestModelPoolDoctorLines:
@@ -188,6 +233,7 @@ class TestRunnerCredentialIsolation:
 def test_strip_pool_credentials_removes_configured_keys() -> None:
     env = {
         "LLM_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
         "HOCA_WORKER_MODEL_API_KEY": "a",
         "PATH": "/usr/bin",
     }
@@ -195,8 +241,10 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
 
     assert cleaned["PATH"] == "/usr/bin"
     assert "LLM_API_KEY" not in cleaned
+    assert "DEEPSEEK_API_KEY" not in cleaned
     assert pool_credential_env_keys(env) == [
         "LLM_API_KEY",
+        "DEEPSEEK_API_KEY",
         "HOCA_WORKER_MODEL_API_KEY",
     ]
 
@@ -220,3 +268,9 @@ def test_load_config_empty_pool_preserves_legacy(
 
     assert cfg.model_pool.is_active is False
     assert resolve_role_llm("worker", cfg).llm_model == "openai/gpt-oss-20b"
+
+
+def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:
+    assert hermes_provider_for_model("deepseek/deepseek-v4-flash") == "deepseek"
+    assert hermes_provider_for_model("openrouter/openai/gpt-4o-mini") == "openrouter"
+    assert hermes_provider_for_model("ollama/qwen-14b-pro") == ""

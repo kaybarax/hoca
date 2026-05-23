@@ -40,6 +40,21 @@ class TestParseBool:
 
 
 class TestLoadConfigDefaults:
+    def test_hoca_dotenv_path_is_used_outside_hoca_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / "hoca.env"
+        env_file.write_text("HOCA_USE_HERMES_PROFILES=true\n", encoding="utf-8")
+        target_repo = tmp_path / "target"
+        target_repo.mkdir()
+        monkeypatch.chdir(target_repo)
+        monkeypatch.setenv("HOCA_DOTENV_PATH", str(env_file))
+        monkeypatch.delenv("HOCA_USE_HERMES_PROFILES", raising=False)
+
+        cfg = load_config()
+
+        assert cfg.use_hermes_profiles is True
+
     def test_defaults_without_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         empty_env = tmp_path / ".env"
         empty_env.write_text("")

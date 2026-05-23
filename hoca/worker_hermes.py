@@ -11,7 +11,13 @@ from pathlib import Path
 
 from hoca.config import HocaConfig, load_config
 from hoca.env_allowlist import filter_env
-from hoca.role_model_env import apply_role_to_env, log_line_for_selection, resolve_role_llm
+from hoca.role_model_env import (
+    apply_role_to_env,
+    hermes_provider_for_model,
+    log_line_for_selection,
+    resolve_role_llm,
+    strip_pool_credentials,
+)
 from hoca.contracts import HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_WORKER, hermes_installed, profile_exists
@@ -216,7 +222,11 @@ def _invoke_hermes_worker(
     selection = resolve_role_llm("worker", cfg)
     if selection.llm_model.strip():
         command.extend(["--model", selection.llm_model])
-    env = apply_role_to_env("worker", cfg, os.environ.copy())
+    provider = hermes_provider_for_model(selection.llm_model)
+    if provider:
+        command.extend(["--provider", provider])
+    env = strip_pool_credentials(apply_role_to_env("worker", cfg, os.environ.copy()))
+    env.update(selection.env_vars())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "worker"
     env = filter_env(env, "worker")
@@ -271,6 +281,13 @@ def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
             pass
 
     if process_exit_code == 0:
+        stdout_path = run_dir / "logs" / "worker-hermes-stdout.txt"
+        if stdout_path.is_file():
+            stdout = stdout_path.read_text(encoding="utf-8", errors="replace").lower()
+            if "status: `blocked`" in stdout or "status: blocked" in stdout:
+                return "blocked"
+            if "status: `failed`" in stdout or "status: failed" in stdout:
+                return "failed"
         return "completed"
     return "failed"
 
@@ -293,6 +310,20 @@ def _ensure_worker_attempt_report(
         mode=mode,
         project_path=project_path,
     )
+
+
+def _missing_profile_attempt_status(
+    run_dir: Path,
+    *,
+    round_number: int,
+    process_exit_code: int,
+    inferred_status: str,
+) -> str:
+    if process_exit_code != 0:
+        return inferred_status
+    if worker_attempt_path(run_dir, round_number).is_file():
+        return inferred_status
+    return "blocked"
 
 
 def run_worker_hermes(
@@ -337,6 +368,12 @@ def run_worker_hermes(
             max_turns=_resolve_max_turns(),
         )
         status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
+        status = _missing_profile_attempt_status(
+            run_dir,
+            round_number=round_number,
+            process_exit_code=result.returncode,
+            inferred_status=status,
+        )
         attempt_path = _ensure_worker_attempt_report(
             run_dir,
             round_number=round_number,

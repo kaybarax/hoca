@@ -14,6 +14,26 @@ DoctorLineStatus = Literal["ok", "warn", "fail"]
 
 MODEL_ROLES: tuple[RoleName, ...] = ("manager", "worker", "reviewer")
 CLI_OVERRIDE_FLAG = "HOCA_CLI_MODEL_OVERRIDE"
+PROVIDER_API_KEY_ENV_KEYS: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "TOGETHER_API_KEY",
+    "XAI_API_KEY",
+)
+HERMES_PROVIDER_BY_MODEL_PREFIX: dict[str, str] = {
+    "anthropic": "anthropic",
+    "deepseek": "deepseek",
+    "gemini": "google",
+    "google": "google",
+    "openrouter": "openrouter",
+    "together": "together",
+    "together_ai": "together",
+    "xai": "xai",
+}
 
 
 @dataclass(frozen=True)
@@ -33,6 +53,7 @@ class RoleLlmSelection:
             "LLM_API_KEY": self.api_key,
             "HOCA_SELECTED_MODEL_SLOT": self.slot_name,
         }
+        out.update(_provider_api_key_env_vars(self.llm_model, self.api_key))
         if self.llm_model.startswith("ollama/"):
             out["OLLAMA_MODEL"] = self.llm_model.removeprefix("ollama/")
             out["HOCA_REQUESTED_MODEL"] = out["OLLAMA_MODEL"]
@@ -94,8 +115,37 @@ def _legacy_api_key(config: HocaConfig) -> str:
     return ""
 
 
+def _provider_api_key_env_vars(model: str, api_key: str) -> dict[str, str]:
+    if not api_key:
+        return {}
+    provider = model.split("/", 1)[0].lower()
+    keys_by_provider = {
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "deepseek": ("DEEPSEEK_API_KEY",),
+        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        "openai": ("OPENAI_API_KEY",),
+        "openrouter": ("OPENROUTER_API_KEY",),
+        "together_ai": ("TOGETHER_API_KEY",),
+        "together": ("TOGETHER_API_KEY",),
+        "xai": ("XAI_API_KEY",),
+    }
+    return {key: api_key for key in keys_by_provider.get(provider, ())}
+
+
+def hermes_provider_for_model(model: str) -> str:
+    provider = model.split("/", 1)[0].lower()
+    return HERMES_PROVIDER_BY_MODEL_PREFIX.get(provider, "")
+
+
 def pool_credential_env_keys(env: dict[str, str]) -> list[str]:
-    keys = ["LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY", "HOCA_SELECTED_MODEL_SLOT"]
+    keys = [
+        "LLM_MODEL",
+        "LLM_BASE_URL",
+        "LLM_API_KEY",
+        "HOCA_SELECTED_MODEL_SLOT",
+        *PROVIDER_API_KEY_ENV_KEYS,
+    ]
     for role in MODEL_ROLES:
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
             keys.append(f"HOCA_{role.upper()}_MODEL_{suffix}")
@@ -134,6 +184,10 @@ def export_shell(role: RoleName, *, config: HocaConfig | None = None) -> str:
         f'export LLM_API_KEY={_shell_quote(selection.api_key)}',
         f'export HOCA_SELECTED_MODEL_SLOT={_shell_quote(selection.slot_name)}',
     ]
+    for key, value in _provider_api_key_env_vars(
+        selection.llm_model, selection.api_key
+    ).items():
+        lines.append(f"export {key}={_shell_quote(value)}")
     if selection.llm_model.startswith("ollama/"):
         ollama_name = selection.llm_model.removeprefix("ollama/")
         lines.append(f'export OLLAMA_MODEL={_shell_quote(ollama_name)}')

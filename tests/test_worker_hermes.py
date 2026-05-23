@@ -14,6 +14,8 @@ from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
     build_legacy_openhands_task,
     build_worker_hermes_prompt,
+    _infer_worker_status,
+    _missing_profile_attempt_status,
     load_task_spec,
     run_worker_hermes,
     verify_profile_prerequisites,
@@ -277,12 +279,13 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
         "      shift 2\n"
         "      ;;\n"
         "    --model)\n"
-        '      [[ "${2:-}" == ollama/* ]] || { echo "missing model override" >&2; exit 2; }\n'
+        '      [[ "${2:-}" == */* ]] || { echo "missing model override" >&2; exit 2; }\n'
         "      shift 2\n"
         "      ;;\n"
         "    *) shift ;;\n"
         "  esac\n"
         "done\n"
+        '[[ -n "${DEEPSEEK_API_KEY:-${OPENAI_API_KEY:-${LLM_API_KEY:-}}}" ]] || { echo "missing provider key" >&2; exit 2; }\n'
         'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
         'ROUND="${HERMES_TEST_ROUND:?}"\n'
         'mkdir -p "$RUN_DIR/attempts"\n'
@@ -457,6 +460,49 @@ def test_record_worker_attempt_profile_mode_captures_log_artifacts(tmp_path: Pat
     assert "run-openhands-task.sh" in report.commands_run
     assert "worker_hermes_stdout" in report.artifact_paths
     assert "worker_hermes_stderr" in report.artifact_paths
+
+
+def test_profile_stdout_blocked_status_is_not_recorded_as_completed(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    (logs_dir / "worker-hermes-stdout.txt").write_text(
+        "## HOCA Worker Attempt Report\n\n"
+        "### Status: `blocked`\n\n"
+        "### Blocked reason\n\n"
+        "OpenHands CLI is not available in the container.\n",
+        encoding="utf-8",
+    )
+
+    status = _infer_worker_status(run_dir, process_exit_code=0)
+    path = record_worker_attempt(run_dir, round_number=1, status=status, mode="profile")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert status == "blocked"
+    assert report.status == "blocked"
+    assert report.blocked_reason == "OpenHands CLI is not available in the container."
+
+
+def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+    )
+    path = record_worker_attempt(run_dir, round_number=1, status=status, mode="profile")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert status == "blocked"
+    assert report.status == "blocked"
+    assert (
+        report.blocked_reason
+        == "Hermes worker did not write a structured attempt report."
+    )
 
 
 def test_record_worker_attempt_git_fallback_for_changed_files(tmp_path: Path) -> None:

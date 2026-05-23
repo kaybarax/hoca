@@ -47,8 +47,9 @@ is_truthy() {
 
 env_file_value() {
   local name="$1"
+  local env_file="${HOCA_DOTENV_PATH:-.env}"
 
-  if [ ! -f ".env" ]; then
+  if [ ! -f "$env_file" ]; then
     return 1
   fi
 
@@ -65,7 +66,7 @@ env_file_value() {
       exit
     }
     END { if (!found) exit 1 }
-  ' ".env"
+  ' "$env_file"
 }
 
 config_value() {
@@ -287,10 +288,11 @@ case "$LLM_MODEL_CHECK" in
 esac
 
 section "Environment"
-if [ -f ".env" ]; then
-  if [ -r ".env" ]; then
+DOCTOR_ENV_FILE="${HOCA_DOTENV_PATH:-.env}"
+if [ -f "$DOCTOR_ENV_FILE" ]; then
+  if [ -r "$DOCTOR_ENV_FILE" ]; then
     ok ".env exists and is readable."
-    if grep -nEv '^([[:space:]]*#.*|[[:space:]]*$|[A-Za-z_][A-Za-z0-9_]*=.*)$' ".env" >/dev/null; then
+    if grep -nEv '^([[:space:]]*#.*|[[:space:]]*$|[A-Za-z_][A-Za-z0-9_]*=.*)$' "$DOCTOR_ENV_FILE" >/dev/null; then
       warn ".env contains lines that are not simple KEY=value assignments."
     else
       ok ".env uses simple KEY=value syntax."

@@ -63,6 +63,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 
 run_definition_of_ready_check() {
@@ -701,7 +702,30 @@ check_openhands_changed_files
 
 current_round=1
 
+latest_worker_attempt_status() {
+  local latest_attempt
+  latest_attempt="$(find "$RUN_DIR/attempts" -maxdepth 1 -name 'worker-attempt-*.json' -type f 2>/dev/null | sort | tail -n 1)"
+  if [ -z "$latest_attempt" ] || [ ! -f "$latest_attempt" ]; then
+    return 1
+  fi
+  jq -r '.status // ""' "$latest_attempt" 2>/dev/null || true
+}
+
+stop_if_worker_attempt_blocked() {
+  local worker_status
+  worker_status="$(latest_worker_attempt_status)"
+  case "$worker_status" in
+    blocked)
+      block_run "worker_blocked" "Worker attempt was blocked; see $RUN_DIR/attempts for details."
+      ;;
+    failed)
+      fail_run "worker_failed" "Worker attempt failed; see $RUN_DIR/attempts for details."
+      ;;
+  esac
+}
+
 while true; do
+  stop_if_worker_attempt_blocked
   if [ -z "$(git_status_short_for_task)" ]; then
     echo "No changes produced."
     update_status "no_changes"
@@ -797,6 +821,7 @@ worker_git diff > "$RUN_DIR/git-diff.patch"
 changed_files_for_task > "$RUN_DIR/changed-files.txt"
 
 if [ -z "$(git_status_short_for_task)" ]; then
+  stop_if_worker_attempt_blocked
   echo "No changes produced."
   update_status "no_changes"
   exit 0

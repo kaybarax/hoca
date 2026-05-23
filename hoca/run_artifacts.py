@@ -88,6 +88,25 @@ def _read_test_commands_from_summary(run_dir: Path) -> list[str]:
     return commands
 
 
+def _profile_blocked_reason(run_dir: Path) -> str | None:
+    stdout_path = run_dir / "logs" / "worker-hermes-stdout.txt"
+    if not stdout_path.is_file():
+        return None
+    lines = stdout_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().lower().startswith("### blocked reason"):
+            reason_lines: list[str] = []
+            for follow in lines[index + 1 :]:
+                stripped = follow.strip()
+                if stripped.startswith("### "):
+                    break
+                if stripped:
+                    reason_lines.append(stripped)
+            if reason_lines:
+                return _redact_secret_like_values(" ".join(reason_lines))
+    return None
+
+
 def _git_changed_files(project_path: Path) -> list[str]:
     try:
         result = subprocess.run(
@@ -272,6 +291,10 @@ def record_worker_attempt(
             blocked_reason = str(monitor["stop_reason"])
         elif (run_dir / "openhands-error.txt").is_file():
             blocked_reason = (run_dir / "openhands-error.txt").read_text(encoding="utf-8").strip()
+        elif mode == "profile":
+            blocked_reason = _profile_blocked_reason(run_dir)
+            if not blocked_reason:
+                blocked_reason = "Hermes worker did not write a structured attempt report."
         if blocked_reason:
             blocked_reason = _redact_secret_like_values(blocked_reason)
 

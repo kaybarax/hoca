@@ -203,7 +203,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     if dotenv_path is not None:
         dotenv = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
     else:
-        default_dotenv = Path(".env")
+        default_dotenv = Path(os.environ.get("HOCA_DOTENV_PATH", ".env"))
         if default_dotenv.exists():
             dotenv = {k: v for k, v in dotenv_values(default_dotenv).items() if v is not None}
 
