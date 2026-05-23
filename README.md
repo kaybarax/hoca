@@ -472,18 +472,28 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
 | Model not available | Run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases) |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
-| Lock file exists | Another HOCA run may be active. Check `.hoca-runtime/runs/` for stale locks. |
-| Tests fail | Check `.hoca-runtime/runs/<run-id>/tests.log` for details |
-| Review not LGTM | Check `.hoca-runtime/runs/<run-id>/openhands-review.txt` for required fixes |
+| Lock file exists | Another HOCA run may be active. Check the runtime archive or rerun with `HOCA_KEEP_RUNTIME=true` for immediate debugging. |
+| Tests fail | Check the archived run directory under `~/.hoca/runtime-archives/<repo-name>/<run-id>/` for `tests-summary.md` and test logs. |
+| Review not LGTM | Check the archived run directory under `~/.hoca/runtime-archives/<repo-name>/<run-id>/` for review artifacts. |
 
 ## Logs
 
-HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
+HOCA writes run artifacts under the target repository's `.hoca-runtime/` during
+execution, then archives the current run outside the target checkout and removes
+the target `.hoca-runtime/` on exit. By default archives are stored under:
+
+```text
+~/.hoca/runtime-archives/<repo-name>/<run-id>/
+```
+
+Set `HOCA_RUNTIME_ARCHIVE_ROOT=/path/to/archive-root` to choose a different
+archive location. Set `HOCA_KEEP_RUNTIME=true` only for immediate debugging
+when you intentionally want to leave `.hoca-runtime/` in the target repository.
+
+Archived run layout:
 
 ```
-.hoca-runtime/
-├── runs/
-│   └── <run-id>/
+<archive-root>/<repo-name>/<run-id>/
 │       ├── status.json         # Run state and metadata
 │       ├── openhands-output.*  # Worker output
 │       ├── openhands-review.txt # Reviewer feedback
@@ -491,12 +501,11 @@ HOCA stores run artifacts in the target repository under `.hoca-runtime/`:
 │       ├── git-status.txt      # Changed files
 │       ├── git-diff.patch      # Full diff
 │       └── pr-body.md          # PR description
-└── logs/
 ```
 
-Add `.hoca-runtime/` to the target repository's `.gitignore`.
-`bin/hoca init-project /path/to/repo` adds that ignore rule and copies the
-OpenHands and PR templates for you when they are missing.
+`bin/hoca init-project /path/to/repo` still adds `.hoca-runtime/` to the target
+repository's `.gitignore` because the directory exists during active runs. It
+also copies the OpenHands and PR templates for you when they are missing.
 
 ## Development
 

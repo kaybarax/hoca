@@ -327,6 +327,33 @@ restore_dev_branch_after_run() {
   "${restore_args[@]}" || true
 }
 
+archive_and_remove_runtime() {
+  if [ "${HOCA_KEEP_RUNTIME:-false}" = "true" ]; then
+    return 0
+  fi
+  if [ ! -d "$PROJECT_PATH/.hoca-runtime" ]; then
+    return 0
+  fi
+
+  local archive_root="${HOCA_RUNTIME_ARCHIVE_ROOT:-${HOME:-/tmp}/.hoca/runtime-archives}"
+  local repo_slug
+  local archive_run_dir
+  repo_slug="$(basename "$PROJECT_PATH")"
+  archive_run_dir="$archive_root/$repo_slug/$RUN_ID"
+
+  if [ -d "$RUN_DIR" ]; then
+    rm -rf "$archive_run_dir"
+    mkdir -p "$archive_run_dir"
+    cp -R "$RUN_DIR/." "$archive_run_dir/"
+    printf '%s\n' "$archive_run_dir" > "$archive_run_dir/runtime-archive-path.txt"
+    echo "Archived HOCA runtime evidence to: $archive_run_dir"
+  fi
+
+  echo "Cleaning up target repo .hoca-runtime..."
+  rm -rf "$PROJECT_PATH/.hoca-runtime"
+  git -C "$PROJECT_PATH" worktree prune >/dev/null 2>&1 || true
+}
+
 # shellcheck disable=SC2329
 cleanup() {
   if [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/status.json" ]; then
@@ -339,6 +366,7 @@ cleanup() {
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
   fi
+  archive_and_remove_runtime
 }
 trap cleanup EXIT
 trap 'cleanup; exit 129' HUP
@@ -839,10 +867,6 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   SHOULD_RESTORE_DEV_BRANCH="true"
   restore_dev_branch_after_run
-  if [ -d ".hoca-runtime" ] && [ "${HOCA_KEEP_RUNTIME:-false}" != "true" ]; then
-    echo "Cleaning up .hoca-runtime..."
-    rm -rf ".hoca-runtime"
-  fi
   echo "HOCA run completed through pull request creation."
 else
   echo "HOCA run completed up to review. Human staging required."

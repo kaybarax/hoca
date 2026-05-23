@@ -46,13 +46,15 @@ def _template_repo() -> Path:
 
 
 def run_hoca_task(repo: Path, task: str) -> subprocess.CompletedProcess[str]:
+    env = base_env()
+    env["HOCA_RUNTIME_ARCHIVE_ROOT"] = str(archive_root(repo))
     return subprocess.run(
         [str(SCRIPT), str(repo), task],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=base_env(),
+        env=env,
     )
 
 
@@ -145,6 +147,7 @@ def run_hoca_task_with_env(
 ) -> subprocess.CompletedProcess[str]:
     run_env = env.copy()
     run_env.setdefault("HOCA_DEV_BRANCH", "")
+    run_env.setdefault("HOCA_RUNTIME_ARCHIVE_ROOT", str(archive_root(repo)))
     return subprocess.run(
         [str(SCRIPT), str(repo), task, *extra_args],
         check=False,
@@ -155,18 +158,44 @@ def run_hoca_task_with_env(
     )
 
 
+def archive_root(repo: Path) -> Path:
+    return repo.parent / f"{repo.name}-hoca-archives"
+
+
+def archived_runs_dir(repo: Path) -> Path:
+    return archive_root(repo) / repo.name
+
+
+def latest_run_dir(repo: Path) -> Path:
+    target_runs = repo / ".hoca-runtime" / "runs"
+    if target_runs.exists():
+        run_dirs = sorted(p for p in target_runs.iterdir() if p.is_dir())
+        if run_dirs:
+            return run_dirs[-1]
+    archive_runs = archived_runs_dir(repo)
+    run_dirs = sorted(p for p in archive_runs.iterdir() if p.is_dir())
+    return run_dirs[-1]
+
+
+def run_dir(repo: Path, run_id: str) -> Path:
+    target = repo / ".hoca-runtime" / "runs" / run_id
+    if target.exists():
+        return target
+    return archived_runs_dir(repo) / run_id
+
+
 def latest_status(repo: Path, run_id: str | None = None) -> str:
-    runs = repo / ".hoca-runtime" / "runs"
     if run_id is None:
-        run_dirs = sorted(p for p in runs.iterdir() if p.is_dir())
-        status_path = run_dirs[-1] / "status.json"
+        status_path = latest_run_dir(repo) / "status.json"
     else:
-        status_path = runs / run_id / "status.json"
+        status_path = run_dir(repo, run_id) / "status.json"
     return status_path.read_text(encoding="utf-8")
 
 
 def latest_notification_result(repo: Path) -> str:
     result_paths = sorted((repo / ".hoca-runtime" / "runs").glob("*/notification-result.txt"))
+    if not result_paths:
+        result_paths = sorted(archived_runs_dir(repo).glob("*/notification-result.txt"))
     return result_paths[-1].read_text(encoding="utf-8")
 
 
@@ -325,7 +354,7 @@ def test_run_hoca_task_routes_implementation_through_worker_hermes_when_profiles
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
     assert "Routing worker attempt through run-worker-hermes.sh" in result.stdout
     assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
@@ -402,7 +431,7 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
     assert "Running OpenHands (repair round 2 of 2)" in result.stdout
     assert "Routing worker attempt through run-worker-hermes.sh" in result.stdout
@@ -424,7 +453,7 @@ def test_run_hoca_task_generates_task_spec_artifacts(tmp_path: Path) -> None:
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
     assert "Generating task spec..." in result.stdout
     assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update README\n"
@@ -600,6 +629,30 @@ def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) ->
     assert '"reason": "openhands_failed"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_cleans_target_runtime_and_archives_evidence_by_default(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="echo 'boom' >&2\nexit 42\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    archived = latest_run_dir(tmp_path)
+    assert result.returncode != 0
+    assert not (tmp_path / ".hoca-runtime").exists()
+    assert archived.is_dir()
+    assert archived.is_relative_to(archive_root(tmp_path))
+    assert (archived / "task-report.md").is_file()
+    assert '"reason": "openhands_failed"' in (archived / "status.json").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_run_hoca_task_marks_openhands_conversation_error_as_failure(
     tmp_path: Path,
 ) -> None:
@@ -702,7 +755,7 @@ def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_cha
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0
     assert "No changes produced." in result.stdout
     assert '"status": "no_changes"' in latest_status(tmp_path)
@@ -723,7 +776,7 @@ def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Pat
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     decision_path = run_dir / "decisions" / "manager-decision-1.json"
 
     assert decision_path.is_file()
@@ -879,7 +932,7 @@ def test_run_hoca_task_stops_before_staging_without_intended_file_list(
     env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
 
     staged = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
@@ -924,9 +977,7 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    changed_files = sorted((tmp_path / ".hoca-runtime" / "runs").glob("*/changed-files.txt"))[
-        -1
-    ].read_text(encoding="utf-8")
+    changed_files = (latest_run_dir(tmp_path) / "changed-files.txt").read_text(encoding="utf-8")
     assert result.returncode == 0
     assert "Working tree has existing changes:" not in result.stdout
     assert "README.md" in changed_files
@@ -955,7 +1006,9 @@ def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> 
     assert "foreign" in lock.read_text(encoding="utf-8")
 
 
-def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> None:
+def test_run_hoca_task_cleanup_removes_runtime_even_when_lock_was_replaced(
+    tmp_path: Path,
+) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
@@ -976,10 +1029,9 @@ def test_run_hoca_task_cleanup_does_not_remove_replaced_lock(tmp_path: Path) -> 
         "42",
     )
 
-    lock = tmp_path / ".hoca-runtime" / "runs" / "issue-42.lock"
     assert result.returncode == 0
-    assert lock.exists()
-    assert "foreign" in lock.read_text(encoding="utf-8")
+    assert not (tmp_path / ".hoca-runtime").exists()
+    assert (run_dir(tmp_path, "issue-42") / "status.json").is_file()
 
 
 def test_run_hoca_task_blocks_dangerous_task_before_run_dir(tmp_path: Path) -> None:
@@ -1013,7 +1065,7 @@ def test_run_hoca_task_writes_definition_of_ready_artifact(tmp_path: Path) -> No
 
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
-    run_dir = sorted((tmp_path / ".hoca-runtime" / "runs").glob("run-*"))[-1]
+    run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
     dor_path = run_dir / "definition-of-ready.json"
     assert dor_path.is_file()

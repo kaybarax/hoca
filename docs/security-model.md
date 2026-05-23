@@ -158,11 +158,14 @@ Stop a suspicious run before preserving output.
 2. If a sandbox container is still running, remove it by name or ID with
    `docker rm -f <container>`. HOCA sandbox containers are named with the run ID,
    for example `hoca-worker-<run_id>`.
-3. Inspect the run directory under `.hoca-runtime/runs/<run_id>/`, especially
+3. Inspect the archived run directory under
+   `~/.hoca/runtime-archives/<repo-name>/<run_id>/`, especially
    `monitor-stop.json`, `monitor-events.jsonl`, stderr logs, and task reports.
+   For live debugging only, rerun with `HOCA_KEEP_RUNTIME=true` to leave the
+   target repo `.hoca-runtime/` in place temporarily.
 4. Inspect repository state with `git status --short` and `git diff`.
-5. If worktree sandboxing was used, inspect and remove only the HOCA-created
-   worktree after preserving any needed logs.
+5. If worktree sandboxing was used, confirm the HOCA-created worktree and target
+   repo `.hoca-runtime/` were removed; prune stale worktree metadata if needed.
 6. Delete HOCA-created branches only after confirming they contain no human work.
 7. Rotate any credential that may have been exposed in prompts, logs, commits,
    PR bodies, terminal output, or agent-readable files.
