@@ -10,7 +10,8 @@ PROJECT_PATH="$(cd "$1" && pwd)"
 RUN_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 
 cd "$PROJECT_PATH"
 
-PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.task_report "$PROJECT_PATH" "$RUN_DIR"
+PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.task_report "$PROJECT_PATH" "$RUN_DIR"

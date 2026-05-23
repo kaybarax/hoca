@@ -10,6 +10,7 @@ SKIP_FILE=""
 RUN_DIR=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 
 log_skip() {
   printf '%s\n' "$1" >> "$SKIP_FILE"
@@ -137,7 +138,7 @@ precheck() {
     return 1
   fi
 
-  if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+  if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate "$RUN_DIR" \
     --review-text "$RUN_DIR/openhands-review.txt" \
     --run-id "$(basename "$RUN_DIR")" \
     --round "${HOCA_REVIEW_ROUND:-1}" >/dev/null; then

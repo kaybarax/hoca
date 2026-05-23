@@ -65,6 +65,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 
@@ -101,7 +102,7 @@ fi
 PROJECT_PATH="$(cd "$RAW_PROJECT_PATH" && pwd)"
 
 record_run_artifact() {
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.run_artifacts "$@"
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_artifacts "$@"
 }
 
 task_spec_path_for_run() {
@@ -525,13 +526,13 @@ WORKTREE_PATH=""
 WORKER_PROJECT_PATH="$PROJECT_PATH"
 
 worktree_enabled() {
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c \
     'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_worktree_sandbox else 1)' \
     >/dev/null 2>&1
 }
 
 create_disposable_worktree() {
-  WORKTREE_PATH="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+  WORKTREE_PATH="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c "
 from hoca.worktree import create_worktree
 from pathlib import Path
 import sys
@@ -545,7 +546,7 @@ print(wt)
 remove_disposable_worktree() {
   if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
     echo "Removing disposable worktree..."
-    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c "
 from hoca.worktree import remove_worktree
 from pathlib import Path
 import sys
@@ -604,7 +605,7 @@ resolve_round_loop() {
   local round_number="$2"
   local failure_type="${3:-}"
   local cmd=(
-    python3
+    "$PYTHON_BIN"
     -m hoca.round_loop
     "$phase"
     "$RUN_DIR"
@@ -621,12 +622,12 @@ resolve_round_loop() {
 }
 
 round_loop_action() {
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["action"])'
+  "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["action"])'
 }
 
 round_loop_field() {
   local field="$1"
-  python3 -c "import json,sys; value=json.load(sys.stdin).get('$field'); print('' if value is None else value)"
+  "$PYTHON_BIN" -c "import json,sys; value=json.load(sys.stdin).get('$field'); print('' if value is None else value)"
 }
 
 apply_round_loop_repair() {
@@ -645,7 +646,7 @@ apply_round_loop_repair() {
 }
 
 hermes_profiles_enabled() {
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c \
     'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_hermes_profiles else 1)' \
     >/dev/null 2>&1
 }

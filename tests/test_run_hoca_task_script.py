@@ -20,6 +20,25 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
     assert 'export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"' in content
 
 
+def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
+    root = Path(__file__).resolve().parents[1]
+    scripts = [
+        root / "scripts" / "run-hoca-task.sh",
+        root / "scripts" / "run-openhands-task.sh",
+        root / "scripts" / "create-pr.sh",
+        root / "scripts" / "generate-task-report.sh",
+        root / "scripts" / "review-with-openhands.sh",
+        root / "scripts" / "safe-stage-after-review.sh",
+        root / "scripts" / "auto-merge-guards.sh",
+    ]
+
+    for script in scripts:
+        content = script.read_text(encoding="utf-8")
+        assert 'PYTHON_BIN="${HOCA_PYTHON:-python3}"' in content, script
+        assert "python3 -m hoca." not in content, script
+        assert 'PYTHONPATH="$HOCA_ROOT' not in content or '"$PYTHON_BIN"' in content, script
+
+
 def test_openhands_wrapper_prepends_execution_root_guard() -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "run-openhands-task.sh"
     content = script.read_text(encoding="utf-8")

@@ -32,6 +32,7 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
 
 case "$AGENT_ROLE" in
@@ -236,7 +237,7 @@ fi
 echo "Starting OpenHands with monitoring..."
 
 set +e
-PYTHONPATH="$HOCA_ROOT" python3 -c "
+PYTHONPATH="$HOCA_ROOT" "$PYTHON_BIN" -c "
 import json
 import subprocess
 import sys

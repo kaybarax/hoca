@@ -14,6 +14,7 @@ cd "$PROJECT_PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 
 run_review_gate() {
   local review_text_path="$1"
@@ -28,7 +29,7 @@ run_review_gate() {
   if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
     REVIEW_GATE_ARGS+=(--structured-report "$HOCA_REVIEW_REPORT_PATH")
   fi
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "${REVIEW_GATE_ARGS[@]}"
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate "${REVIEW_GATE_ARGS[@]}"
   REVIEW_GATE_EXIT=$?
   set -e
 }
@@ -197,7 +198,7 @@ if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
 fi
 
 if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate \
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate \
     "$RUN_DIR" \
     --materialize-from-text "$RUN_DIR/openhands-review.txt" \
     --run-id "$RUN_ID" \

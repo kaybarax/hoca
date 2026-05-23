@@ -26,8 +26,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 TARGET_TEMPLATE_FILE="$PROJECT_PATH/templates/PR_TEMPLATE.md"
-HOCA_TEMPLATE_FILE="$(cd "$SCRIPT_DIR/.." && pwd)/templates/PR_TEMPLATE.md"
+HOCA_TEMPLATE_FILE="$HOCA_ROOT/templates/PR_TEMPLATE.md"
 TEMPLATE_FILE="$TARGET_TEMPLATE_FILE"
 
 cd "$PROJECT_PATH"
@@ -207,7 +209,7 @@ PR_FRAGMENT_ARGS=(
 if [ -n "$ISSUE_ID" ]; then
   PR_FRAGMENT_ARGS+=(--issue-id "$ISSUE_ID")
 fi
-if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.pr_body "$RUN_DIR" \
+if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.pr_body "$RUN_DIR" \
   "${PR_FRAGMENT_ARGS[@]}" >/dev/null; then
   echo "Failed to build PR body fragments from run artifacts." >&2
   exit 1
@@ -282,8 +284,8 @@ if [ -f "$RUN_DIR/status.json" ] && command -v jq >/dev/null 2>&1; then
   jq --arg url "$PR_URL" '.pr_url = $url' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
   mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
 fi
-if PYTHONPATH="$(cd "$SCRIPT_DIR/.." && pwd)${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 -m hoca.run_artifacts sync-status "$RUN_DIR" >/dev/null 2>&1; then
+if PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+  "$PYTHON_BIN" -m hoca.run_artifacts sync-status "$RUN_DIR" >/dev/null 2>&1; then
   :
 fi
 

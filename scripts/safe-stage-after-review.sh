@@ -13,6 +13,7 @@ INTENDED_FILE_LIST="$4"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 # shellcheck source=lib/hoca-security.sh
 source "$SCRIPT_DIR/lib/hoca-security.sh"
 
@@ -23,7 +24,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 
-if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m hoca.review_gate "$RUN_DIR" \
+if ! PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate "$RUN_DIR" \
   --review-text "$RUN_DIR/openhands-review.txt" \
   --run-id "$(basename "$RUN_DIR")" \
   --round "${HOCA_REVIEW_ROUND:-1}" >/dev/null; then
