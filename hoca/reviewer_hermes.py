@@ -226,6 +226,10 @@ def _invoke_hermes_reviewer(
     env.update(selection.env_vars())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
+    # The reviewer profile invokes the OpenHands review wrapper as a child.
+    # Keep that nested reviewer on this already-resolved role model instead of
+    # re-resolving or falling back to local defaults inside the profile shell.
+    env["HOCA_SKIP_ROLE_MODEL_RESOLUTION"] = "true"
     env = filter_env(env, "reviewer")
     if cfg.model_pool.is_active:
         print(log_line_for_selection(selection), file=sys.stderr)

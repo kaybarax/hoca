@@ -32,6 +32,31 @@ def make_fake_review_openhands(fake_bin: Path) -> None:
     openhands.chmod(openhands.stat().st_mode | 0o100)
 
 
+def make_fake_profile_hermes(fake_bin: Path) -> None:
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" > "$HERMES_CAPTURE_ENV"\n'
+        'printf "HOCA_SKIP_ROLE_MODEL_RESOLUTION=%s\\n" "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" >> "$HERMES_CAPTURE_ENV"\n'
+        'mkdir -p reviews logs\n'
+        "cat > reviews/review-report-1.json <<'JSON'\n"
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-profile",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "LGTM",\n'
+        '  "findings": [],\n'
+        '  "pr_notes": {"summary": ["ok"], "known_followups": []}\n'
+        "}\n"
+        "JSON\n"
+        "echo 'LGTM'\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | 0o100)
+
+
 def run_script(
     *args: str,
     extra_env: dict[str, str] | None = None,
@@ -104,6 +129,42 @@ def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -
 
     assert result.returncode == 1
     assert "hermes command not found" in result.stderr
+
+
+def test_profile_mode_pins_nested_reviewer_to_selected_model(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    make_fake_profile_hermes(fake_bin)
+    hermes_home = tmp_path / "hermes-home"
+    (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
+    capture_env = tmp_path / "reviewer-env.txt"
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-profile"
+    run_dir.mkdir(parents=True)
+    task_spec_path = write_task_spec(run_dir)
+
+    result = run_script(
+        str(project),
+        str(task_spec_path),
+        str(run_dir),
+        "1",
+        extra_env={
+            "HOCA_USE_HERMES_PROFILES": "true",
+            "HERMES_HOME": str(hermes_home),
+            "HOCA_REVIEWER_MODEL_NAME": "reviewer-cloud",
+            "HOCA_REVIEWER_MODEL_MODEL": "deepseek/deepseek-v4-flash",
+            "HOCA_REVIEWER_MODEL_API_KEY": "secret-reviewer",
+            "HERMES_CAPTURE_ENV": str(capture_env),
+        },
+        fake_bin=fake_bin,
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = capture_env.read_text(encoding="utf-8")
+    assert "LLM_MODEL=deepseek/deepseek-v4-flash" in captured
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=true" in captured
 
 
 def test_script_documents_required_behavior() -> None:
