@@ -37,10 +37,23 @@ _LOCAL_PATH_RE = re.compile(
     r"/(?:Users|home|root|private(?:/var)?|var/folders)/[^\s\"'`<>\[\](){}]*",
 )
 
+# After path substitution, drop lines whose only content is a label + placeholder.
+# E.g. "- **Project**: <local-path>" or "Target repository: <local-path>" adds nothing.
+# Requires a label prefix so bare "<local-path>" tokens in mid-sentence are kept.
+_LOCAL_PATH_ONLY_LINE_RE = re.compile(
+    r"^[-*]?\s*(?:\*\*[^*]+\*\*|[A-Za-z][A-Za-z\s]*):?\s+<local-path>\s*$",
+)
+
 
 def _sanitize_pr_text(text: str) -> str:
-    """Replace absolute local filesystem paths with a safe placeholder."""
-    return _LOCAL_PATH_RE.sub("<local-path>", text)
+    """Replace absolute local filesystem paths with a safe placeholder,
+    then drop lines that contained only a path (e.g. '- **Project**: <path>')."""
+    text = _LOCAL_PATH_RE.sub("<local-path>", text)
+    clean = [
+        line for line in text.split("\n")
+        if not _LOCAL_PATH_ONLY_LINE_RE.match(line.strip())
+    ]
+    return "\n".join(clean)
 
 
 def _bullet_list(items: list[str], *, empty: str) -> str:
@@ -422,6 +435,8 @@ def summarize_pr_body_fragments(
     # Sanitize any absolute local paths that appear in run_state-generated fragments
     # (e.g. worktree paths in tests-summary.md).
     base = {k: _sanitize_pr_text(v) for k, v in base.items()}
+    # Replace the full-task-text summary (set by run_state) with the cleaned first-line version.
+    base["summary"] = task_oneline
 
     if changes is not None:
         base["changes"] = changes

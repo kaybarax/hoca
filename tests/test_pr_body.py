@@ -291,10 +291,10 @@ def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
         ("/var/folders/89/abc123/T/tmp.txt", "<local-path>"),
         ("no path here", "no path here"),
         ("relative/path/only", "relative/path/only"),
-        (
-            "Project: /Users/alice/proj/.hoca-runtime/worktrees/run-123",
-            "Project: <local-path>",
-        ),
+        # Lines that are only "Label: <path>" are dropped entirely (no useful content).
+        ("Project: /Users/alice/proj/.hoca-runtime/worktrees/run-123", ""),
+        ("- **Project**: /Users/alice/proj", ""),
+        ("Target repository: /Users/alice/proj", ""),
     ],
 )
 def test_sanitize_pr_text(raw: str, expected: str) -> None:
