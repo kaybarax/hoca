@@ -176,7 +176,7 @@ worker_git() {
 }
 
 git_status_short_for_task() {
-  worker_git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
+  worker_git status --short --untracked-files=all | while IFS= read -r status_line || [ -n "$status_line" ]; do
     local path="${status_line#???}"
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
@@ -861,10 +861,21 @@ fi
 
 if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
   echo "Applying worktree changes to main checkout for staging..."
+  UNTRACKED_WORKTREE_FILES="$RUN_DIR/untracked-worktree-files.txt"
+  UNTRACKED_WORKTREE_TAR="$RUN_DIR/untracked-worktree-files.tar"
+  worker_git ls-files --others --exclude-standard \
+    | awk '$0 != ".hoca-runtime" && $0 !~ /^\.hoca-runtime\//' \
+    > "$UNTRACKED_WORKTREE_FILES"
+  if [ -s "$UNTRACKED_WORKTREE_FILES" ]; then
+    tar -C "$WORKTREE_PATH" -cf "$UNTRACKED_WORKTREE_TAR" -T "$UNTRACKED_WORKTREE_FILES"
+  fi
   remove_disposable_worktree
   git -C "$PROJECT_PATH" checkout "$BRANCH"
   git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
   git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
+  if [ -s "$UNTRACKED_WORKTREE_TAR" ]; then
+    tar -C "$PROJECT_PATH" -xf "$UNTRACKED_WORKTREE_TAR"
+  fi
   WORKER_PROJECT_PATH="$PROJECT_PATH"
 fi
 

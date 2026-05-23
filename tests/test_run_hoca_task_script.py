@@ -794,7 +794,11 @@ def test_run_hoca_task_applies_worktree_changes_after_review(tmp_path: Path) -> 
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
-        openhands_body="printf 'agent edit\\n' > README.md\n",
+        openhands_body=(
+            "printf 'agent edit\\n' > README.md\n"
+            "mkdir -p src/__tests__\n"
+            "printf 'new test\\n' > src/__tests__/env.test.ts\n"
+        ),
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -815,6 +819,7 @@ def test_run_hoca_task_applies_worktree_changes_after_review(tmp_path: Path) -> 
     assert "fatal:" not in result.stderr
     assert branch == "feat/update-readme"
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "agent edit\n"
+    assert (tmp_path / "src/__tests__/env.test.ts").read_text(encoding="utf-8") == "new test\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
 
 
