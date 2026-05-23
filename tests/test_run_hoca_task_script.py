@@ -251,10 +251,16 @@ def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
         "set -euo pipefail\n"
         'PROFILE=""\n'
         'if [[ "${1:-}" == "-p" ]]; then PROFILE="${2:-}"; shift 2; fi\n'
+        '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
+        "shift\n"
         'while [[ $# -gt 0 ]]; do\n'
         '  case "$1" in\n'
-        "    -z)\n"
+        "    --query|-q)\n"
         '      PROMPT="${2:-}"\n'
+        "      shift 2\n"
+        "      ;;\n"
+        "    --model)\n"
+        '      [[ "${2:-}" == ollama/* ]] || { echo "missing model override" >&2; exit 2; }\n'
         "      shift 2\n"
         "      ;;\n"
         "    *) shift ;;\n"
@@ -350,7 +356,9 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
         "set -euo pipefail\n"
         'PROFILE=""\n'
         'if [[ "${1:-}" == "-p" ]]; then PROFILE="${2:-}"; shift 2; fi\n'
-        'while [[ $# -gt 0 ]]; do case "$1" in -z) PROMPT="${2:-}"; shift 2;; *) shift;; esac; done\n'
+        '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
+        "shift\n"
+        'while [[ $# -gt 0 ]]; do case "$1" in --query|-q) PROMPT="${2:-}"; shift 2;; --model) [[ "${2:-}" == ollama/* ]] || { echo "missing model override" >&2; exit 2; }; shift 2;; *) shift;; esac; done\n'
         'PROJECT="${HERMES_TEST_PROJECT:?}"\n'
         'RUN_DIR="$(find "$PROJECT/.hoca-runtime/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
         '[ -n "$RUN_DIR" ] || { echo "run dir missing" >&2; exit 1; }\n'

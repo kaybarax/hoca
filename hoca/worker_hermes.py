@@ -199,24 +199,29 @@ def _invoke_hermes_worker(
         "hermes",
         "-p",
         PROFILE_WORKER,
-        "-z",
+        "chat",
+        "--query",
         prompt,
         "--accept-hooks",
-        "-s",
+        "--skills",
         "hoca-worker-openhands",
         "--max-turns",
         str(max_turns),
+        "--quiet",
     ]
 
     import subprocess
 
     cfg = load_config()
+    selection = resolve_role_llm("worker", cfg)
+    if selection.llm_model.strip():
+        command.extend(["--model", selection.llm_model])
     env = apply_role_to_env("worker", cfg, os.environ.copy())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "worker"
     env = filter_env(env, "worker")
     if cfg.model_pool.is_active:
-        print(log_line_for_selection(resolve_role_llm("worker", cfg)), file=sys.stderr)
+        print(log_line_for_selection(selection), file=sys.stderr)
 
     try:
         completed = subprocess.run(

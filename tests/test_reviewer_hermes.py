@@ -128,7 +128,9 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-reviewer" ]]; then shift 2; fi\n'
-        'while [[ $# -gt 0 ]]; do case "$1" in -z) PROMPT="${2:-}"; shift 2;; *) shift;; esac; done\n'
+        '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
+        "shift\n"
+        'while [[ $# -gt 0 ]]; do case "$1" in --query|-q) PROMPT="${2:-}"; shift 2;; --max-turns) [[ "${2:-}" == "20" ]] || { echo "wrong max turns" >&2; exit 2; }; shift 2;; --model) [[ "${2:-}" == ollama/* ]] || { echo "missing model override" >&2; exit 2; }; shift 2;; *) shift;; esac; done\n'
         'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
         'ROUND="${HERMES_TEST_ROUND:?}"\n'
         'mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'

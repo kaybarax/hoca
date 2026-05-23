@@ -198,21 +198,26 @@ def _invoke_hermes_reviewer(
         "hermes",
         "-p",
         PROFILE_REVIEWER,
-        "-z",
+        "chat",
+        "--query",
         prompt,
         "--accept-hooks",
-        "-s",
+        "--skills",
         "hoca-reviewer-qa",
         "--max-turns",
         str(max_turns),
+        "--quiet",
     ]
     cfg = load_config()
+    selection = resolve_role_llm("reviewer", cfg)
+    if selection.llm_model.strip():
+        command.extend(["--model", selection.llm_model])
     env = apply_role_to_env("reviewer", cfg, os.environ.copy())
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
     env = filter_env(env, "reviewer")
     if cfg.model_pool.is_active:
-        print(log_line_for_selection(resolve_role_llm("reviewer", cfg)), file=sys.stderr)
+        print(log_line_for_selection(selection), file=sys.stderr)
 
     try:
         completed = subprocess.run(

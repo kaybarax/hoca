@@ -253,10 +253,20 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
         'if [[ "${1:-}" == "-p" && "${2:-}" == "hoca-worker" ]]; then\n'
         "  shift 2\n"
         "fi\n"
+        '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
+        "shift\n"
         'while [[ $# -gt 0 ]]; do\n'
         '  case "$1" in\n'
-        "    -z)\n"
+        "    --query|-q)\n"
         '      PROMPT="${2:-}"\n'
+        "      shift 2\n"
+        "      ;;\n"
+        "    --max-turns)\n"
+        '      [[ "${2:-}" == "30" ]] || { echo "wrong max turns" >&2; exit 2; }\n'
+        "      shift 2\n"
+        "      ;;\n"
+        "    --model)\n"
+        '      [[ "${2:-}" == ollama/* ]] || { echo "missing model override" >&2; exit 2; }\n'
         "      shift 2\n"
         "      ;;\n"
         "    *) shift ;;\n"
