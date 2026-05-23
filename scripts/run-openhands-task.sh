@@ -17,6 +17,19 @@ fi
 cd "$PROJECT_PATH"
 mkdir -p "$RUN_DIR"
 
+TASK="$(cat <<EOF
+HOCA execution root: $PROJECT_PATH
+
+This is the only repository root you may read, write, inspect, or run commands in.
+If the task text, task spec, or validation commands mention another absolute
+checkout path, treat that path as reference metadata and rewrite the command to
+run from this execution root instead. Do not cd to the original checkout or any
+parent/sibling repository.
+
+$TASK
+EOF
+)"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"

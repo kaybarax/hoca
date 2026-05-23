@@ -100,6 +100,9 @@ def build_worker_hermes_prompt(
         "1. Read the manager task spec at task_spec_path.\n"
         "2. Build a precise OpenHands implementation prompt from goal, non_goals, "
         "expected_areas, acceptance_criteria, and test_commands.\n"
+        "   Treat project_path as the only executable repository root. If the task spec "
+        "or test_commands mention a different repo_root, rewrite validation commands to "
+        "run from project_path and do not cd to the original checkout.\n"
         "3. Run implementation only through:\n"
         f'   HOCA_LOCK_ROLE_MODEL=true HOCA_PYTHON="{hoca_python}" '
         f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
@@ -116,15 +119,17 @@ def build_worker_hermes_prompt(
         "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, HOCA_CLI_MODEL_OVERRIDE, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
+        "- Do not read, write, or run commands in any repository path other than project_path.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
+        f"- execution_project_path: {project_path.resolve()}\n"
+        f"- task_spec_repo_root_for_reference_only: {spec.repo_root}\n"
         f"- goal: {spec.goal.strip()}\n"
         f"{_format_list_section('non_goals', spec.non_goals)}"
         f"{_format_list_section('expected_areas', spec.expected_areas)}"
         f"{_format_list_section('acceptance_criteria', spec.acceptance_criteria)}"
         f"{_format_list_section('test_commands', spec.test_commands)}"
         f"- risk_level: {spec.risk_level}\n"
-        f"- repo_root: {spec.repo_root}\n"
         f"- task_branch: {spec.task_branch}\n"
     )
     return _redact_secret_like_lines(prompt)

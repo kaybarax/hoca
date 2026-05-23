@@ -69,10 +69,10 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     )
     prompt = build_worker_hermes_prompt(
         spec=spec,
-        project_path=Path("/tmp/project"),
-        run_dir=Path("/tmp/project/.hoca-runtime/runs/run-test"),
+        project_path=Path("/Users/example/project"),
+        run_dir=Path("/Users/example/project/.hoca-runtime/runs/run-test"),
         round_number=1,
-        task_spec_path=Path("/tmp/project/.hoca-runtime/runs/run-test/task-spec.json"),
+        task_spec_path=Path("/Users/example/project/.hoca-runtime/runs/run-test/task-spec.json"),
         repair_brief="Repair token=abc123 before continuing",
     )
 
@@ -90,6 +90,41 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Do not stage, commit, push" in prompt
     assert "access only that exact path" in prompt
     assert "never use .env* globs" in prompt
+    assert "execution_project_path: /Users/example/project" in prompt
+    assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
+    assert "- repo_root: /tmp/project" not in prompt
+    assert "rewrite validation commands to run from project_path" in prompt
+
+
+def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
+    spec = sample_task_spec(
+        repo_root="/Users/example/original-checkout",
+        test_commands=["cd /Users/example/original-checkout && pytest"],
+    )
+    prompt = build_worker_hermes_prompt(
+        spec=spec,
+        project_path=Path(
+            "/Users/example/original-checkout/.hoca-runtime/worktrees/run-test"
+        ),
+        run_dir=Path("/Users/example/original-checkout/.hoca-runtime/runs/run-test"),
+        round_number=1,
+        task_spec_path=Path(
+            "/Users/example/original-checkout/.hoca-runtime/runs/run-test/task-spec.json"
+        ),
+    )
+
+    assert "project_path as the only executable repository root" in prompt
+    assert "do not cd to the original checkout" in prompt
+    assert (
+        "Do not read, write, or run commands in any repository path other than project_path"
+        in prompt
+    )
+    assert (
+        "execution_project_path: /Users/example/original-checkout/.hoca-runtime/worktrees/run-test"
+        in prompt
+    )
+    assert "task_spec_repo_root_for_reference_only: /Users/example/original-checkout" in prompt
+    assert "- repo_root: /Users/example/original-checkout" not in prompt
 
 
 def test_build_legacy_openhands_task_prefers_repair_brief() -> None:
@@ -423,7 +458,13 @@ def test_profile_mode_falls_back_to_openhands_when_profile_makes_no_changes(
 
     assert result.mode == "profile-fallback"
     assert result.exit_code == 0
-    assert (project / "README.md").read_text(encoding="utf-8").strip() == "fallback task"
+    fallback_task = (project / "README.md").read_text(encoding="utf-8").strip()
+    assert "HOCA execution root:" in fallback_task
+    assert (
+        "the only repository root you may read, write, inspect, or run commands in"
+        in fallback_task
+    )
+    assert fallback_task.endswith("fallback task")
     report = HocaAttemptReport.from_json(
         result.worker_attempt_path.read_text(encoding="utf-8")
     )

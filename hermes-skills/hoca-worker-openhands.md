@@ -26,7 +26,8 @@ The manager provides these at assignment time:
 
 - `run_dir`: `.hoca-runtime/runs/<run_id>/`
 - `round`: Attempt round number (`1` for first implementation, `2+` for repair)
-- `project_path`: Repository root (must match `HocaTaskSpec.repo_root`)
+- `project_path`: Executable repository root for this attempt. This may be a
+  disposable worktree and may differ from `HocaTaskSpec.repo_root`.
 - `task_spec_path`: Usually `$run_dir/task-spec.json`
 - `repair_brief`: Optional focused repair text on rounds after manager arbitration
 
@@ -92,10 +93,14 @@ default-branch commits.
 Build one precise prompt for OpenHands. Include:
 
 - Exact `goal` and every `non_goals` item
-- `repo_root` (absolute or resolved path)
+- `project_path` as the only repository root OpenHands may read, write, or run
+  commands in. Treat `HocaTaskSpec.repo_root` as reference metadata only when it
+  differs from `project_path`.
 - Relevant project instructions (summarized, not pasted wholesale)
 - `expected_areas` and `acceptance_criteria`
-- `test_commands` the implementation should satisfy or leave runnable
+- `test_commands` the implementation should satisfy or leave runnable. If a
+  command names `HocaTaskSpec.repo_root` and it differs from `project_path`,
+  rewrite it to run from `project_path` or from the current working directory.
 - `risk_level` and any sandbox/network constraints from `task_spec.sandbox`
 - Explicit safety constraints:
   - Do not stage, commit, push, merge, or open pull requests
@@ -122,6 +127,9 @@ scripts/run-openhands-task.sh "$project_path" "$task" "$run_dir"
   convention).
 - Resolve the worker model through `scripts/select-model.sh` inside the wrapper;
   do not pass raw provider secrets in the prompt or attempt report.
+- Do not `cd` to `HocaTaskSpec.repo_root` when it differs from `$project_path`.
+  The wrapper changes into `$project_path`; validation and implementation must
+  stay there.
 
 When sandboxing is required (see `hoca-sandbox-policy.md` and
 `task_spec.sandbox.enabled`), use the sandboxed path the wrapper selects (for

@@ -20,6 +20,16 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
     assert 'export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"' in content
 
 
+def test_openhands_wrapper_prepends_execution_root_guard() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "run-openhands-task.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "HOCA execution root: $PROJECT_PATH" in content
+    assert "the only repository root you may read, write, inspect, or run commands in" in content
+    assert "rewrite the command to" in content
+    assert "Do not cd to the original checkout" in content
+
+
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("HOCA_DEV_BRANCH", None)
