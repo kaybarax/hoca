@@ -33,6 +33,9 @@ _PATH_LIKE_PATTERN = re.compile(
 _SECRET_LINE_PATTERN = re.compile(
     r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"
 )
+_VALIDATION_COMMANDS_HEADER_PATTERN = re.compile(
+    r"(?i)^\s*(?:validation|test)\s+commands\s*:\s*$"
+)
 
 
 def _run_git(repo_root: Path, *args: str) -> str | None:
@@ -165,6 +168,32 @@ def infer_test_commands(repo_root: Path) -> list[str]:
         if command not in deduped:
             deduped.append(command)
     return deduped
+
+
+def extract_explicit_test_commands(task: str) -> list[str]:
+    commands: list[str] = []
+    in_section = False
+    for raw_line in task.splitlines():
+        line = raw_line.strip()
+        if not in_section:
+            if _VALIDATION_COMMANDS_HEADER_PATTERN.match(line):
+                in_section = True
+            continue
+        if not line:
+            if commands:
+                break
+            continue
+        item_match = re.match(r"^(?:[-*]|\d+[.)])\s+(.+)$", line)
+        if not item_match:
+            if commands:
+                break
+            continue
+        command = item_match.group(1).strip()
+        if command.startswith("`") and command.endswith("`"):
+            command = command[1:-1].strip()
+        if command and not is_secret_like_path(command) and command not in commands:
+            commands.append(command)
+    return commands
 
 
 def infer_expected_areas(task: str, repo_root: Path) -> list[str]:
@@ -308,7 +337,9 @@ def generate_task_spec(
     )
 
     instruction_summaries = gather_instruction_summaries(resolved_repo_root)
-    test_commands = infer_test_commands(resolved_repo_root)
+    test_commands = extract_explicit_test_commands(raw_request) or infer_test_commands(
+        resolved_repo_root
+    )
     expected_areas = infer_expected_areas(raw_request, resolved_repo_root)
 
     cfg = load_config()

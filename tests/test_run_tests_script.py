@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -18,6 +19,7 @@ def run_tests(
     project: Path, run_dir: Path, fake_bin: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env["HOCA_PYTHON"] = sys.executable
     if fake_bin is not None:
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     return subprocess.run(
@@ -127,3 +129,65 @@ def test_run_tests_records_first_failed_command(tmp_path: Path) -> None:
     summary = (run_dir / "tests-summary.md").read_text(encoding="utf-8")
     assert "- **Status**: failed" in summary
     assert "- **Failed command**: `pytest`" in summary
+
+
+def test_run_tests_prefers_task_spec_commands_over_root_scripts(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = project / ".hoca-runtime" / "runs" / "run-tests"
+    fake_bin = tmp_path / "bin"
+    project.mkdir()
+    run_dir.mkdir(parents=True)
+    fake_bin.mkdir()
+    (project / "package.json").write_text(
+        '{"scripts": {"test": "echo root test", "lint": "echo root lint && exit 9"}}\n',
+        encoding="utf-8",
+    )
+    (project / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    (run_dir / "task-spec.json").write_text(
+        '{"repo_root": "/original/repo", "test_commands": ["pnpm --filter @todo/api-gateway test", "pnpm --filter @todo/api-gateway typecheck"]}\n',
+        encoding="utf-8",
+    )
+    write_executable(
+        fake_bin / "pnpm",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == \"install\" ]]; then echo install; exit 0; fi\n"
+        "echo pnpm \"$@\"\n",
+    )
+
+    result = run_tests(project, run_dir, fake_bin)
+
+    assert result.returncode == 0, result.stderr
+    output = (run_dir / "tests-output.log").read_text(encoding="utf-8")
+    assert "Running: bash -lc pnpm --filter @todo/api-gateway test" in result.stdout
+    assert "pnpm --filter @todo/api-gateway test" in output
+    assert "pnpm --filter @todo/api-gateway typecheck" in output
+    assert "root lint" not in output
+
+
+def test_run_tests_rewrites_task_spec_repo_root_to_project_path(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = project / ".hoca-runtime" / "runs" / "run-tests"
+    fake_bin = tmp_path / "bin"
+    project.mkdir()
+    run_dir.mkdir(parents=True)
+    fake_bin.mkdir()
+    (project / "package.json").write_text(
+        '{"scripts": {"test": "echo root test"}}\n', encoding="utf-8"
+    )
+    (run_dir / "task-spec.json").write_text(
+        '{"repo_root": "/original/repo", "test_commands": ["cd /original/repo && pnpm --filter @todo/api-gateway test"]}\n',
+        encoding="utf-8",
+    )
+    write_executable(fake_bin / "npm", "#!/usr/bin/env bash\necho npm \"$@\"\n")
+    write_executable(
+        fake_bin / "pnpm",
+        "#!/usr/bin/env bash\nprintf 'cwd=%s args=%s\\n' \"$PWD\" \"$*\"\n",
+    )
+
+    result = run_tests(project, run_dir, fake_bin)
+
+    assert result.returncode == 0, result.stderr
+    output = (run_dir / "tests-output.log").read_text(encoding="utf-8")
+    assert f"cd {project} && pnpm --filter @todo/api-gateway test" in output
+    assert "/original/repo" not in output

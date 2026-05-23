@@ -12,6 +12,7 @@ from hoca.run_artifacts import build_initial_task_spec
 from hoca.task_spec import (
     build_enriched_task_spec,
     derive_task_branch,
+    extract_explicit_test_commands,
     gather_instruction_summaries,
     gather_repository_metadata,
     generate_task_spec,
@@ -64,6 +65,23 @@ def test_infer_test_commands_for_python_repo(tmp_path: Path) -> None:
     assert "pytest" in infer_test_commands(tmp_path)
 
 
+def test_extract_explicit_test_commands_from_validation_section() -> None:
+    task = """Implement the thing.
+
+Validation commands:
+- pnpm --filter @todo/api-gateway test
+- `pnpm --filter @todo/api-gateway typecheck`
+
+Reporting expectations:
+- Produce artifacts.
+"""
+
+    assert extract_explicit_test_commands(task) == [
+        "pnpm --filter @todo/api-gateway test",
+        "pnpm --filter @todo/api-gateway typecheck",
+    ]
+
+
 def test_infer_expected_areas_from_task_and_instructions(tmp_path: Path) -> None:
     init_repo(tmp_path)
     areas = infer_expected_areas("Update src/app.py", tmp_path)
@@ -96,6 +114,38 @@ def test_generate_task_spec_writes_contract_artifacts(tmp_path: Path) -> None:
     assert context["repository"]["git_inside_work_tree"] is True
     assert any(item["path"] == "README.md" for item in context["instruction_files"])
     assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update src/app.py\n"
+
+
+def test_generate_task_spec_prefers_explicit_validation_commands(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        '{"scripts": {"test": "echo root test"}}\n', encoding="utf-8"
+    )
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "add node markers"], cwd=tmp_path, check=True)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-validation"
+    task = """Update apps/api-gateway/src/config/env.ts.
+
+Validation commands:
+- pnpm --filter @todo/api-gateway test
+- pnpm --filter @todo/api-gateway typecheck
+"""
+
+    path = generate_task_spec(
+        run_dir,
+        repo_root=tmp_path,
+        raw_request=task,
+        run_id="run-validation",
+        base_branch="main",
+        task_branch="feat/validation",
+    )
+
+    spec = HocaTaskSpec.from_json(path.read_text(encoding="utf-8"))
+    assert spec.test_commands == [
+        "pnpm --filter @todo/api-gateway test",
+        "pnpm --filter @todo/api-gateway typecheck",
+    ]
 
 
 def test_generate_task_spec_rejects_non_git_path(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ fi
 
 PROJECT_PATH="$(cd "$1" && pwd)"
 RUN_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
 
 cd "$PROJECT_PATH"
 
@@ -25,6 +26,7 @@ OVERALL_EXIT=0
 TEST_COMMAND=""
 FAILED_COMMAND=""
 FAILURE_TYPE=""
+TASK_SPEC_PATH="$RUN_DIR/task-spec.json"
 
 run_test_command() {
   local name="$1"
@@ -46,6 +48,54 @@ run_test_command() {
   return "$exit_code"
 }
 
+load_task_spec_commands() {
+  if [ ! -f "$TASK_SPEC_PATH" ]; then
+    return 0
+  fi
+  "$PYTHON_BIN" - "$TASK_SPEC_PATH" "$PROJECT_PATH" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+spec_path = Path(sys.argv[1])
+project_path = sys.argv[2]
+try:
+    data = json.loads(spec_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(0)
+
+repo_root = str(data.get("repo_root") or "")
+commands = data.get("test_commands")
+if not isinstance(commands, list):
+    raise SystemExit(0)
+for command in commands:
+    if not isinstance(command, str):
+        continue
+    command = command.strip()
+    if not command:
+        continue
+    if repo_root and repo_root != project_path:
+        command = command.replace(repo_root, project_path)
+    print(command)
+PY
+}
+
+run_task_spec_commands() {
+  local commands=()
+  mapfile -t commands < <(load_task_spec_commands)
+  if [ "${#commands[@]}" -eq 0 ]; then
+    return 1
+  fi
+  for command in "${commands[@]}"; do
+    [ -n "$command" ] || continue
+    TESTS_RUN=1
+    run_test_command "$command" bash -lc "$command" || true
+  done
+  return 0
+}
+
 package_script_exists() {
   local script_name="$1"
 
@@ -53,8 +103,8 @@ package_script_exists() {
     return 0
   fi
 
-  if command -v python3 >/dev/null 2>&1; then
-    if python3 - "$script_name" <<'PY'
+  if command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    if "$PYTHON_BIN" - "$script_name" <<'PY'
 from __future__ import annotations
 
 import json
@@ -136,6 +186,9 @@ if [ -f "package.json" ]; then
     echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
     CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
   fi
+  if run_task_spec_commands; then
+    :
+  else
   if package_script_exists "test"; then
     TESTS_RUN=1
     if [ "$runner" = "npm" ]; then
@@ -159,6 +212,7 @@ if [ -f "package.json" ]; then
     else
       run_test_command "$runner typecheck" "$runner" typecheck || true
     fi
+  fi
   fi
 fi
 
