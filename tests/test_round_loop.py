@@ -319,6 +319,38 @@ class TestRoundBehavior:
         assert decision.action == "block"
         assert decision.block_reason == "tests_failed"
 
+    def test_validation_repair_brief_includes_failed_command_and_output(
+        self, tmp_path: Path
+    ) -> None:
+        run_dir = _setup_run(
+            tmp_path,
+            round_number=1,
+            review=_review(round_number=1, verdict="LGTM"),
+            tests_passed=False,
+        )
+        (run_dir / "failed-command.txt").write_text("pnpm lint\n", encoding="utf-8")
+        (run_dir / "tests-summary.md").write_text(
+            "# Test Summary\n\n- **Failed command**: `pnpm lint`\n",
+            encoding="utf-8",
+        )
+        (run_dir / "tests-output.log").write_text(
+            "src/env.test.ts\n  1:1 error import/order\n",
+            encoding="utf-8",
+        )
+
+        decision = resolve_after_validation(
+            run_dir,
+            current_round=1,
+            max_total_rounds=3,
+            test_failure_type="current_task",
+        )
+
+        assert decision.action == "repair"
+        assert decision.repair_brief_path is not None
+        repair_text = Path(decision.repair_brief_path).read_text(encoding="utf-8")
+        assert "Failed command: pnpm lint" in repair_text
+        assert "1:1 error import/order" in repair_text
+
 
 class TestResolveAfterArbitration:
     def test_writes_manager_repair_brief_for_next_round(self, tmp_path: Path) -> None:

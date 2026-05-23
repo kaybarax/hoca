@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +78,8 @@ def build_worker_hermes_prompt(
     repair_brief: str | None = None,
 ) -> str:
     hoca_root = repo_root()
+    hoca_python = sys.executable
+    hoca_dotenv = hoca_root / ".env"
     repair_section = ""
     if repair_brief and repair_brief.strip():
         repair_section = (
@@ -97,7 +101,9 @@ def build_worker_hermes_prompt(
         "2. Build a precise OpenHands implementation prompt from goal, non_goals, "
         "expected_areas, acceptance_criteria, and test_commands.\n"
         "3. Run implementation only through:\n"
-        f'   {hoca_root / "scripts" / "run-openhands-task.sh"} '
+        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_PYTHON="{hoca_python}" '
+        f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
+        f'{hoca_root / "scripts" / "run-openhands-task.sh"} '
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
         "4. Inspect repository changes read-only (git status, git diff).\n"
         "5. Write attempts/worker-attempt-<round>.json or run:\n"
@@ -108,6 +114,7 @@ def build_worker_hermes_prompt(
         "- Do not stage, commit, push, merge, or open pull requests.\n"
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
+        "- Do not set or override HOCA_REQUESTED_MODEL, HOCA_CLI_MODEL_OVERRIDE, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
         f"- goal: {spec.goal.strip()}\n"
@@ -318,12 +325,69 @@ def _missing_profile_attempt_status(
     round_number: int,
     process_exit_code: int,
     inferred_status: str,
+    project_path: Path | None = None,
 ) -> str:
     if process_exit_code != 0:
         return inferred_status
     if worker_attempt_path(run_dir, round_number).is_file():
         return inferred_status
+    if project_path is not None and _project_has_changes(project_path):
+        return inferred_status
     return "blocked"
+
+
+def _project_has_changes(project_path: Path) -> bool:
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=project_path,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if completed.returncode != 0:
+        return False
+    return any(
+        line.strip() and not line[3:].startswith(".hoca-runtime/")
+        for line in completed.stdout.splitlines()
+    )
+
+
+def _attempt_report_status(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    status = data.get("status") if isinstance(data, dict) else None
+    return status if isinstance(status, str) else None
+
+
+def _profile_attempt_needs_openhands_fallback(
+    *,
+    run_dir: Path,
+    round_number: int,
+    process_exit_code: int,
+    project_path: Path,
+) -> bool:
+    if process_exit_code != 0:
+        return False
+    if os.environ.get("HOCA_PROFILE_OPENHANDS_FALLBACK", "true").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return False
+    if _project_has_changes(project_path):
+        return False
+
+    attempt_status = _attempt_report_status(worker_attempt_path(run_dir, round_number))
+    return attempt_status in {"failed", "blocked"} or attempt_status is None
 
 
 def run_worker_hermes(
@@ -367,12 +431,56 @@ def run_worker_hermes(
             timeout_seconds=_resolve_timeout_seconds(),
             max_turns=_resolve_max_turns(),
         )
+        if _profile_attempt_needs_openhands_fallback(
+            run_dir=run_dir,
+            round_number=round_number,
+            process_exit_code=result.returncode,
+            project_path=project_path,
+        ):
+            openhands_task = build_legacy_openhands_task(
+                spec=spec,
+                repair_brief=repair_brief,
+            )
+            fallback_task_path = run_dir / f"openhands-profile-fallback-round-{round_number}.txt"
+            fallback_task_path.write_text(openhands_task + "\n", encoding="utf-8")
+            fallback_result = _run_openhands_wrapper(
+                project_path=project_path,
+                task=openhands_task,
+                run_dir=run_dir,
+                cfg=cfg,
+            )
+            fallback_status = _infer_worker_status(
+                run_dir,
+                process_exit_code=fallback_result.returncode,
+            )
+            attempt_path = record_worker_attempt(
+                run_dir,
+                round_number=round_number,
+                status=fallback_status,
+                mode="legacy",
+                project_path=project_path,
+                summary=[
+                    "Hermes profile worker exited without producing project changes; "
+                    "HOCA reran the implementation through the direct OpenHands wrapper.",
+                    f"Profile worker exit code: {result.returncode}.",
+                    f"Fallback OpenHands exit code: {fallback_result.returncode}.",
+                ],
+            )
+            return WorkerRunResult(
+                mode="profile-fallback",
+                exit_code=fallback_result.returncode,
+                worker_attempt_path=attempt_path,
+                hermes_stdout_path=run_dir / "logs" / "worker-hermes-stdout.txt",
+                hermes_stderr_path=run_dir / "logs" / "worker-hermes-stderr.txt",
+            )
+
         status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
         status = _missing_profile_attempt_status(
             run_dir,
             round_number=round_number,
             process_exit_code=result.returncode,
             inferred_status=status,
+            project_path=project_path,
         )
         attempt_path = _ensure_worker_attempt_report(
             run_dir,

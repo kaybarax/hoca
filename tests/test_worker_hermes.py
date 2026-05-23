@@ -80,6 +80,10 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "abc123" not in prompt
     assert "[redacted: possible secret]" in prompt
     assert "run-openhands-task.sh" in prompt
+    assert "HOCA_LOCK_ROLE_MODEL=true" in prompt
+    assert "HOCA_PYTHON=" in prompt
+    assert "HOCA_DOTENV_PATH=" in prompt
+    assert "Do not set or override HOCA_REQUESTED_MODEL" in prompt
     assert "worker-attempt-" in prompt
     assert "Manager-owned Git lifecycle only" in prompt
     assert "git add, git commit, git push" in prompt
@@ -349,6 +353,83 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     assert report["status"] == "completed"
 
 
+def test_profile_mode_falls_back_to_openhands_when_profile_makes_no_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    make_fake_ollama(fake_bin)
+    make_fake_openhands(fake_bin)
+
+    hermes_home = tmp_path / "hermes-home"
+    profile_dir = hermes_home / "profiles" / "hoca-worker"
+    profile_dir.mkdir(parents=True)
+
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
+        'ROUND="${HERMES_TEST_ROUND:?}"\n'
+        'mkdir -p "$RUN_DIR/attempts"\n'
+        'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-test",\n'
+        '  "round": '"${HERMES_TEST_ROUND}"',\n'
+        '  "role": "worker",\n'
+        '  "status": "failed",\n'
+        '  "changed_files": [],\n'
+        '  "summary": ["profile planned only"],\n'
+        '  "commands_run": ["run-openhands-task.sh"],\n'
+        '  "tests_run": [],\n'
+        '  "known_risks": [],\n'
+        '  "blocked_reason": "no project changes",\n'
+        '  "artifact_paths": {}\n'
+        "}\n"
+        "EOF\n"
+        "echo 'profile planned only'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | stat.S_IXUSR)
+
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
+    clear_model_env(monkeypatch)
+
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    spec = sample_task_spec(repo_root=str(project), goal="fallback task")
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(spec.to_json(), encoding="utf-8")
+
+    monkeypatch.setenv("HERMES_TEST_RUN_DIR", str(run_dir))
+    monkeypatch.setenv("HERMES_TEST_ROUND", "1")
+
+    result = run_worker_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+        use_hermes_profiles=True,
+        hermes_home=hermes_home,
+    )
+
+    assert result.mode == "profile-fallback"
+    assert result.exit_code == 0
+    assert (project / "README.md").read_text(encoding="utf-8").strip() == "fallback task"
+    report = HocaAttemptReport.from_json(
+        result.worker_attempt_path.read_text(encoding="utf-8")
+    )
+    assert report.status == "completed"
+    assert report.changed_files == ["README.md"]
+    assert any("direct OpenHands wrapper" in item for item in report.summary)
+
+
 def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     ensure_run_layout(run_dir)
@@ -503,6 +584,37 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
         report.blocked_reason
         == "Hermes worker did not write a structured attempt report."
     )
+
+
+def test_missing_profile_attempt_report_with_changes_is_completed(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+        project_path=project,
+    )
+    path = record_worker_attempt(
+        run_dir,
+        round_number=1,
+        status=status,
+        mode="profile",
+        project_path=project,
+    )
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert status == "completed"
+    assert report.status == "completed"
+    assert report.changed_files == ["README.md"]
+    assert report.blocked_reason is None
 
 
 def test_record_worker_attempt_git_fallback_for_changed_files(tmp_path: Path) -> None:

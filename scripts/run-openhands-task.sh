@@ -10,6 +10,10 @@ PROJECT_PATH="$(cd "$1" && pwd)"
 TASK="$2"
 RUN_DIR="$(mkdir -p "$3" && cd "$3" && pwd)"
 
+if [ -f "$TASK" ]; then
+  TASK="$(cat "$TASK")"
+fi
+
 cd "$PROJECT_PATH"
 mkdir -p "$RUN_DIR"
 
@@ -29,6 +33,14 @@ for _pool_index in 1 2 3 4 5; do
 done
 
 if [ "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" != "true" ]; then
+  if [ "${HOCA_LOCK_ROLE_MODEL:-}" = "true" ]; then
+    case "$AGENT_ROLE" in
+      worker|reviewer)
+        unset HOCA_REQUESTED_MODEL HOCA_CLI_MODEL_OVERRIDE OLLAMA_MODEL 2>/dev/null || true
+        unset LLM_MODEL LLM_BASE_URL LLM_API_KEY 2>/dev/null || true
+        ;;
+    esac
+  fi
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" "$AGENT_ROLE"
 fi

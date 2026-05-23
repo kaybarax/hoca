@@ -56,16 +56,43 @@ def _final_round(current_round: int, max_total_rounds: int) -> bool:
     return current_round >= max_total_rounds
 
 
-def _validation_repair_brief(validation: ValidationStatus) -> str:
+def _tail_lines(path: Path, *, max_lines: int = 80, max_chars: int = 12000) -> list[str]:
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()[-max_lines:]
+    excerpt = "\n".join(lines)
+    if len(excerpt) > max_chars:
+        excerpt = excerpt[-max_chars:]
+    return excerpt.splitlines()
+
+
+def _validation_repair_brief(validation: ValidationStatus, run_dir: Path | None = None) -> str:
     blockers = sorted(set(validation.hard_blockers))
     if not validation.tests_passed and "test_failure" not in blockers:
         blockers.append("test_failure")
     blocker_text = ", ".join(blockers) if blockers else "test_failure"
-    return (
-        "Resolve validation failures before review can continue.\n"
-        f"Blockers: {blocker_text}.\n"
-        "Keep changes minimal and do not restart unrelated work.\n"
-    )
+    lines = [
+        "Resolve validation failures before review can continue.",
+        f"Blockers: {blocker_text}.",
+        "Keep changes minimal and do not restart unrelated work.",
+    ]
+    if run_dir is not None:
+        failed_command = run_dir / "failed-command.txt"
+        if failed_command.is_file():
+            command = failed_command.read_text(encoding="utf-8", errors="replace").strip()
+            if command:
+                lines.extend(["", f"Failed command: {command}"])
+        summary = _tail_lines(run_dir / "tests-summary.md", max_lines=20, max_chars=2000)
+        if summary:
+            lines.extend(["", "Validation summary:", *summary])
+        output = _tail_lines(run_dir / "tests-output.log")
+        if output:
+            lines.extend(["", "Relevant validation output tail:", *output])
+        stderr = _tail_lines(run_dir / "tests-stderr.log", max_lines=40, max_chars=4000)
+        if stderr:
+            lines.extend(["", "Validation stderr tail:", *stderr])
+    return "\n".join(lines) + "\n"
 
 
 def write_repair_brief_file(
@@ -247,7 +274,7 @@ def resolve_after_validation(
         return decision
 
     repair_attempt = current_round
-    brief = _validation_repair_brief(validation)
+    brief = _validation_repair_brief(validation, run_dir)
     repair_path = write_repair_brief_file(
         run_dir,
         repair_attempt=repair_attempt,

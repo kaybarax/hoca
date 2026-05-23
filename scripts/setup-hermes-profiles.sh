@@ -244,6 +244,31 @@ config_has_skills_path() {
   grep -qF "$HERMES_SKILLS_DIR" "$config_file"
 }
 
+config_has_stale_placeholder_mount() {
+  local config_file="$1"
+  grep -qF '<target-repo>' "$config_file"
+}
+
+config_matches_template() {
+  local config_file="$1"
+  local template_file="$2"
+  local rendered
+  rendered="$(mktemp)"
+  render_config_template "$template_file" > "$rendered"
+  if cmp -s "$config_file" "$rendered"; then
+    rm -f "$rendered"
+    return 0
+  fi
+  rm -f "$rendered"
+  return 1
+}
+
+config_is_hoca_template_config() {
+  local profile_name="$1"
+  local config_file="$2"
+  grep -qF "# Example Hermes configuration for the $profile_name profile." "$config_file"
+}
+
 install_config() {
   local profile_name="$1"
   local profile_path="$2"
@@ -259,6 +284,31 @@ install_config() {
     ok "$profile_name config.yaml will be created from template."
     if [ "$DRY_RUN" -eq 1 ]; then
       report "[DRY-RUN] render $template_file -> $config_file"
+    else
+      render_config_template "$template_file" > "$config_file"
+    fi
+    return
+  fi
+
+  if config_matches_template "$config_file" "$template_file"; then
+    ok "$profile_name config.yaml already matches HOCA template."
+    return
+  fi
+
+  if config_has_stale_placeholder_mount "$config_file"; then
+    ok "$profile_name config.yaml will refresh stale <target-repo> placeholder mounts."
+    if [ "$DRY_RUN" -eq 1 ]; then
+      report "[DRY-RUN] refresh rendered template -> $config_file"
+    else
+      render_config_template "$template_file" > "$config_file"
+    fi
+    return
+  fi
+
+  if config_is_hoca_template_config "$profile_name" "$config_file"; then
+    ok "$profile_name config.yaml will refresh HOCA template-rendered paths."
+    if [ "$DRY_RUN" -eq 1 ]; then
+      report "[DRY-RUN] refresh rendered template -> $config_file"
     else
       render_config_template "$template_file" > "$config_file"
     fi
@@ -434,10 +484,9 @@ main() {
     log ""
     log "Next steps:"
     log "  1. Review rendered config.yaml files under $(hermes_home)/profiles/"
-    log "  2. Replace <target-repo> placeholders in docker_volumes with real repo paths."
-    log "  3. Run per-profile setup if API keys are needed: hermes -p hoca-manager setup"
-    log "  4. Verify profiles: hermes -p hoca-manager doctor"
-    log "  5. Enable profiles in .env: HOCA_USE_HERMES_PROFILES=true"
+    log "  2. Run per-profile setup if API keys are needed: hermes -p hoca-manager setup"
+    log "  3. Verify profiles: hermes -p hoca-manager doctor"
+    log "  4. Enable profiles in .env: HOCA_USE_HERMES_PROFILES=true"
   else
     fail "Hermes profile setup finished with errors."
   fi

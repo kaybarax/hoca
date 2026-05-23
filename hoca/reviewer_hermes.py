@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -285,6 +286,50 @@ def _write_blocked_report(
     return path
 
 
+def _single_line_contract_text(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def _normalize_profile_review_report(path: Path) -> None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return
+    if not isinstance(data, dict):
+        return
+
+    changed = False
+    findings = data.get("findings")
+    if isinstance(findings, list):
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            for key in ("id", "severity", "category", "file", "summary", "required_fix"):
+                value = finding.get(key)
+                if isinstance(value, str) and ("\n" in value or "\r" in value):
+                    finding[key] = _single_line_contract_text(value)
+                    changed = True
+
+    pr_notes = data.get("pr_notes")
+    if isinstance(pr_notes, dict):
+        for key, value in list(pr_notes.items()):
+            if isinstance(value, str):
+                normalized = _single_line_contract_text(value)
+                pr_notes[key] = [normalized]
+                changed = True
+            elif isinstance(value, list):
+                normalized_items = [
+                    _single_line_contract_text(item)
+                    for item in value
+                ]
+                if normalized_items != value:
+                    pr_notes[key] = normalized_items
+                    changed = True
+
+    if changed:
+        path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _evaluate_profile_report(
     *, run_dir: Path, round_number: int, process_exit_code: int
 ) -> tuple[Path, int]:
@@ -296,6 +341,7 @@ def _evaluate_profile_report(
             reason="Hermes reviewer did not write a structured HocaReviewReport.",
         )
         return path, 4
+    _normalize_profile_review_report(report_path)
     try:
         result = evaluate_review_gate(
             run_dir,

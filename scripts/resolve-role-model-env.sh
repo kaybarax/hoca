@@ -20,9 +20,11 @@ ROLE="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+PYTHON_BIN="${HOCA_PYTHON:-python3}"
+
 EXPORTS="$(
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m hoca.role_model_env export "$ROLE" 2>/dev/null || true
+    "$PYTHON_BIN" -m hoca.role_model_env export "$ROLE" 2>/dev/null || true
 )"
 
 if [ -n "$EXPORTS" ]; then

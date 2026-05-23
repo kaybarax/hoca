@@ -48,6 +48,7 @@ def test_setup_script_documents_required_behavior() -> None:
     assert "HERMES_SKILLS_DIR" in script
     assert "DEFAULT_HERMES_SOUL" in script
     assert "setup-hermes-profiles-report.txt" in script
+    assert "<target-repo>" in script
     for profile_name in PROFILE_NAMES:
         assert profile_name in script
 
@@ -117,12 +118,114 @@ def test_setup_script_is_idempotent_with_fake_hermes_and_temp_home(tmp_path: Pat
     assert first.returncode == 0, first.stderr + first.stdout
     assert second.returncode == 0, second.stderr + second.stdout
     assert "already matches HOCA template" in second.stdout
-    assert "already references HOCA hermes-skills" in second.stdout
     assert report_path.is_file()
     for profile_name in PROFILE_NAMES:
         profile_dir = hermes_home / "profiles" / profile_name
         assert (profile_dir / "SOUL.md").is_file()
         assert (profile_dir / "config.yaml").is_file()
+        config = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+        assert "<target-repo>" not in config
+        if profile_name in {"hoca-worker", "hoca-reviewer"}:
+            assert "backend: local" in config
+            assert f'workspace_root: "{workspace_root}"' in config
+
+
+def test_setup_script_refreshes_stale_placeholder_config(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "profile" && "${2:-}" =~ ^(list|create|show)$ && "${3:-}" == "-h" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "profile" && "${2:-}" == "create" ]]; then\n'
+        '  mkdir -p "${HERMES_HOME:?}/profiles/${3:?}"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "profile" && "${2:-}" =~ ^(list|show)$ ]]; then exit 0; fi\n'
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | 0o700)
+    hermes_home = tmp_path / "hermes-home"
+    profile_dir = hermes_home / "profiles" / "hoca-worker"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "config.yaml").write_text(
+        "terminal:\n"
+        "  backend: docker\n"
+        "  docker_volumes:\n"
+        f"    - \"{REPO_ROOT}:/workspace/hoca:ro\"\n"
+        "    - \"/tmp/<target-repo>:/workspace/project\"\n"
+        "skills:\n"
+        "  external_dirs:\n"
+        f"    - \"{REPO_ROOT / 'hermes-skills'}\"\n",
+        encoding="utf-8",
+    )
+
+    workspace_root = tmp_path / "projects"
+    result = run_setup(
+        hermes_home=hermes_home,
+        extra_env={
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "HOCA_WORKSPACE_ROOT": str(workspace_root),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "refresh stale <target-repo> placeholder mounts" in result.stdout
+    config = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+    assert "<target-repo>" not in config
+    assert "backend: local" in config
+    assert f'workspace_root: "{workspace_root}"' in config
+
+
+def test_setup_script_refreshes_hoca_template_when_workspace_root_changes(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "profile" && "${2:-}" =~ ^(list|create|show)$ && "${3:-}" == "-h" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "profile" && "${2:-}" == "create" ]]; then\n'
+        '  mkdir -p "${HERMES_HOME:?}/profiles/${3:?}"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "profile" && "${2:-}" =~ ^(list|show)$ ]]; then exit 0; fi\n'
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | 0o700)
+    hermes_home = tmp_path / "hermes-home"
+    first_root = tmp_path / "first-projects"
+    second_root = tmp_path / "second-projects"
+
+    first = run_setup(
+        hermes_home=hermes_home,
+        extra_env={
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "HOCA_WORKSPACE_ROOT": str(first_root),
+        },
+    )
+    second = run_setup(
+        hermes_home=hermes_home,
+        extra_env={
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "HOCA_WORKSPACE_ROOT": str(second_root),
+        },
+    )
+
+    assert first.returncode == 0, first.stderr + first.stdout
+    assert second.returncode == 0, second.stderr + second.stdout
+    assert "refresh HOCA template-rendered paths" in second.stdout
+    config = (
+        hermes_home / "profiles" / "hoca-worker" / "config.yaml"
+    ).read_text(encoding="utf-8")
+    assert str(first_root) not in config
+    assert "backend: local" in config
+    assert f'workspace_root: "{second_root}"' in config
 
 
 @pytest.mark.skipif(not hermes_available(), reason="hermes CLI not installed")

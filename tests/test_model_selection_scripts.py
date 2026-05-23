@@ -186,6 +186,44 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     assert "git add" in (run_dir / "agent-role-policy.txt").read_text(encoding="utf-8")
 
 
+def test_openhands_wrapper_accepts_task_file_path(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        'prev=""\n'
+        'for arg in "$@"; do\n'
+        '  if [[ "$prev" == "--task" ]]; then echo "$arg"; fi\n'
+        '  prev="$arg"\n'
+        "done\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    task_file = tmp_path / "task.txt"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    task_file.write_text("Summarize project from file\n", encoding="utf-8")
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false"},
+        args=[str(project), str(task_file), str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Summarize project from file" in result.stdout
+
+
 def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
     make_fake_curl(fake_bin)
@@ -210,6 +248,36 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
+
+
+def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
+    make_fake_curl(fake_bin)
+    make_fake_openhands(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_LOCK_ROLE_MODEL": "true",
+            "HOCA_REQUESTED_MODEL": "qwen-7b-pro",
+            "OLLAMA_MODEL": "qwen-7b-pro",
+            "LLM_MODEL": "ollama/qwen-7b-pro",
+            "LLM_BASE_URL": "http://bad.example.invalid",
+            "LLM_API_KEY": "agent-supplied-key",
+            "HOCA_USE_SANDBOX": "false",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MODEL=ollama/qwen-14b-pro" in result.stdout
+    assert "qwen-7b-pro" not in result.stdout
 
 
 def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> None:

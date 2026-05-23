@@ -101,6 +101,17 @@ def test_reviewer_profile_omits_openhands_runner() -> None:
     assert "openhands_runner" not in content
 
 
+def test_worker_and_reviewer_use_host_terminal_for_sandbox_runner() -> None:
+    for profile_name in ("hoca-worker", "hoca-reviewer"):
+        content = (
+            PROFILES_DIR / profile_name / "config.example.yaml"
+        ).read_text(encoding="utf-8")
+        assert "backend: local" in content
+        assert "docker_image:" not in content
+        assert "workspace_root: \"~/<path-to-target-repos>\"" in content
+        assert "<target-repo>" not in content
+
+
 def test_manager_profile_includes_orchestration_scripts() -> None:
     content = (
         PROFILES_DIR / "hoca-manager" / "config.example.yaml"
