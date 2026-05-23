@@ -26,6 +26,7 @@ def init_pr_repo(path: Path) -> None:
     (path / "src" / "widget.ts").write_text("export const widget = true;\n", encoding="utf-8")
     (path / "templates").mkdir()
     (path / "templates" / "PR_TEMPLATE.md").write_text(
+        "Use this structure for every pull request. Replace guidance with concrete notes.\n\n"
         "## Summary\n\n## Changes\n\n## Validation\n\n## Code Review\n\n"
         "## Hoca Review Notes\n\n## Task Spec\n\n## Run Context\n\n## Risk\n\n## Linked Issue\n",
         encoding="utf-8",
@@ -144,6 +145,7 @@ def test_create_pr_generates_body_from_fixture_artifacts(tmp_path: Path) -> None
 
     assert result.returncode == 0, result.stderr
     body = captured_body.read_text(encoding="utf-8")
+    assert "Use this structure for every pull request" not in body
     assert "Add a reusable widget" in body
     assert "src/widget.ts" in body
     assert ".env" not in body

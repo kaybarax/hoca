@@ -226,8 +226,10 @@ slug_heading() {
 
 PR_BODY_FILE="$RUN_DIR/pr-body.md"
 {
+  SEEN_TEMPLATE_SECTION=false
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^##[[:space:]] ]]; then
+      SEEN_TEMPLATE_SECTION=true
       key="$(slug_heading "$line")"
       echo "$line"
       echo ""
@@ -239,7 +241,9 @@ PR_BODY_FILE="$RUN_DIR/pr-body.md"
       fi
       echo ""
     else
-      echo "$line"
+      if [ "$SEEN_TEMPLATE_SECTION" = true ]; then
+        echo "$line"
+      fi
     fi
   done < "$TEMPLATE_FILE"
   printf '%s\n' "$AUTO_MERGE_FOOTER"
