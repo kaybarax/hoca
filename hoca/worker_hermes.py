@@ -113,6 +113,7 @@ def build_worker_hermes_prompt(
         "- Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.\n"
         "- Do not stage, commit, push, merge, or open pull requests.\n"
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
+        "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, HOCA_CLI_MODEL_OVERRIDE, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"

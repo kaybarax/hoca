@@ -173,6 +173,8 @@ def test_worker_skill_is_implementation_focused() -> None:
     lowered = content.lower()
     assert "implementation-only" in lowered
     assert "never invoke openhands directly" in lowered
+    assert ".env.example" in content
+    assert ".env*" in content
 
 
 def test_worker_skill_defines_manual_procedures() -> None:

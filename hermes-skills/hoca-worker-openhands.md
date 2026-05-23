@@ -100,6 +100,8 @@ Build one precise prompt for OpenHands. Include:
 - Explicit safety constraints:
   - Do not stage, commit, push, merge, or open pull requests
   - Do not read `.env`, keys, tokens, kubeconfigs, or credential stores
+  - If the task needs `.env.example`, read or edit only that exact path; never
+    use `.env*` globs or inspect sibling `.env` files
   - Stay within `expected_areas` unless the brief explicitly widens scope
 - On repair rounds: the focused `repair_brief` only — list accepted finding ids
   and required fixes; instruct OpenHands not to restart unrelated work
