@@ -1040,6 +1040,32 @@ def test_run_hoca_task_cleanup_removes_runtime_even_when_lock_was_replaced(
     assert (run_dir(tmp_path, "issue-42") / "status.json").is_file()
 
 
+def test_run_hoca_task_cleanup_removes_unpublished_worktree_branch_on_failure(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="echo 'OpenHands failed before publication.' >&2\nexit 1\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_WORKTREE_SANDBOX"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Deleting unpublished disposable task branch: feat/update-readme" in result.stdout
+    branch_check = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/feat/update-readme"],
+        cwd=tmp_path,
+        check=False,
+    )
+    assert branch_check.returncode != 0
+    assert not (tmp_path / ".hoca-runtime").exists()
+    assert (latest_run_dir(tmp_path) / "status.json").is_file()
+
+
 def test_run_hoca_task_blocks_dangerous_task_before_run_dir(tmp_path: Path) -> None:
     init_repo(tmp_path)
 

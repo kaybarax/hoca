@@ -27,6 +27,8 @@ RESTORE_DEV_BRANCH="${HOCA_RESTORE_DEV_BRANCH:-true}"
 AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
 SHOULD_RESTORE_DEV_BRANCH="false"
 TASK_BASE_REF=""
+BRANCH=""
+TASK_BRANCH_CREATED="false"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -328,6 +330,33 @@ restore_dev_branch_after_run() {
   "${restore_args[@]}" || true
 }
 
+cleanup_unpublished_task_branch() {
+  if [ "${USE_WORKTREE_SANDBOX:-false}" != "true" ]; then
+    return 0
+  fi
+  if [ "${TASK_BRANCH_CREATED:-false}" != "true" ]; then
+    return 0
+  fi
+  if [ -z "${BRANCH:-}" ]; then
+    return 0
+  fi
+  if [ -f "$RUN_DIR/pr-url.txt" ]; then
+    return 0
+  fi
+  if ! git -C "$PROJECT_PATH" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    return 0
+  fi
+
+  local branch_head
+  local base_head
+  branch_head="$(git -C "$PROJECT_PATH" rev-parse "$BRANCH" 2>/dev/null || true)"
+  base_head="$(git -C "$PROJECT_PATH" rev-parse "$TASK_BASE_REF" 2>/dev/null || true)"
+  if [ -n "$branch_head" ] && [ "$branch_head" = "$base_head" ]; then
+    echo "Deleting unpublished disposable task branch: $BRANCH"
+    git -C "$PROJECT_PATH" branch -D "$BRANCH" >/dev/null 2>&1 || true
+  fi
+}
+
 archive_and_remove_runtime() {
   if [ "${HOCA_KEEP_RUNTIME:-false}" = "true" ]; then
     return 0
@@ -364,6 +393,7 @@ cleanup() {
   fi
   remove_disposable_worktree 2>/dev/null || true
   restore_dev_branch_after_run
+  cleanup_unpublished_task_branch
   if [ -f "$LOCK_FILE" ] && grep -q "\"owner_token\": \"$LOCK_OWNER\"" "$LOCK_FILE"; then
     rm -f "$LOCK_FILE"
   fi
@@ -528,6 +558,7 @@ if worktree_enabled; then
   USE_WORKTREE_SANDBOX="true"
   echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
   git branch "$BRANCH" "$TASK_BASE_REF"
+  TASK_BRANCH_CREATED="true"
   create_disposable_worktree
 else
   echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
