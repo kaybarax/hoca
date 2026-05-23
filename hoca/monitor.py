@@ -156,6 +156,9 @@ def check_manager_only_git_lifecycle_command(line: str, actor_role: str) -> str 
 
 
 def check_secret_access(line: str, project_path: str) -> str | None:
+    structured = _structured_secret_scan_line(line)
+    if structured is not None:
+        line = structured
     tokens = re.findall(r"[\w./\-]+\.(?:env|pem|key|p12|pfx|kubeconfig)(?:\.[\w\-]+)*\b", line)
     for token in tokens:
         if is_secret_like_path(token):
@@ -167,6 +170,38 @@ def check_secret_access(line: str, project_path: str) -> str | None:
         if is_secret_like_path(candidate):
             return candidate
     return None
+
+
+def _structured_secret_scan_line(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict):
+        return None
+    action = event.get("action")
+    if not isinstance(action, dict):
+        return ""
+
+    tool_name = str(event.get("tool_name") or "")
+    kind = str(action.get("kind") or "")
+    parts: list[str] = []
+
+    path = action.get("path")
+    if isinstance(path, str):
+        parts.append(path)
+
+    command = action.get("command")
+    if isinstance(command, str) and tool_name not in {"file_editor"} and kind != "FileEditorAction":
+        parts.append(command)
+
+    if tool_name in {"bash", "terminal", "shell"} and isinstance(command, str):
+        parts.append(command)
+
+    return "\n".join(parts)
 
 
 def check_unrelated_directory(

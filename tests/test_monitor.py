@@ -147,6 +147,45 @@ class TestCheckSecretAccess:
     def test_safe_python(self):
         assert check_secret_access("python main.py", "/project") is None
 
+    def test_file_editor_source_property_named_key_is_not_secret_access(self):
+        line = json.dumps(
+            {
+                "source": "agent",
+                "tool_name": "file_editor",
+                "action": {
+                    "kind": "FileEditorAction",
+                    "command": "create",
+                    "path": "/project/apps/api-gateway/src/__tests__/env.test.ts",
+                    "file_text": "expect(err.key).toBe('PORT');\n",
+                },
+            }
+        )
+        assert check_secret_access(line, "/project") is None
+
+    def test_file_editor_secret_path_is_blocked(self):
+        line = json.dumps(
+            {
+                "source": "agent",
+                "tool_name": "file_editor",
+                "action": {
+                    "kind": "FileEditorAction",
+                    "command": "view",
+                    "path": "/project/.env.local",
+                },
+            }
+        )
+        assert check_secret_access(line, "/project") is not None
+
+    def test_structured_shell_secret_command_is_blocked(self):
+        line = json.dumps(
+            {
+                "source": "agent",
+                "tool_name": "bash",
+                "action": {"command": "cat .env.local", "kind": "CmdRunAction"},
+            }
+        )
+        assert check_secret_access(line, "/project") is not None
+
 
 class TestCheckUnrelatedDirectory:
     def test_home_access(self):
