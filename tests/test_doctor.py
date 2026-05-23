@@ -91,15 +91,12 @@ def test_doctor_output_includes_model_pool_section_when_active(
 ) -> None:
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
-    for index in range(2, 6):
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-            monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
-    for key in ("HOCA_MANAGER_MODEL", "HOCA_WORKER_MODEL", "HOCA_REVIEWER_MODEL"):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("HOCA_MODEL_1_NAME", "local-coder")
-    monkeypatch.setenv("HOCA_MODEL_1_MODEL", "ollama/qwen-14b-pro")
-    monkeypatch.setenv("HOCA_MODEL_1_API_KEY", "secret-key")
-    monkeypatch.setenv("HOCA_FALLBACK_MODEL", "local-coder")
+            monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+    monkeypatch.setenv("HOCA_WORKER_MODEL_NAME", "local-coder")
+    monkeypatch.setenv("HOCA_WORKER_MODEL_MODEL", "ollama/qwen-14b-pro")
+    monkeypatch.setenv("HOCA_WORKER_MODEL_API_KEY", "secret-key")
 
     from hoca.role_model_env import model_pool_doctor_lines
     from hoca.config import load_config

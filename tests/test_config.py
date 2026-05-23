@@ -8,6 +8,12 @@ from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config, par
 from hoca.model_pool import validate_model_pool_config
 
 
+def _clear_role_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
+        for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+            monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+
+
 class TestParseBool:
     @pytest.mark.parametrize("value", ["1", "true", "True", "TRUE", "yes", "YES", "on", "ON"])
     def test_truthy_values(self, value: str) -> None:
@@ -55,10 +61,6 @@ class TestLoadConfigDefaults:
             "HOCA_NETWORK_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
             "HOCA_MAX_REPAIR_ATTEMPTS",
-            "HOCA_MANAGER_MODEL",
-            "HOCA_WORKER_MODEL",
-            "HOCA_REVIEWER_MODEL",
-            "HOCA_FALLBACK_MODEL",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_HOST",
             "OLLAMA_BASE_URL",
@@ -76,9 +78,7 @@ class TestLoadConfigDefaults:
             "TELEGRAM_CHAT_ID",
         ]:
             monkeypatch.delenv(key, raising=False)
-        for index in range(1, 6):
-            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+        _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=empty_env)
 
@@ -210,16 +210,9 @@ class TestModelPoolConfig:
             "LLM_BASE_URL=http://localhost:1234/v1\n"
             "LLM_API_KEY=lm-studio\n"
         )
-        for key in [
-            "LLM_MODEL",
-            "LLM_BASE_URL",
-            "LLM_API_KEY",
-            "HOCA_MANAGER_MODEL",
-            "HOCA_WORKER_MODEL",
-            "HOCA_REVIEWER_MODEL",
-            "HOCA_FALLBACK_MODEL",
-        ]:
+        for key in ["LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY"]:
             monkeypatch.delenv(key, raising=False)
+        _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=env_file)
 
@@ -233,55 +226,51 @@ class TestModelPoolConfig:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_MODEL_1_NAME=local-coder\n"
-            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-            "HOCA_MODEL_1_BASE_URL=http://127.0.0.1:11434\n"
-            "HOCA_MODEL_1_API_KEY=ollama\n"
-            "HOCA_MODEL_2_NAME=local-fast\n"
-            "HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro\n"
-            "HOCA_WORKER_MODEL=local-coder\n"
-            "HOCA_FALLBACK_MODEL=local-fast\n"
+            "HOCA_MANAGER_MODEL_NAME=manager\n"
+            "HOCA_MANAGER_MODEL_MODEL=ollama/qwen-7b-pro\n"
+            "HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:11434\n"
+            "HOCA_MANAGER_MODEL_API_KEY=ollama\n"
+            "HOCA_WORKER_MODEL_NAME=worker\n"
+            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_REVIEWER_MODEL_NAME=reviewer\n"
+            "HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b\n"
         )
-        for index in range(1, 6):
-            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
-        for key in [
-            "HOCA_WORKER_MODEL",
-            "HOCA_FALLBACK_MODEL",
-        ]:
-            monkeypatch.delenv(key, raising=False)
+        _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=env_file)
 
         assert cfg.model_pool.is_active is True
         assert [slot.name for slot in cfg.model_pool.active_slots] == [
-            "local-coder",
-            "local-fast",
+            "manager",
+            "worker",
+            "reviewer",
         ]
+        assert cfg.model_pool.resolve_role("manager").model == "ollama/qwen-7b-pro"
         assert cfg.model_pool.resolve_role("worker").model == "ollama/qwen-14b-pro"
-        assert cfg.model_pool.resolve_role("reviewer").model == "ollama/qwen-7b-pro"
+        assert cfg.model_pool.resolve_role("reviewer").model == "openai/gpt-oss-20b"
 
-    def test_active_pool_requires_fallback_for_unset_roles(self) -> None:
+    def test_active_pool_uses_first_active_slot_as_default_fallback(self) -> None:
         pool = ModelPoolConfig(
             slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
         )
 
-        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
-            validate_model_pool_config(pool)
+        validate_model_pool_config(pool)
+        assert pool.resolve_role("reviewer").name == "local-coder"
 
-    def test_load_config_fails_when_active_pool_has_no_fallback(
+    def test_load_config_defaults_unset_roles_to_first_active_slot(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_MODEL_1_NAME=local-coder\n"
-            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-            "HOCA_WORKER_MODEL=local-coder\n"
+            "HOCA_WORKER_MODEL_NAME=local-coder\n"
+            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
         )
-        self._clear_model_pool_env(monkeypatch)
+        _clear_role_model_env(monkeypatch)
 
-        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
-            load_config(dotenv_path=env_file)
+        cfg = load_config(dotenv_path=env_file)
+
+        assert cfg.model_pool.resolve_role("manager").name == "local-coder"
+        assert cfg.model_pool.resolve_role("worker").name == "local-coder"
 
     def test_active_pool_requires_role_name_to_exist(self) -> None:
         pool = ModelPoolConfig(
@@ -297,94 +286,80 @@ class TestModelPoolConfig:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_MODEL_1_NAME=local-coder\n"
-            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-            "HOCA_MODEL_2_NAME=local-coder\n"
-            "HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro\n"
+            "HOCA_MANAGER_MODEL_NAME=local-coder\n"
+            "HOCA_MANAGER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_WORKER_MODEL_NAME=local-coder\n"
+            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-7b-pro\n"
         )
-        for index in range(1, 6):
-            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+        _clear_role_model_env(monkeypatch)
 
         with pytest.raises(ValueError, match="Duplicate model pool names"):
             load_config(dotenv_path=env_file)
 
-    def test_loads_all_five_model_slots(
+    def test_loads_all_role_model_slots(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         lines = []
-        for index in range(1, 6):
+        for role in ("manager", "worker", "reviewer"):
             lines.extend(
                 [
-                    f"HOCA_MODEL_{index}_NAME=slot-{index}",
-                    f"HOCA_MODEL_{index}_MODEL=provider/model-{index}",
-                    f"HOCA_MODEL_{index}_BASE_URL=http://127.0.0.1:{11430 + index}",
-                    f"HOCA_MODEL_{index}_API_KEY=secret-{index}",
+                    f"HOCA_{role.upper()}_MODEL_NAME={role}",
+                    f"HOCA_{role.upper()}_MODEL_MODEL=provider/{role}",
+                    f"HOCA_{role.upper()}_MODEL_BASE_URL=http://127.0.0.1:11434",
+                    f"HOCA_{role.upper()}_MODEL_API_KEY=secret-{role}",
                 ]
             )
-        lines.append("HOCA_FALLBACK_MODEL=slot-1")
         env_file = tmp_path / ".env"
         env_file.write_text("\n".join(lines) + "\n")
-        self._clear_model_pool_env(monkeypatch)
+        _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=env_file)
 
-        assert len(cfg.model_pool.slots) == 5
+        assert len(cfg.model_pool.slots) == 3
         assert [slot.name for slot in cfg.model_pool.active_slots] == [
-            f"slot-{index}" for index in range(1, 6)
+            "manager",
+            "worker",
+            "reviewer",
         ]
-        assert cfg.model_pool.active_slots[4].api_key == "secret-5"
+        assert cfg.model_pool.active_slots[2].api_key == "secret-reviewer"
 
     def test_empty_slots_do_not_fail_config_loading(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_MODEL_1_NAME=local-coder\n"
-            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-            "HOCA_MODEL_3_NAME=reviewer-strong\n"
-            "HOCA_MODEL_3_MODEL=\n"
-            "HOCA_MODEL_4_NAME=\n"
-            "HOCA_MODEL_4_MODEL=\n"
-            "HOCA_MODEL_5_NAME=\n"
-            "HOCA_MODEL_5_MODEL=\n"
-            "HOCA_FALLBACK_MODEL=local-coder\n"
+            "HOCA_WORKER_MODEL_NAME=local-coder\n"
+            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_REVIEWER_MODEL_NAME=reviewer-strong\n"
+            "HOCA_REVIEWER_MODEL_MODEL=\n"
         )
-        self._clear_model_pool_env(monkeypatch)
+        _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=env_file)
 
         assert cfg.model_pool.is_active is True
         assert [slot.name for slot in cfg.model_pool.active_slots] == ["local-coder"]
 
-    def test_hoca_model_6_env_vars_are_ignored(
+    def test_unknown_role_model_env_vars_are_ignored(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_MODEL_1_NAME=local-coder\n"
-            "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-            "HOCA_MODEL_6_NAME=extra-slot\n"
-            "HOCA_MODEL_6_MODEL=provider/extra\n"
-            "HOCA_FALLBACK_MODEL=local-coder\n"
+            "HOCA_WORKER_MODEL_NAME=local-coder\n"
+            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_SUPPORT_MODEL_NAME=extra-slot\n"
+            "HOCA_SUPPORT_MODEL_MODEL=provider/extra\n"
         )
-        self._clear_model_pool_env(monkeypatch)
-        monkeypatch.setenv("HOCA_MODEL_6_NAME", "env-extra")
-        monkeypatch.setenv("HOCA_MODEL_6_MODEL", "provider/env-extra")
+        _clear_role_model_env(monkeypatch)
+        monkeypatch.setenv("HOCA_SUPPORT_MODEL_NAME", "env-extra")
+        monkeypatch.setenv("HOCA_SUPPORT_MODEL_MODEL", "provider/env-extra")
 
         cfg = load_config(dotenv_path=env_file)
 
-        assert len(cfg.model_pool.slots) == 5
+        assert len(cfg.model_pool.slots) == 3
         assert [slot.name for slot in cfg.model_pool.active_slots] == ["local-coder"]
         assert "extra-slot" not in {slot.name for slot in cfg.model_pool.slots}
         assert "env-extra" not in {slot.name for slot in cfg.model_pool.slots}
-
-    @staticmethod
-    def _clear_model_pool_env(monkeypatch: pytest.MonkeyPatch) -> None:
-        for index in range(1, 7):
-            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
-
 
 class TestSafeRepr:
     def test_secrets_are_masked(self) -> None:
@@ -447,16 +422,7 @@ class TestLegacyEnvVarBackwardCompat:
             "TELEGRAM_CHAT_ID",
         ]:
             monkeypatch.delenv(key, raising=False)
-        for index in range(1, 6):
-            for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-                monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
-        for key in [
-            "HOCA_MANAGER_MODEL",
-            "HOCA_WORKER_MODEL",
-            "HOCA_REVIEWER_MODEL",
-            "HOCA_FALLBACK_MODEL",
-        ]:
-            monkeypatch.delenv(key, raising=False)
+        _clear_role_model_env(monkeypatch)
 
     def test_hoca_max_repair_attempts_alias(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

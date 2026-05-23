@@ -57,16 +57,16 @@ def sample_pool(**overrides: object) -> HocaModelPool:
 
 
 class TestModelPoolEnvLoading:
-    def test_loads_five_slots_from_env_keys(self) -> None:
+    def test_loads_role_slots_from_env_keys(self) -> None:
         env = {
-            "HOCA_MODEL_1_NAME": "slot-1",
-            "HOCA_MODEL_1_MODEL": "provider/model-1",
-            "HOCA_MODEL_1_BASE_URL": "http://127.0.0.1:11434",
-            "HOCA_MODEL_1_API_KEY": "secret-1",
-            "HOCA_MODEL_5_NAME": "slot-5",
-            "HOCA_MODEL_5_MODEL": "provider/model-5",
-            "HOCA_MODEL_5_BASE_URL": "http://127.0.0.1:11435",
-            "HOCA_MODEL_5_API_KEY": "secret-5",
+            "HOCA_MANAGER_MODEL_NAME": "planner",
+            "HOCA_MANAGER_MODEL_MODEL": "provider/manager",
+            "HOCA_WORKER_MODEL_NAME": "coder",
+            "HOCA_WORKER_MODEL_MODEL": "provider/worker",
+            "HOCA_WORKER_MODEL_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_WORKER_MODEL_API_KEY": "secret-worker",
+            "HOCA_REVIEWER_MODEL_NAME": "reviewer",
+            "HOCA_REVIEWER_MODEL_MODEL": "provider/reviewer",
         }
 
         def config_value(name: str, default: str = "") -> str:
@@ -74,15 +74,15 @@ class TestModelPoolEnvLoading:
 
         slots = load_model_slots_from_env(config_value)
 
-        assert len(slots) == 5
-        assert slots[0].name == "slot-1"
-        assert slots[0].api_key == "secret-1"
-        assert slots[4].name == "slot-5"
-        assert slots[1].is_active is False
+        assert len(slots) == 3
+        assert slots[0].name == "planner"
+        assert slots[1].name == "coder"
+        assert slots[1].api_key == "secret-worker"
+        assert slots[2].name == "reviewer"
 
-    def test_rejects_slot_index_outside_supported_range(self) -> None:
-        with pytest.raises(ValueError, match="between 1 and 5"):
-            model_slot_from_env(lambda _name, default="": default, 6)
+    def test_rejects_role_outside_supported_set(self) -> None:
+        with pytest.raises(ValueError, match="Model role must be one of"):
+            model_slot_from_env(lambda _name, default="": default, "fallback")
 
 
 class TestModelPoolValidation:
@@ -101,10 +101,10 @@ class TestModelPoolValidation:
             "reviewer-strong",
         ]
 
-    def test_rejects_more_than_five_active_models(self) -> None:
+    def test_rejects_more_than_supported_active_models(self) -> None:
         models = [
             HocaModelConfig(name=f"model-{index}", model=f"provider/model-{index}")
-            for index in range(1, 7)
+            for index in range(1, MAX_MODEL_SLOTS + 2)
         ]
         pool = HocaModelPool(
             models=models,
@@ -201,14 +201,14 @@ class TestModelPoolConfigBridge:
         with pytest.raises(ValueError, match="must reference a configured model name"):
             validate_model_pool_config(config)
 
-    def test_active_pool_requires_fallback_at_load_time(self) -> None:
+    def test_active_pool_without_explicit_fallback_uses_first_active_slot(self) -> None:
         config = ModelPoolConfig(
             slots=(ModelSlot(name="local-coder", model="ollama/qwen-14b-pro"),),
             worker_model="local-coder",
         )
 
-        with pytest.raises(ValueError, match="HOCA_FALLBACK_MODEL is required"):
-            validate_model_pool_config(config)
+        validate_model_pool_config(config)
+        assert config.resolve_role("manager").name == "local-coder"
 
     def test_role_names_for_report_exclude_credentials(self) -> None:
         config = ModelPoolConfig(
@@ -298,16 +298,16 @@ class TestModelPoolLegacyAndScale:
         assert pool.roles.worker == "solo"
         assert pool.roles.reviewer == "solo"
 
-    def test_five_configured_models_load(self) -> None:
+    def test_three_configured_models_load(self) -> None:
         slots = tuple(
             ModelSlot(name=f"slot-{index}", model=f"provider/model-{index}", api_key="secret")
-            for index in range(1, 6)
+            for index in range(1, MAX_MODEL_SLOTS + 1)
         )
         config = ModelPoolConfig(slots=slots, fallback_model="slot-1")
         pool = model_pool_from_config(config)
 
         assert pool is not None
-        assert len(pool.active_models()) == 5
+        assert len(pool.active_models()) == MAX_MODEL_SLOTS
 
 
 class TestModelPoolSafeSerialization:

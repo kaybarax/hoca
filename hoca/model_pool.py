@@ -6,18 +6,18 @@ from typing import Any
 from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, RoleName
 from hoca.contracts import HocaModelConfig, HocaModelPool, HocaRoleModelSelection
 
-MAX_MODEL_SLOTS = 5
-MODEL_SLOT_ENV_COUNT = 5
+MODEL_ROLES: tuple[RoleName, ...] = ("manager", "worker", "reviewer")
+MAX_MODEL_SLOTS = len(MODEL_ROLES)
 
 
-def model_slot_from_env(config_value, index: int) -> ModelSlot:
-    if index < 1 or index > MODEL_SLOT_ENV_COUNT:
-        raise ValueError(
-            f"Model slot index must be between 1 and {MODEL_SLOT_ENV_COUNT}, got {index}"
-        )
-    prefix = f"HOCA_MODEL_{index}_"
+def model_slot_from_env(config_value, role: RoleName) -> ModelSlot:
+    if role not in MODEL_ROLES:
+        raise ValueError(f"Model role must be one of: {', '.join(MODEL_ROLES)}, got {role}")
+    env_role = role.upper()
+    prefix = f"HOCA_{env_role}_MODEL_"
+    name = config_value(f"{prefix}NAME").strip() or role
     return ModelSlot(
-        name=config_value(f"{prefix}NAME"),
+        name=name,
         model=config_value(f"{prefix}MODEL"),
         base_url=config_value(f"{prefix}BASE_URL"),
         api_key=config_value(f"{prefix}API_KEY"),
@@ -25,7 +25,7 @@ def model_slot_from_env(config_value, index: int) -> ModelSlot:
 
 
 def load_model_slots_from_env(config_value) -> tuple[ModelSlot, ...]:
-    return tuple(model_slot_from_env(config_value, index) for index in range(1, MODEL_SLOT_ENV_COUNT + 1))
+    return tuple(model_slot_from_env(config_value, role) for role in MODEL_ROLES)
 
 
 REDACTED_API_KEY = "***"
@@ -82,11 +82,6 @@ def validate_model_pool_config(pool: ModelPoolConfig) -> None:
 
     if not pool.is_active:
         return
-
-    if not pool.fallback_model.strip():
-        raise ValueError(
-            "HOCA_FALLBACK_MODEL is required when the model pool is active"
-        )
 
     configured = set(pool.slot_by_name())
     for role in ("manager", "worker", "reviewer", "fallback"):
@@ -175,7 +170,10 @@ def safe_model_pool_json(pool: HocaModelPool) -> str:
 
 
 def _resolved_role_name(pool: ModelPoolConfig, role: RoleName) -> str:
-    return pool.resolve_role(role).name
+    slot = pool.resolve_role(role)
+    if slot is None:
+        return ""
+    return slot.name
 
 
 def _role_selection_items(

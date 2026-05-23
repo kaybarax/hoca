@@ -93,47 +93,36 @@ Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
 be used by setting the `LLM_MODEL` and `OLLAMA_MODEL` environment variables in
 your `.env` file.
 
-### Five-Slot Model Pool
+### Role Model Pool
 
-HOCA can route manager, worker, and reviewer phases through a small configured
-model pool. Up to five slots can be defined in `.env`:
-
-```env
-HOCA_MODEL_1_NAME=local-coder
-HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro
-HOCA_MODEL_1_BASE_URL=http://127.0.0.1:11434
-HOCA_MODEL_1_API_KEY=ollama
-
-HOCA_MODEL_2_NAME=local-fast
-HOCA_MODEL_2_MODEL=ollama/qwen-7b-pro
-HOCA_MODEL_2_BASE_URL=http://127.0.0.1:11434
-HOCA_MODEL_2_API_KEY=ollama
-
-HOCA_MODEL_3_NAME=reviewer-strong
-HOCA_MODEL_3_MODEL=
-HOCA_MODEL_3_BASE_URL=
-HOCA_MODEL_3_API_KEY=
-```
-
-Slots 4 and 5 use the same `HOCA_MODEL_<N>_*` shape and can stay empty. Empty
-slots are ignored. If no pool slots are active, HOCA preserves the older global
-`LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` behavior.
-
-Select models by role using the slot names:
+HOCA can route manager, worker, and reviewer phases through role-scoped model
+configuration in `.env`:
 
 ```env
-HOCA_MANAGER_MODEL=local-coder
-HOCA_WORKER_MODEL=local-coder
-HOCA_REVIEWER_MODEL=reviewer-strong
-HOCA_FALLBACK_MODEL=local-fast
+HOCA_MANAGER_MODEL_NAME=manager
+HOCA_MANAGER_MODEL_MODEL=ollama/qwen-7b-pro
+HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:11434
+HOCA_MANAGER_MODEL_API_KEY=ollama
+
+HOCA_WORKER_MODEL_NAME=worker
+HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro
+HOCA_WORKER_MODEL_BASE_URL=http://127.0.0.1:11434
+HOCA_WORKER_MODEL_API_KEY=ollama
+
+HOCA_REVIEWER_MODEL_NAME=reviewer
+HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
+HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
+HOCA_REVIEWER_MODEL_API_KEY=lm-studio
 ```
 
 The manager can use a balanced planning model, the worker can use a
 coding-specialized model, and the reviewer can use a stronger reasoning model
-when available. If a role-specific variable is empty, HOCA uses
-`HOCA_FALLBACK_MODEL`; when any pool slot is active, that fallback must be set.
-Only the selected role model's credentials are forwarded to that phase, and API
-keys are redacted from reports and logs.
+when available. Empty role blocks are ignored; if no role model blocks are
+active, HOCA preserves the older global `LLM_MODEL`, `LLM_BASE_URL`, and
+`LLM_API_KEY` behavior. If one role is empty while another role is active, HOCA
+uses the first active role model as the fallback. Only the selected role model's
+credentials are forwarded to that phase, and API keys are redacted from reports
+and logs.
 
 ### LM Studio (Local OpenAI-compatible)
 

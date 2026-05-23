@@ -98,9 +98,11 @@ class ModelPoolConfig:
             "fallback": self.fallback_model,
         }[role]
         selected_name = requested or self.fallback_model
+        if not selected_name and self.active_slots:
+            selected_name = self.active_slots[0].name
         if not selected_name:
             raise ValueError(
-                f"HOCA_{role.upper()}_MODEL is unset and HOCA_FALLBACK_MODEL is not configured"
+                f"HOCA_{role.upper()}_MODEL_MODEL is unset and no role model fallback is configured"
             )
         slots = self.slot_by_name()
         try:
@@ -173,12 +175,14 @@ def _load_model_pool(config_value) -> ModelPoolConfig:
     from hoca.model_pool import load_model_slots_from_env, validate_model_pool_config
 
     slots = load_model_slots_from_env(config_value)
+    role_slots = dict(zip(("manager", "worker", "reviewer"), slots, strict=True))
+    fallback_model = next((slot.name for slot in slots if slot.is_active), "")
     pool = ModelPoolConfig(
         slots=slots,
-        manager_model=config_value("HOCA_MANAGER_MODEL"),
-        worker_model=config_value("HOCA_WORKER_MODEL"),
-        reviewer_model=config_value("HOCA_REVIEWER_MODEL"),
-        fallback_model=config_value("HOCA_FALLBACK_MODEL"),
+        manager_model=role_slots["manager"].name if role_slots["manager"].is_active else "",
+        worker_model=role_slots["worker"].name if role_slots["worker"].is_active else "",
+        reviewer_model=role_slots["reviewer"].name if role_slots["reviewer"].is_active else "",
+        fallback_model=fallback_model,
     )
     validate_model_pool_config(pool)
     return pool

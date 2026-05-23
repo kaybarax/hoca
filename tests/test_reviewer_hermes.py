@@ -13,7 +13,7 @@ from hoca.reviewer_hermes import (
     run_reviewer_hermes,
     verify_profile_prerequisites,
 )
-from tests.test_worker_hermes import init_repo, make_fake_ollama, sample_task_spec
+from tests.test_worker_hermes import clear_model_env, init_repo, make_fake_ollama, sample_task_spec
 
 
 def make_fake_review_openhands(fake_bin: Path) -> None:
@@ -147,6 +147,7 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HERMES_TEST_RUN_DIR", str(tmp_path / "project/.hoca-runtime/runs/run-test"))
     monkeypatch.setenv("HERMES_TEST_ROUND", "2")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)

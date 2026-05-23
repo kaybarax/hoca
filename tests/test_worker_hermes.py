@@ -20,6 +20,17 @@ from hoca.worker_hermes import (
 )
 
 
+def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in ["HOCA_REQUESTED_MODEL", "HOCA_CLI_MODEL_OVERRIDE"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("LLM_MODEL", "ollama/qwen-14b-pro")
+    monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("LLM_API_KEY", "ollama")
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
+        for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+            monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+
+
 def sample_task_spec(**overrides: object) -> HocaTaskSpec:
     base = HocaTaskSpec(
         run_id="run-test",
@@ -300,6 +311,7 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)

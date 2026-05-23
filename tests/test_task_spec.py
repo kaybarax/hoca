@@ -37,6 +37,12 @@ def init_repo(path: Path) -> None:
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
 
 
+def clear_role_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
+        for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+            monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+
+
 def test_derive_task_branch_from_issue() -> None:
     assert derive_task_branch("anything", "42", "main") == "fix/issue-42"
 
@@ -107,16 +113,14 @@ def test_build_initial_task_spec_records_resolved_role_models(
 ) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "HOCA_MODEL_1_NAME=local-coder\n"
-        "HOCA_MODEL_1_MODEL=ollama/qwen-14b-pro\n"
-        "HOCA_MODEL_2_NAME=reviewer-strong\n"
-        "HOCA_MODEL_2_MODEL=openai/gpt-oss-20b\n"
-        "HOCA_MODEL_3_NAME=local-fast\n"
-        "HOCA_MODEL_3_MODEL=ollama/qwen-7b-pro\n"
-        "HOCA_WORKER_MODEL=local-coder\n"
-        "HOCA_REVIEWER_MODEL=reviewer-strong\n"
-        "HOCA_FALLBACK_MODEL=local-fast\n"
+        "HOCA_MANAGER_MODEL_NAME=local-fast\n"
+        "HOCA_MANAGER_MODEL_MODEL=ollama/qwen-7b-pro\n"
+        "HOCA_WORKER_MODEL_NAME=local-coder\n"
+        "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+        "HOCA_REVIEWER_MODEL_NAME=reviewer-strong\n"
+        "HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b\n"
     )
+    clear_role_model_env(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     spec = build_initial_task_spec(

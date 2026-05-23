@@ -80,9 +80,9 @@ class TestRoleModelResolution:
     def test_apply_role_strips_other_pool_credentials(self) -> None:
         cfg = HocaConfig(model_pool=_active_pool_config())
         env = {
-            "HOCA_MODEL_1_API_KEY": "secret-worker",
-            "HOCA_MODEL_2_API_KEY": "secret-reviewer",
-            "HOCA_MODEL_3_API_KEY": "secret-fast",
+            "HOCA_WORKER_MODEL_API_KEY": "secret-worker",
+            "HOCA_REVIEWER_MODEL_API_KEY": "secret-reviewer",
+            "HOCA_MANAGER_MODEL_API_KEY": "secret-fast",
             "LLM_API_KEY": "stale",
         }
 
@@ -90,8 +90,8 @@ class TestRoleModelResolution:
 
         assert worker_env["LLM_MODEL"] == "ollama/qwen-14b-pro"
         assert worker_env["LLM_API_KEY"] == "secret-worker"
-        assert "HOCA_MODEL_1_API_KEY" not in worker_env
-        assert "HOCA_MODEL_2_API_KEY" not in worker_env
+        assert "HOCA_WORKER_MODEL_API_KEY" not in worker_env
+        assert "HOCA_REVIEWER_MODEL_API_KEY" not in worker_env
 
         reviewer_env = apply_role_to_env("reviewer", cfg, env)
 
@@ -159,17 +159,14 @@ class TestRunnerCredentialIsolation:
         init_repo(project)
 
         pool_env = {
-            "HOCA_MODEL_1_NAME": "local-coder",
-            "HOCA_MODEL_1_MODEL": "ollama/qwen-14b-pro",
-            "HOCA_MODEL_1_BASE_URL": "http://127.0.0.1:11434",
-            "HOCA_MODEL_1_API_KEY": "secret-worker",
-            "HOCA_MODEL_2_NAME": "reviewer-strong",
-            "HOCA_MODEL_2_MODEL": "ollama/qwen-7b-pro",
-            "HOCA_MODEL_2_BASE_URL": "http://127.0.0.1:11434",
-            "HOCA_MODEL_2_API_KEY": "secret-reviewer",
-            "HOCA_WORKER_MODEL": "local-coder",
-            "HOCA_REVIEWER_MODEL": "reviewer-strong",
-            "HOCA_FALLBACK_MODEL": "local-coder",
+            "HOCA_WORKER_MODEL_NAME": "local-coder",
+            "HOCA_WORKER_MODEL_MODEL": "ollama/qwen-14b-pro",
+            "HOCA_WORKER_MODEL_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_WORKER_MODEL_API_KEY": "secret-worker",
+            "HOCA_REVIEWER_MODEL_NAME": "reviewer-strong",
+            "HOCA_REVIEWER_MODEL_MODEL": "ollama/qwen-7b-pro",
+            "HOCA_REVIEWER_MODEL_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_REVIEWER_MODEL_API_KEY": "secret-reviewer",
         }
         result = run_script(
             "run-openhands-task.sh",
@@ -191,7 +188,7 @@ class TestRunnerCredentialIsolation:
 def test_strip_pool_credentials_removes_configured_keys() -> None:
     env = {
         "LLM_API_KEY": "x",
-        "HOCA_MODEL_1_API_KEY": "a",
+        "HOCA_WORKER_MODEL_API_KEY": "a",
         "PATH": "/usr/bin",
     }
     cleaned = strip_pool_credentials(env)
@@ -200,7 +197,7 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
     assert "LLM_API_KEY" not in cleaned
     assert pool_credential_env_keys(env) == [
         "LLM_API_KEY",
-        "HOCA_MODEL_1_API_KEY",
+        "HOCA_WORKER_MODEL_API_KEY",
     ]
 
 
@@ -212,9 +209,9 @@ def test_load_config_empty_pool_preserves_legacy(
         "LLM_MODEL=openai/gpt-oss-20b\n"
         "LLM_BASE_URL=http://localhost:1234/v1\n"
     )
-    for index in range(1, 6):
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-            monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+            monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)

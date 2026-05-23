@@ -12,7 +12,7 @@ from hoca.config import HocaConfig, ModelSlot, RoleName, load_config
 
 DoctorLineStatus = Literal["ok", "warn", "fail"]
 
-MODEL_SLOT_ENV_COUNT = 5
+MODEL_ROLES: tuple[RoleName, ...] = ("manager", "worker", "reviewer")
 CLI_OVERRIDE_FLAG = "HOCA_CLI_MODEL_OVERRIDE"
 
 
@@ -96,17 +96,9 @@ def _legacy_api_key(config: HocaConfig) -> str:
 
 def pool_credential_env_keys(env: dict[str, str]) -> list[str]:
     keys = ["LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY", "HOCA_SELECTED_MODEL_SLOT"]
-    for index in range(1, MODEL_SLOT_ENV_COUNT + 1):
+    for role in MODEL_ROLES:
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
-            keys.append(f"HOCA_MODEL_{index}_{suffix}")
-    keys.extend(
-        [
-            "HOCA_MANAGER_MODEL",
-            "HOCA_WORKER_MODEL",
-            "HOCA_REVIEWER_MODEL",
-            "HOCA_FALLBACK_MODEL",
-        ]
-    )
+            keys.append(f"HOCA_{role.upper()}_MODEL_{suffix}")
     return [key for key in keys if key in env]
 
 
@@ -184,9 +176,6 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
             lines.append(("fail", f"Role {role}: could not resolve a model slot."))
             continue
         lines.append(("ok", f"Role {role} resolves to slot {resolved.name!r} ({resolved.model})."))
-
-    if not pool.fallback_model.strip():
-        lines.append(("fail", "HOCA_FALLBACK_MODEL is required when the model pool is active."))
 
     worker_slot = pool.resolve_role("worker")
     reviewer_slot = pool.resolve_role("reviewer")
