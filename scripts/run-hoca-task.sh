@@ -927,7 +927,10 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   echo "Creating pull request..."
   PR_ARGS=()
   if [ -n "$ISSUE_ID" ]; then
-    PR_ARGS=(--issue-id "$ISSUE_ID")
+    PR_ARGS+=(--issue-id "$ISSUE_ID")
+  fi
+  if [ -n "$TASK_BASE_REF" ]; then
+    PR_ARGS+=(--base-branch "$TASK_BASE_REF")
   fi
   HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
   update_status "pr_created" "pull_request_created"

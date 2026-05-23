@@ -12,10 +12,15 @@ RUN_DIR="$(mkdir -p "$3" && cd "$3" && pwd)"
 shift 3
 
 ISSUE_ID=""
+PR_BASE_BRANCH=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --issue-id)
       ISSUE_ID="$2"
+      shift 2
+      ;;
+    --base-branch)
+      PR_BASE_BRANCH="$2"
       shift 2
       ;;
     *)
@@ -98,6 +103,15 @@ if git symbolic-ref -q refs/remotes/origin/HEAD >/dev/null 2>&1; then
 else
   DEFAULT_BRANCH="main"
 fi
+
+# Strip remote prefix so we can use it as a plain branch name for gh pr create.
+if [ -n "$PR_BASE_BRANCH" ]; then
+  PR_BASE_BRANCH="$(printf '%s' "$PR_BASE_BRANCH" | sed 's|^origin/||')"
+  if [ "$PR_BASE_BRANCH" = "$DEFAULT_BRANCH" ]; then
+    PR_BASE_BRANCH=""
+  fi
+fi
+TARGET_BRANCH="${PR_BASE_BRANCH:-$DEFAULT_BRANCH}"
 
 CURRENT_BRANCH="$(git branch --show-current)"
 if [ -z "$CURRENT_BRANCH" ]; then
@@ -187,10 +201,10 @@ if ! git push -u "$REMOTE_NAME" HEAD; then
   exit 1
 fi
 
-if git rev-parse --verify "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
-  BASE_REF="origin/${DEFAULT_BRANCH}"
-elif git rev-parse --verify "${DEFAULT_BRANCH}" >/dev/null 2>&1; then
-  BASE_REF="${DEFAULT_BRANCH}"
+if git rev-parse --verify "origin/${TARGET_BRANCH}" >/dev/null 2>&1; then
+  BASE_REF="origin/${TARGET_BRANCH}"
+elif git rev-parse --verify "${TARGET_BRANCH}" >/dev/null 2>&1; then
+  BASE_REF="${TARGET_BRANCH}"
 else
   BASE_REF=""
 fi
@@ -205,7 +219,7 @@ CHANGES_FILE="$RUN_DIR/pr-fragment-changes.txt"
     echo "Diff stat vs ${BASE_REF}:"
     git diff --stat "${BASE_REF}...HEAD" 2>/dev/null || echo "(git diff --stat unavailable)"
   else
-    echo "Could not resolve base ref ${DEFAULT_BRANCH}; showing recent commits:"
+    echo "Could not resolve base ref ${TARGET_BRANCH}; showing recent commits:"
     git log -15 --oneline
   fi
   echo '```'
@@ -264,9 +278,9 @@ PR_BODY_FILE="$RUN_DIR/pr-body.md"
   fi
 } > "$PR_BODY_FILE"
 
-echo "Creating pull request (base: ${DEFAULT_BRANCH})..."
+echo "Creating pull request (base: ${TARGET_BRANCH})..."
 set +e
-GH_OUT="$(gh pr create --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --base "$DEFAULT_BRANCH" $DRAFT_PR_FLAG 2>&1)"
+GH_OUT="$(gh pr create --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --base "$TARGET_BRANCH" $DRAFT_PR_FLAG 2>&1)"
 GH_EC=$?
 set -e
 printf '%s\n' "$GH_OUT" | tee "$RUN_DIR/gh-pr-create.log"
