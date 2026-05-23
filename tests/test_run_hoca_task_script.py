@@ -49,6 +49,16 @@ def test_openhands_wrapper_prepends_execution_root_guard() -> None:
     assert "Do not cd to the original checkout" in content
 
 
+def test_openhands_wrapper_does_not_embed_api_key_in_python_command() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "run-openhands-task.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "HOCA_OPENHANDS_API_KEY" in content
+    assert "api_key = os.environ['HOCA_OPENHANDS_API_KEY']" in content
+    assert "env_override['LLM_API_KEY'] = '${API_KEY}'" not in content
+    assert "env_override['LLM_MODEL'] = '${MODEL}'" not in content
+
+
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("HOCA_DEV_BRANCH", None)

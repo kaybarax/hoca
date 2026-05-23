@@ -237,8 +237,12 @@ fi
 echo "Starting OpenHands with monitoring..."
 
 set +e
+HOCA_OPENHANDS_MODEL="$MODEL" \
+HOCA_OPENHANDS_BASE_URL="$BASE_URL" \
+HOCA_OPENHANDS_API_KEY="$API_KEY" \
 PYTHONPATH="$HOCA_ROOT" "$PYTHON_BIN" -c "
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -252,13 +256,19 @@ stall = int(sys.argv[5])
 actor_role = sys.argv[6]
 oh_args = sys.argv[7:]
 
-env_override = dict(__import__('os').environ)
-if '${AGENT_ROLE}' in ('worker', 'reviewer'):
+model = os.environ['HOCA_OPENHANDS_MODEL']
+base_url = os.environ.get('HOCA_OPENHANDS_BASE_URL', '')
+api_key = os.environ['HOCA_OPENHANDS_API_KEY']
+env_override = dict(os.environ)
+env_override.pop('HOCA_OPENHANDS_API_KEY', None)
+env_override.pop('HOCA_OPENHANDS_BASE_URL', None)
+env_override.pop('HOCA_OPENHANDS_MODEL', None)
+if actor_role in ('worker', 'reviewer'):
     env_override.pop('GITHUB_TOKEN', None)
-env_override['LLM_MODEL'] = '${MODEL}'
-if '${BASE_URL}':
-    env_override['LLM_BASE_URL'] = '${BASE_URL}'
-env_override['LLM_API_KEY'] = '${API_KEY}'
+env_override['LLM_MODEL'] = model
+if base_url:
+    env_override['LLM_BASE_URL'] = base_url
+env_override['LLM_API_KEY'] = api_key
 env_override['CI'] = 'true'
 
 with open(output_file, 'w') as out_f:
