@@ -860,11 +860,11 @@ fi
 
 if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
   echo "Applying worktree changes to main checkout for staging..."
+  remove_disposable_worktree
   git -C "$PROJECT_PATH" checkout "$BRANCH"
   git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
   git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
   WORKER_PROJECT_PATH="$PROJECT_PATH"
-  remove_disposable_worktree
 fi
 
 INTENDED_FILE_LIST="$RUN_DIR/intended-files.txt"
