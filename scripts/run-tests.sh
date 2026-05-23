@@ -186,18 +186,31 @@ if [ -f "package.json" ]; then
     echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
     CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
   fi
-  if run_task_spec_commands; then
-    :
+  # Capture task-spec commands once so we can check coverage below.
+  _spec_commands="$(load_task_spec_commands 2>/dev/null || true)"
+
+  if printf '%s' "$_spec_commands" | grep -q .; then
+    # Run every command from the task spec.
+    while IFS= read -r _cmd; do
+      [ -n "$_cmd" ] || continue
+      TESTS_RUN=1
+      run_test_command "$_cmd" bash -lc "$_cmd" || true
+    done <<< "$_spec_commands"
   else
-  if package_script_exists "test"; then
-    TESTS_RUN=1
-    if [ "$runner" = "npm" ]; then
-      run_test_command "$runner test" "$runner" test || true
-    else
-      run_test_command "$runner test" "$runner" test || true
+    # No task-spec commands: auto-discover and run test.
+    if package_script_exists "test"; then
+      TESTS_RUN=1
+      if [ "$runner" = "npm" ]; then
+        run_test_command "$runner test" "$runner" test || true
+      else
+        run_test_command "$runner test" "$runner" test || true
+      fi
     fi
   fi
-  if package_script_exists "lint"; then
+
+  # Lint and typecheck are mandatory quality gates. Always run them unless the
+  # task-spec commands already cover them — otherwise lint errors reach the PR.
+  if package_script_exists "lint" && ! printf '%s' "$_spec_commands" | grep -qi '\blint\b'; then
     TESTS_RUN=1
     if [ "$runner" = "npm" ]; then
       run_test_command "$runner lint" "$runner" run lint || true
@@ -205,14 +218,13 @@ if [ -f "package.json" ]; then
       run_test_command "$runner lint" "$runner" lint || true
     fi
   fi
-  if package_script_exists "typecheck"; then
+  if package_script_exists "typecheck" && ! printf '%s' "$_spec_commands" | grep -qiE '\btypecheck\b|\btsc\b'; then
     TESTS_RUN=1
     if [ "$runner" = "npm" ]; then
       run_test_command "$runner typecheck" "$runner" run typecheck || true
     else
       run_test_command "$runner typecheck" "$runner" typecheck || true
     fi
-  fi
   fi
 fi
 

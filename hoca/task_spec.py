@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -138,12 +139,23 @@ def infer_test_commands(repo_root: Path) -> list[str]:
 
     package_json = repo_root / "package.json"
     if package_json.is_file():
+        try:
+            pkg = json.loads(package_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pkg = {}
+        scripts = pkg.get("scripts") or {}
         if (repo_root / "pnpm-lock.yaml").is_file():
-            commands.append("pnpm test")
+            runner = "pnpm"
         elif (repo_root / "package-lock.json").is_file():
-            commands.append("npm test")
+            runner = "npm"
         else:
-            commands.append("npm test")
+            runner = "npm"
+        if "test" in scripts:
+            commands.append(f"{runner} test")
+        if "lint" in scripts:
+            commands.append(f"{runner} lint")
+        if "typecheck" in scripts:
+            commands.append(f"{runner} typecheck")
 
     if (repo_root / "pyproject.toml").is_file() or (repo_root / "requirements.txt").is_file():
         commands.append("pytest")
