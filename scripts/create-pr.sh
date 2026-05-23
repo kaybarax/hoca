@@ -110,7 +110,17 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
-TASK_ONELINE="$(printf '%s' "$TASK" | tr '\n\r' '  ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{2,\}/ /g')"
+# Use only the first paragraph/line of the task text so execution-context
+# metadata like "Target repository: /local/path" is never folded into the title.
+TASK_FIRST_LINE="$(printf '%s' "$TASK" | awk 'NF==0{exit} {print}' | head -1)"
+TASK_ONELINE="$(printf '%s' "${TASK_FIRST_LINE:-$TASK}" | tr '\n\r' '  ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{2,\}/ /g')"
+# Sanitize any absolute local paths that slipped through (e.g. /Users/…, /home/…).
+TASK_ONELINE="$(printf '%s' "$TASK_ONELINE" | sed \
+  's|/Users/[^[:space:]"'"'"'<>]*|<local-path>|g
+   s|/home/[^[:space:]"'"'"'<>]*|<local-path>|g
+   s|/root/[^[:space:]"'"'"'<>]*|<local-path>|g
+   s|/private/var/[^[:space:]"'"'"'<>]*|<local-path>|g
+   s|/var/folders/[^[:space:]"'"'"'<>]*|<local-path>|g')"
 if [ -z "$TASK_ONELINE" ]; then
   echo "Task text is empty; cannot build PR title or summary." >&2
   exit 1

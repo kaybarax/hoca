@@ -32,6 +32,16 @@ _SECRET_LIKE_TASK = re.compile(
     re.IGNORECASE,
 )
 
+# Matches absolute local filesystem paths that should not appear in public PR content.
+_LOCAL_PATH_RE = re.compile(
+    r"/(?:Users|home|root|private(?:/var)?|var/folders)/[^\s\"'`<>\[\](){}]*",
+)
+
+
+def _sanitize_pr_text(text: str) -> str:
+    """Replace absolute local filesystem paths with a safe placeholder."""
+    return _LOCAL_PATH_RE.sub("<local-path>", text)
+
 
 def _bullet_list(items: list[str], *, empty: str) -> str:
     if not items:
@@ -222,8 +232,10 @@ def format_task_spec_fragment(run_dir: Path, *, task_oneline: str) -> str:
             "_Task spec present but could not be parsed safely._"
         )
 
+    goal_first_line = spec.goal.split("\n\n")[0].split("\n")[0].strip()
+    goal_display = _sanitize_pr_text(goal_first_line)
     lines = [
-        f"**Goal**: {spec.goal}",
+        f"**Goal**: {goal_display}",
         f"**Risk level**: {spec.risk_level}",
     ]
     if spec.expected_areas:
@@ -401,8 +413,15 @@ def summarize_pr_body_fragments(
     """Return PR template slug -> markdown fragment for a HOCA run."""
     from hoca.run_state import summarize_run_for_pr_body
 
-    task_oneline = " ".join(task.split())
+    # Use only the first paragraph/line of the task text so execution-context
+    # metadata like "Target repository: /path" is never folded into the summary.
+    task_first_line = task.split("\n\n")[0].split("\n")[0].strip()
+    task_oneline = _sanitize_pr_text(" ".join(task_first_line.split()))
+
     base = summarize_run_for_pr_body(run_dir, task=task, issue_id=issue_id)
+    # Sanitize any absolute local paths that appear in run_state-generated fragments
+    # (e.g. worktree paths in tests-summary.md).
+    base = {k: _sanitize_pr_text(v) for k, v in base.items()}
 
     if changes is not None:
         base["changes"] = changes
@@ -416,8 +435,12 @@ def summarize_pr_body_fragments(
         if spec_path.is_file():
             try:
                 spec = HocaTaskSpec.from_json(spec_path.read_text(encoding="utf-8"))
-                if spec.goal and spec.goal != task_oneline:
-                    base["summary"] = f"{task_oneline}\n\n{spec.goal}"
+                # Use only the first line of spec.goal (sanitized) as supplemental
+                # summary text — never embed the full raw task prompt.
+                goal_first_line = spec.goal.split("\n\n")[0].split("\n")[0].strip()
+                goal_summary = _sanitize_pr_text(" ".join(goal_first_line.split()))
+                if goal_summary and goal_summary != task_oneline:
+                    base["summary"] = f"{task_oneline}\n\n{goal_summary}"
             except ValueError:
                 pass
 

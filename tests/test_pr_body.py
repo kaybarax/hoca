@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from hoca.pr_body import (
+    _sanitize_pr_text,
     format_hoca_review_notes_fragment,
     format_run_context_fragment,
     format_task_spec_fragment,
@@ -273,3 +274,82 @@ def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
 
     unresolved = unresolved_findings_for_run(run_dir)
     assert [finding.id for finding in unresolved] == ["F1", "F2"]
+
+
+# ---------------------------------------------------------------------------
+# Path sanitization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("/Users/kevin/workspace/project", "<local-path>"),
+        ("/home/runner/work/repo", "<local-path>"),
+        ("/root/.config/app", "<local-path>"),
+        ("/private/var/folders/tmp/abc123", "<local-path>"),
+        ("/var/folders/89/abc123/T/tmp.txt", "<local-path>"),
+        ("no path here", "no path here"),
+        ("relative/path/only", "relative/path/only"),
+        (
+            "Project: /Users/alice/proj/.hoca-runtime/worktrees/run-123",
+            "Project: <local-path>",
+        ),
+    ],
+)
+def test_sanitize_pr_text(raw: str, expected: str) -> None:
+    assert _sanitize_pr_text(raw) == expected
+
+
+def test_task_spec_fragment_redacts_local_paths_from_goal(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-sanitize"
+    ensure_run_layout(run_dir)
+    write_json_atomic(
+        run_dir / "task-spec.json",
+        _task_spec_payload(
+            tmp_path,
+            goal=(
+                "Add typed env config.\n\n"
+                "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+                "Scope: replace env.ts"
+            ),
+        ),
+    )
+    fragment = format_task_spec_fragment(run_dir, task_oneline="Add typed env config.")
+    assert "/Users/" not in fragment
+    assert "Add typed env config." in fragment
+
+
+def test_summarize_pr_body_fragments_redacts_local_paths(run_dir: Path) -> None:
+    (run_dir / "tests-summary.md").write_text(
+        "# Validation\n\n"
+        "- **Status**: passed\n"
+        "- **Project**: /Users/kevin/workspace/projects/todo-list-turborepo/.hoca-runtime/worktrees/run-123\n",
+        encoding="utf-8",
+    )
+    task_with_path = (
+        "Add typed env config.\n\n"
+        "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+        "Scope: replace env.ts"
+    )
+    write_json_atomic(
+        run_dir / "task-spec.json",
+        _task_spec_payload(run_dir.parent, goal=task_with_path),
+    )
+    fragments = summarize_pr_body_fragments(run_dir, task=task_with_path)
+    for key, value in fragments.items():
+        assert "/Users/" not in value, f"Local path leaked in fragment '{key}'"
+        assert "/home/" not in value, f"Local path leaked in fragment '{key}'"
+
+
+def test_summarize_pr_body_fragments_uses_only_first_task_line_in_summary(
+    run_dir: Path,
+) -> None:
+    task = (
+        "Add typed env config.\n\n"
+        "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+        "Scope: replace env.ts"
+    )
+    fragments = summarize_pr_body_fragments(run_dir, task=task)
+    assert "Target repository" not in fragments["summary"]
+    assert "Add typed env config." in fragments["summary"]
