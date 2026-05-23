@@ -87,7 +87,15 @@ def test_parse_doctor_output_includes_browsing_when_available() -> None:
 
 def test_doctor_output_includes_model_pool_section_when_active(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    empty_env = tmp_path / ".env"
+    empty_env.write_text("")
+    for index in range(2, 6):
+        for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
+            monkeypatch.delenv(f"HOCA_MODEL_{index}_{suffix}", raising=False)
+    for key in ("HOCA_MANAGER_MODEL", "HOCA_WORKER_MODEL", "HOCA_REVIEWER_MODEL"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("HOCA_MODEL_1_NAME", "local-coder")
     monkeypatch.setenv("HOCA_MODEL_1_MODEL", "ollama/qwen-14b-pro")
     monkeypatch.setenv("HOCA_MODEL_1_API_KEY", "secret-key")
@@ -96,7 +104,7 @@ def test_doctor_output_includes_model_pool_section_when_active(
     from hoca.role_model_env import model_pool_doctor_lines
     from hoca.config import load_config
 
-    lines = model_pool_doctor_lines(load_config())
+    lines = model_pool_doctor_lines(load_config(dotenv_path=empty_env))
 
     assert any("Model pool active" in message for _, message in lines)
     assert all("secret-key" not in message for _, message in lines)
