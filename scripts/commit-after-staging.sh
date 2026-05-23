@@ -243,6 +243,18 @@ printf '%s\n' "$SUBJECT" > "$COMMIT_MSG_FILE"
 if [ -n "$RUN_ID" ]; then
   printf '\nHOCA-Run: %s\n' "$RUN_ID" >> "$COMMIT_MSG_FILE"
 fi
+printf '\nCo-authored-by: OpenHands <openhands@all-hands.dev>\n' >> "$COMMIT_MSG_FILE"
+
+# Commit as the host user (global git identity), not as the agent identity
+# that OpenHands may have written into the repo's local git config.
+HOST_GIT_NAME="$(git config --global user.name 2>/dev/null || true)"
+HOST_GIT_EMAIL="$(git config --global user.email 2>/dev/null || true)"
+if [ -n "$HOST_GIT_NAME" ] && [ -n "$HOST_GIT_EMAIL" ]; then
+  export GIT_AUTHOR_NAME="$HOST_GIT_NAME"
+  export GIT_AUTHOR_EMAIL="$HOST_GIT_EMAIL"
+  export GIT_COMMITTER_NAME="$HOST_GIT_NAME"
+  export GIT_COMMITTER_EMAIL="$HOST_GIT_EMAIL"
+fi
 
 if ! git commit -F "$COMMIT_MSG_FILE"; then
   echo "git commit failed." >&2
