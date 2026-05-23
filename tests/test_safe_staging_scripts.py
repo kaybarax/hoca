@@ -274,6 +274,24 @@ def test_safe_stage_stages_reviewed_accounted_files(tmp_path: Path) -> None:
     assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
 
 
+def test_safe_stage_expands_untracked_intended_directories(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    test_file = tmp_path / "gateway" / "__tests__" / "env.test.ts"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("test('env', () => undefined);\n", encoding="utf-8")
+    (run_dir / "intended-files.txt").write_text("gateway/__tests__/\n", encoding="utf-8")
+
+    result = run_safe_stage(tmp_path, "Update gateway tests", run_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert staged_files(tmp_path) == ["gateway/__tests__/env.test.ts"]
+    assert (
+        run_dir / "intended-files.normalized.txt"
+    ).read_text(encoding="utf-8") == "gateway/__tests__/env.test.ts\n"
+
+
 def test_safe_stage_ignores_untracked_hoca_runtime_artifacts(tmp_path: Path) -> None:
     init_repo(tmp_path)
     (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")

@@ -54,6 +54,7 @@ case "$SOURCE" in
 esac
 
 NORMALIZED_LIST="$RUN_DIR/intended-files.normalized.txt"
+RAW_NORMALIZED_LIST="$RUN_DIR/intended-files.raw-normalized.txt"
 CHANGED_LIST="$RUN_DIR/changed-files.normalized.txt"
 UNACCOUNTED_LIST="$RUN_DIR/unaccounted-changed-files.txt"
 UNEXPECTED_LIST="$RUN_DIR/unexpected-intended-files.txt"
@@ -62,7 +63,27 @@ normalize_file_list() {
   sed 's/#.*$//' "$1" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | awk 'NF' | sort -u
 }
 
-normalize_file_list "$INTENDED_FILE_LIST" > "$NORMALIZED_LIST"
+git_changed_paths() {
+  git status --short --untracked-files=all -- "$@" | while IFS= read -r status_line || [ -n "$status_line" ]; do
+    path="${status_line#???}"
+    case "$path" in
+      .hoca-runtime|.hoca-runtime/*) continue ;;
+    esac
+    printf '%s\n' "$path"
+  done
+}
+
+normalize_file_list "$INTENDED_FILE_LIST" > "$RAW_NORMALIZED_LIST"
+
+while IFS= read -r path || [ -n "$path" ]; do
+  [ -z "$path" ] && continue
+  trimmed_path="${path%/}"
+  if [ -d "$trimmed_path" ]; then
+    git_changed_paths "$trimmed_path"
+  else
+    printf '%s\n' "$path"
+  fi
+done < "$RAW_NORMALIZED_LIST" | sort -u > "$NORMALIZED_LIST"
 
 if [ ! -s "$NORMALIZED_LIST" ]; then
   echo "Intended file list is empty after removing comments and blank lines." >&2
@@ -79,13 +100,7 @@ while IFS= read -r path || [ -n "$path" ]; do
   esac
 done < "$NORMALIZED_LIST"
 
-git status --short | while IFS= read -r status_line || [ -n "$status_line" ]; do
-  path="${status_line#???}"
-  case "$path" in
-    .hoca-runtime|.hoca-runtime/*) continue ;;
-  esac
-  printf '%s\n' "$path"
-done | sort -u > "$CHANGED_LIST"
+git_changed_paths | sort -u > "$CHANGED_LIST"
 
 if [ ! -s "$CHANGED_LIST" ]; then
   echo "No changed files to stage."
