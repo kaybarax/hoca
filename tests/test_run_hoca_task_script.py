@@ -61,7 +61,6 @@ def test_openhands_wrapper_does_not_embed_api_key_in_python_command() -> None:
 
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
-    env.pop("HOCA_DEV_BRANCH", None)
     env["HOCA_DOCTOR_SCRIPT"] = "true"
     env["HOCA_USE_SANDBOX"] = "false"
     env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
@@ -191,7 +190,6 @@ def run_hoca_task_with_env(
     *extra_args: str,
 ) -> subprocess.CompletedProcess[str]:
     run_env = env.copy()
-    run_env.setdefault("HOCA_DEV_BRANCH", "")
     run_env.setdefault("HOCA_RUNTIME_ARCHIVE_ROOT", str(archive_root(repo)))
     return subprocess.run(
         [str(SCRIPT), str(repo), task, *extra_args],
@@ -547,7 +545,7 @@ def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
     assert f"Creating branch: feat/update-readme from {current_branch}" in result.stdout
 
 
-def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
+def test_run_hoca_task_uses_cli_dev_branch_before_task_branch(
     tmp_path: Path,
 ) -> None:
     init_repo(tmp_path)
@@ -564,9 +562,8 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_DEV_BRANCH"] = "main"
 
-    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--dev-branch", "main")
 
     branch = subprocess.run(
         ["git", "branch", "--show-current"],
@@ -576,6 +573,7 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
         stdout=subprocess.PIPE,
     ).stdout.strip()
     assert result.returncode == 0, result.stderr
+    assert "Development branch source: CLI override" in result.stdout
     assert "Switching to development branch: main" in result.stdout
     assert "Development branch sync: skipped (no origin remote configured)" in result.stdout
     assert "Task branch base: main" in result.stdout
@@ -626,6 +624,7 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
     subprocess.run(["git", "init", "--bare", str(remote)], check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
     subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "remote", "set-head", "origin", "main"], cwd=repo, check=True)
 
     (repo / "local-only.txt").write_text("local main only\n", encoding="utf-8")
     subprocess.run(["git", "add", "--", "local-only.txt"], cwd=repo, check=True)
@@ -657,7 +656,6 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
     fake_bin = make_fake_preflight_bin(fake_tools_root(repo))
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_DEV_BRANCH"] = "main"
 
     result = run_hoca_task_with_env(repo, "Update README", env)
 
@@ -669,6 +667,7 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
         stdout=subprocess.PIPE,
     ).stdout.strip()
     assert result.returncode == 0, result.stderr
+    assert "Development branch source: origin/HEAD" in result.stdout
     assert "Development branch sync: enabled" in result.stdout
     assert "Fetching latest development branch from origin: main" in result.stdout
     assert "Fetched development branch: origin/main" in result.stdout
@@ -1016,10 +1015,9 @@ def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> 
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-    env["HOCA_DEV_BRANCH"] = "main"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
-    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--dev-branch", "main")
 
     branch = subprocess.run(
         ["git", "branch", "--show-current"],

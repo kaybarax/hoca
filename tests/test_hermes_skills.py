@@ -384,7 +384,7 @@ def test_pr_publisher_defines_token_handling() -> None:
 def test_pr_publisher_defines_cleanup_and_branch_restoration() -> None:
     content = (SKILLS_DIR / "hoca-pr-publisher.md").read_text(encoding="utf-8")
     assert "branch restoration" in content.lower()
-    assert "HOCA_DEV_BRANCH" in content
+    assert "manager resolved a development branch" in content
     assert "record-final" in content
     assert "HOCA_KEEP_RUNTIME" in content
 

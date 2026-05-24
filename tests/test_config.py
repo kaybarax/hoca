@@ -64,7 +64,6 @@ class TestLoadConfigDefaults:
             "HOCA_REQUIRE_REVIEW",
             "HOCA_REQUIRE_AIDER_LGTM",
             "HOCA_STOP_ON_DIRTY_TREE",
-            "HOCA_DEV_BRANCH",
             "HOCA_SYNC_DEV_BRANCH",
             "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
@@ -109,7 +108,6 @@ class TestLoadConfigDefaults:
         assert cfg.require_tests is True
         assert cfg.require_review is True
         assert cfg.stop_on_dirty_tree is True
-        assert cfg.dev_branch == ""
         assert cfg.sync_dev_branch is True
         assert cfg.restore_dev_branch is True
         assert cfg.auto_stage_reviewed_changes is True
@@ -127,7 +125,6 @@ class TestLoadConfigDefaults:
             "HOCA_AUTO_MERGE=true\n"
             "HOCA_REQUIRE_TESTS=false\n"
             "OLLAMA_MODEL=custom-model\n"
-            "HOCA_DEV_BRANCH=develop\n"
             "HOCA_SYNC_DEV_BRANCH=false\n"
             "HOCA_RESTORE_DEV_BRANCH=false\n"
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES=false\n"
@@ -143,7 +140,6 @@ class TestLoadConfigDefaults:
             "HOCA_AUTO_MERGE",
             "HOCA_REQUIRE_TESTS",
             "OLLAMA_MODEL",
-            "HOCA_DEV_BRANCH",
             "HOCA_SYNC_DEV_BRANCH",
             "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
@@ -163,7 +159,6 @@ class TestLoadConfigDefaults:
         assert cfg.auto_merge is True
         assert cfg.require_tests is False
         assert cfg.ollama_model == "custom-model"
-        assert cfg.dev_branch == "develop"
         assert cfg.sync_dev_branch is False
         assert cfg.restore_dev_branch is False
         assert cfg.auto_stage_reviewed_changes is False

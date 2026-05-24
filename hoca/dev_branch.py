@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-from dotenv import dotenv_values
 
 
 PROJECT_CONFIG_CANDIDATES = (
@@ -87,19 +84,9 @@ def resolve_dev_branch(
     repo_root: Path,
     *,
     explicit: str = "",
-    env: dict[str, str] | None = None,
 ) -> DevBranchResolution | None:
-    env = env if env is not None else os.environ
     if explicit.strip():
         return DevBranchResolution(branch=explicit.strip(), source="CLI override")
-
-    env_branch = env.get("HOCA_DEV_BRANCH", "").strip()
-    if env_branch:
-        return DevBranchResolution(branch=env_branch, source="HOCA_DEV_BRANCH")
-
-    dotenv_branch = _dev_branch_from_dotenv(env)
-    if dotenv_branch:
-        return DevBranchResolution(branch=dotenv_branch, source="HOCA_DEV_BRANCH in dotenv")
 
     repo_root = repo_root.resolve()
     return (
@@ -107,17 +94,6 @@ def resolve_dev_branch(
         or dev_branch_from_origin_head(repo_root)
         or current_branch_fallback(repo_root)
     )
-
-
-def _dev_branch_from_dotenv(env: dict[str, str]) -> str:
-    dotenv_path = Path(env.get("HOCA_DOTENV_PATH", ".env")).expanduser()
-    if not dotenv_path.is_file():
-        return ""
-    values = dotenv_values(dotenv_path)
-    raw = values.get("HOCA_DEV_BRANCH")
-    if raw is None:
-        return ""
-    return raw.strip()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -34,7 +34,6 @@ Read publication policy from `.env` / environment:
 - `HOCA_AUTO_MERGE`, `HOCA_REQUIRE_TESTS`, `HOCA_REQUIRE_REVIEW_LGTM`
 - `HOCA_AUTO_STAGE_REVIEWED_CHANGES` — when true, shortcut may build intended-file lists from reviewed changes
 - `HOCA_SYNC_DEV_BRANCH` — when true, sync the manager-resolved development branch before task-base checkout
-- `HOCA_DEV_BRANCH` — optional override; prefer target repo `.hoca/config.toml` or `origin/HEAD`
 - `HOCA_KEEP_RUNTIME` — when false, `.hoca-runtime` may be removed after successful PR creation
 
 ## Manager-only publication

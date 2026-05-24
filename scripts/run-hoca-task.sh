@@ -21,7 +21,7 @@ elif [ -n "${HOCA_MAX_REPAIR_ATTEMPTS:-}" ]; then
 else
   MAX_TOTAL_ROUNDS=3
 fi
-DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
+DEV_BRANCH=""
 REQUESTED_DEV_BRANCH=""
 DEV_BRANCH_SOURCE=""
 SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
@@ -220,8 +220,6 @@ checkout_dev_branch() {
     fi
   elif [ -n "$REQUESTED_DEV_BRANCH" ]; then
     DEV_BRANCH_SOURCE="CLI override"
-  else
-    DEV_BRANCH_SOURCE="HOCA_DEV_BRANCH"
   fi
 
   if [ -z "$DEV_BRANCH" ]; then
