@@ -284,7 +284,7 @@ def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("/Users/kevin/workspace/project", "<local-path>"),
+        ("/Users/alice/workspace/project", "<local-path>"),
         ("/home/runner/work/repo", "<local-path>"),
         ("/root/.config/app", "<local-path>"),
         ("/private/var/folders/tmp/abc123", "<local-path>"),
@@ -310,7 +310,7 @@ def test_task_spec_fragment_redacts_local_paths_from_goal(tmp_path: Path) -> Non
             tmp_path,
             goal=(
                 "Add typed env config.\n\n"
-                "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+                "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
                 "Scope: replace env.ts"
             ),
         ),
@@ -324,12 +324,12 @@ def test_summarize_pr_body_fragments_redacts_local_paths(run_dir: Path) -> None:
     (run_dir / "tests-summary.md").write_text(
         "# Validation\n\n"
         "- **Status**: passed\n"
-        "- **Project**: /Users/kevin/workspace/projects/todo-list-turborepo/.hoca-runtime/worktrees/run-123\n",
+        "- **Project**: /Users/alice/workspace/projects/sample-project/.hoca-runtime/worktrees/run-123\n",
         encoding="utf-8",
     )
     task_with_path = (
         "Add typed env config.\n\n"
-        "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+        "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
         "Scope: replace env.ts"
     )
     write_json_atomic(
@@ -347,7 +347,7 @@ def test_summarize_pr_body_fragments_uses_only_first_task_line_in_summary(
 ) -> None:
     task = (
         "Add typed env config.\n\n"
-        "Target repository: /Users/kevin/workspace/projects/todo-list-turborepo\n\n"
+        "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
         "Scope: replace env.ts"
     )
     fragments = summarize_pr_body_fragments(run_dir, task=task)
