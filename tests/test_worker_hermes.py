@@ -93,6 +93,11 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Bounded iteration discipline" in prompt
     assert "completion is genuinely true" in prompt
     assert "Inspect current repository state and prior round artifacts" in prompt
+    assert "Implementation quality principles" in prompt
+    assert "Name the data shape first" in prompt
+    assert "Subtract before adding" in prompt
+    assert "Make operations idempotent" in prompt
+    assert "Prove the real path works" in prompt
     assert "execution_project_path: /Users/example/project" in prompt
     assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
     assert "- repo_root: /tmp/project" not in prompt
@@ -139,11 +144,14 @@ def test_build_legacy_openhands_task_prefers_repair_brief() -> None:
     assert repair in repair_prompt
     assert "Original goal" not in repair_prompt
     assert "Bounded iteration discipline" in repair_prompt
+    assert "Implementation quality principles" in repair_prompt
+    assert "Fix root causes" in repair_prompt
     assert "acceptance_criteria" in repair_prompt
     assert "Do not stage, commit, push" in repair_prompt
 
     assert spec.goal in goal_prompt
     assert "completion is genuinely true" in goal_prompt
+    assert "Use the type system honestly" in goal_prompt
 
 
 def test_load_task_spec_reads_json(tmp_path: Path) -> None:
@@ -478,6 +486,7 @@ def test_profile_mode_falls_back_to_openhands_when_profile_makes_no_changes(
     )
     assert "fallback task" in fallback_task
     assert "Bounded iteration discipline" in fallback_task
+    assert "Name the data shape first" in fallback_task
     assert "Only report the attempt as completed" in fallback_task
     report = HocaAttemptReport.from_json(
         result.worker_attempt_path.read_text(encoding="utf-8")

@@ -52,6 +52,29 @@ ITERATIVE_WORKER_RUBRIC = """Bounded iteration discipline:
   exceeding scope, reading secrets, or using Git lifecycle commands.
 """
 
+PSTACK_WORKER_PRINCIPLES = """Implementation quality principles:
+- Name the data shape first. Before writing logic, identify the core input,
+  output, state, and ownership model this change depends on.
+- Subtract before adding. Remove dead branches, redundant helpers, or stale
+  references that directly block the task before layering on new code.
+- Minimize reader load. Collapse one-caller wrappers and avoid hidden mutable
+  state unless the indirection clearly makes the touched code easier to follow.
+- Keep boundary discipline. Validate external inputs at system boundaries such
+  as CLI args, config, files, network payloads, and API responses; keep internal
+  business logic typed, direct, and testable.
+- Use the type system honestly. Prefer explicit variants and authoritative
+  schemas over optional-field bags, casts, unsafe assertions, or duplicated
+  parallel types.
+- Make operations idempotent. For commands, lifecycle steps, retries, cleanup,
+  and generated artifacts, design the change so running twice or resuming after
+  a partial failure converges to the same state.
+- Fix root causes. Reproduce or inspect the actual failure, ask why until the
+  underlying cause is clear, and avoid guard-only patches that hide symptoms.
+- Prove the real path works. Verify the actual feature, command, data flow, or
+  artifact changed by the task, not just a proxy such as compilation or a
+  delegate summary.
+"""
+
 
 @dataclass(frozen=True)
 class WorkerRunResult:
@@ -130,7 +153,9 @@ def build_worker_hermes_prompt(
         "4. Inspect repository changes read-only (git status, git diff).\n"
         "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
         f"{ITERATIVE_WORKER_RUBRIC}\n"
-        "6. Write attempts/worker-attempt-<round>.json or run:\n"
+        "6. Apply the implementation quality principles while shaping the diff.\n"
+        f"{PSTACK_WORKER_PRINCIPLES}\n"
+        "7. Write attempts/worker-attempt-<round>.json or run:\n"
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
         f'--round {round_number} --status <completed|failed|blocked>\n\n'
         "Safety constraints:\n"
@@ -169,6 +194,7 @@ def build_legacy_openhands_task(*, spec: HocaTaskSpec, repair_brief: str | None 
         f"{_format_list_section('test_commands', spec.test_commands)}"
         f"- risk_level: {spec.risk_level}\n\n"
         f"{ITERATIVE_WORKER_RUBRIC}\n"
+        f"{PSTACK_WORKER_PRINCIPLES}\n"
         "Safety constraints:\n"
         "- Work only inside the current repository root supplied by HOCA.\n"
         "- Do not stage, commit, push, merge, open pull requests, or use GitHub CLI publication commands.\n"

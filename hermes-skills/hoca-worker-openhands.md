@@ -149,6 +149,40 @@ On repair rounds, use the same loop but with a smaller checklist derived only
 from accepted findings and explicit validation failures. Preserve correct prior
 work and avoid re-solving the whole feature.
 
+### 3b. Implementation quality principles
+
+Use these principles while shaping the OpenHands prompt and while inspecting the
+resulting diff. They are implementation heuristics inside the worker boundary,
+not permission to broaden scope.
+
+- **Name the data shape first.** Before writing logic, identify the core input,
+  output, state, and owner for the change. The right shape should make the
+  implementation smaller and the tests clearer.
+- **Subtract before adding.** Remove directly relevant dead branches, redundant
+  helpers, stale references, or obsolete compatibility code before layering on
+  new behavior. Do not perform unrelated cleanup.
+- **Minimize reader load.** Prefer code a future maintainer can trace quickly.
+  Collapse one-caller wrappers, avoid hidden mutable state, and keep state scope
+  as local as practical.
+- **Keep boundary discipline.** Validate external data at system boundaries such
+  as CLI args, config, file contents, network payloads, and API responses. Keep
+  internal business logic typed, direct, and testable.
+- **Use the type system honestly.** In typed code, make invalid states hard to
+  represent. Prefer explicit variants and authoritative schemas over loose
+  optional-field bags, casts, unsafe assertions, or duplicated parallel types.
+- **Make operations idempotent.** Commands, cleanup, lifecycle steps, generated
+  files, and retryable flows should converge when run twice or resumed after a
+  partial failure.
+- **Fix root causes.** For bugs, reproduce or inspect the actual failure, trace
+  why it happens, and avoid guard-only patches that silence symptoms without
+  addressing the underlying cause.
+- **Prove the real path works.** Verify the actual feature, command, data flow,
+  or artifact affected by the change. Do not rely only on compilation, static
+  checks, or another agent's summary.
+
+If applying a principle conflicts with the task scope, stop and report the tradeoff
+instead of silently expanding the diff.
+
 ### 4. Call the wrapper script
 
 Never invoke OpenHands directly. Run implementation only through HOCA wrappers:
