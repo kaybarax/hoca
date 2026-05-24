@@ -34,6 +34,24 @@ _SECRET_VALUE_PATTERN = re.compile(
 DEFAULT_HERMES_TIMEOUT_SECONDS = 1800
 DEFAULT_HERMES_MAX_TURNS = 30
 
+ITERATIVE_WORKER_RUBRIC = """Bounded iteration discipline:
+- Treat this attempt as one iteration in a manager-controlled loop: inspect the
+  current working tree and prior artifacts first, then continue from the existing
+  state instead of restarting blindly.
+- Keep the original goal stable across the attempt. Do not drift into adjacent
+  cleanup or invent new requirements to make progress feel larger.
+- Define completion from the task spec: every acceptance criterion satisfied,
+  relevant tests run or honestly documented, changed files within scope, and no
+  known unsafe or unrelated edits.
+- After each implementation step, run the smallest useful validation command,
+  read the failure output, and fix the cause before broadening the change.
+- Only report the attempt as completed when completion is genuinely true. If a
+  criterion cannot be verified, record the gap as failed or blocked instead of
+  implying readiness.
+- Stop and escalate when progress would require guessing product intent,
+  exceeding scope, reading secrets, or using Git lifecycle commands.
+"""
+
 
 @dataclass(frozen=True)
 class WorkerRunResult:
@@ -98,6 +116,7 @@ def build_worker_hermes_prompt(
         f"{repair_section}\n"
         "Required steps:\n"
         "1. Read the manager task spec at task_spec_path.\n"
+        "   Inspect current repository state and prior round artifacts before changing files.\n"
         "2. Build a precise OpenHands implementation prompt from goal, non_goals, "
         "expected_areas, acceptance_criteria, and test_commands.\n"
         "   Treat project_path as the only executable repository root. If the task spec "
@@ -109,7 +128,9 @@ def build_worker_hermes_prompt(
         f'{hoca_root / "scripts" / "run-openhands-task.sh"} '
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
         "4. Inspect repository changes read-only (git status, git diff).\n"
-        "5. Write attempts/worker-attempt-<round>.json or run:\n"
+        "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
+        f"{ITERATIVE_WORKER_RUBRIC}\n"
+        "6. Write attempts/worker-attempt-<round>.json or run:\n"
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
         f'--round {round_number} --status <completed|failed|blocked>\n\n'
         "Safety constraints:\n"
@@ -136,9 +157,26 @@ def build_worker_hermes_prompt(
 
 
 def build_legacy_openhands_task(*, spec: HocaTaskSpec, repair_brief: str | None = None) -> str:
-    if repair_brief and repair_brief.strip():
-        return _redact_secret_like_lines(repair_brief.strip())
-    return _redact_secret_like_lines(spec.goal.strip())
+    task_body = repair_brief.strip() if repair_brief and repair_brief.strip() else spec.goal.strip()
+    prompt = (
+        "HOCA worker implementation task.\n\n"
+        "Original task:\n"
+        f"{task_body}\n\n"
+        "Scope contract:\n"
+        f"{_format_list_section('non_goals', spec.non_goals)}"
+        f"{_format_list_section('expected_areas', spec.expected_areas)}"
+        f"{_format_list_section('acceptance_criteria', spec.acceptance_criteria)}"
+        f"{_format_list_section('test_commands', spec.test_commands)}"
+        f"- risk_level: {spec.risk_level}\n\n"
+        f"{ITERATIVE_WORKER_RUBRIC}\n"
+        "Safety constraints:\n"
+        "- Work only inside the current repository root supplied by HOCA.\n"
+        "- Do not stage, commit, push, merge, open pull requests, or use GitHub CLI publication commands.\n"
+        "- Do not read or modify secret-like files such as .env, keys, tokens, kubeconfigs, or credential stores.\n"
+        "- If .env.example is needed, access only that exact path and never use .env* globs.\n"
+        "- Keep changes within expected_areas unless the task cannot be completed safely; if so, stop and report the blocker.\n"
+    )
+    return _redact_secret_like_lines(prompt)
 
 
 def verify_profile_prerequisites(*, hermes_home: Path | None = None) -> None:

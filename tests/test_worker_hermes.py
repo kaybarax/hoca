@@ -90,6 +90,9 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Do not stage, commit, push" in prompt
     assert "access only that exact path" in prompt
     assert "never use .env* globs" in prompt
+    assert "Bounded iteration discipline" in prompt
+    assert "completion is genuinely true" in prompt
+    assert "Inspect current repository state and prior round artifacts" in prompt
     assert "execution_project_path: /Users/example/project" in prompt
     assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
     assert "- repo_root: /tmp/project" not in prompt
@@ -130,8 +133,17 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
 def test_build_legacy_openhands_task_prefers_repair_brief() -> None:
     spec = sample_task_spec(goal="Original goal")
     repair = "Fix failing tests in src/app.py"
-    assert build_legacy_openhands_task(spec=spec, repair_brief=repair) == repair
-    assert build_legacy_openhands_task(spec=spec) == spec.goal
+    repair_prompt = build_legacy_openhands_task(spec=spec, repair_brief=repair)
+    goal_prompt = build_legacy_openhands_task(spec=spec)
+
+    assert repair in repair_prompt
+    assert "Original goal" not in repair_prompt
+    assert "Bounded iteration discipline" in repair_prompt
+    assert "acceptance_criteria" in repair_prompt
+    assert "Do not stage, commit, push" in repair_prompt
+
+    assert spec.goal in goal_prompt
+    assert "completion is genuinely true" in goal_prompt
 
 
 def test_load_task_spec_reads_json(tmp_path: Path) -> None:
@@ -464,7 +476,9 @@ def test_profile_mode_falls_back_to_openhands_when_profile_makes_no_changes(
         "the only repository root you may read, write, inspect, or run commands in"
         in fallback_task
     )
-    assert fallback_task.endswith("fallback task")
+    assert "fallback task" in fallback_task
+    assert "Bounded iteration discipline" in fallback_task
+    assert "Only report the attempt as completed" in fallback_task
     report = HocaAttemptReport.from_json(
         result.worker_attempt_path.read_text(encoding="utf-8")
     )

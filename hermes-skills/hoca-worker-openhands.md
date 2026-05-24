@@ -77,6 +77,11 @@ If the spec or repair brief is ambiguous in a way that affects correctness,
 safety, or scope, stop with `status: blocked` and explain in `blocked_reason`.
 Do not guess material requirements.
 
+Before changing files, inspect the current working tree and prior round artifacts
+for this run. A worker attempt is one iteration in a manager-controlled loop: the
+goal stays stable, the code changes, and each pass should build on the existing
+state instead of restarting from scratch.
+
 ### 2. Read project instructions
 
 Inspect only files needed for the attempt:
@@ -114,6 +119,35 @@ Build one precise prompt for OpenHands. Include:
 Save the final prompt under the run directory when useful (for example
 `openhands-task-prompt.txt`) so the manager can audit what was sent. Never
 embed API keys or secret values in the prompt file.
+
+### 3a. Bounded iteration discipline
+
+Borrow the useful part of self-referential development loops: repeated attempts
+are valuable only when completion criteria are explicit and the worker is honest
+about whether they are met. Do not rely on momentum or a vague sense that the
+task is probably done.
+
+For each worker attempt:
+
+- Keep the original goal stable. Do not let the task drift into adjacent cleanup,
+  extra features, or broad refactors.
+- Start by reading the current diff, changed files, prior attempt report, repair
+  brief, and relevant validation or review artifacts.
+- Convert acceptance criteria into a concrete done checklist for this attempt.
+- After each implementation step, run the smallest useful validation command,
+  read the failure output, and fix the cause before widening the change.
+- Repeat code/test/fix locally within the attempt while it remains inside scope
+  and safe policy.
+- Stop when the checklist is genuinely satisfied, or when the next step requires
+  product judgment, forbidden resources, unsafe Git lifecycle work, or scope
+  expansion.
+- Never mark `status: completed` merely because OpenHands stopped. Completion
+  requires satisfied acceptance criteria, relevant tests run or honestly
+  documented, changed files within scope, and no known unsafe or unrelated edits.
+
+On repair rounds, use the same loop but with a smaller checklist derived only
+from accepted findings and explicit validation failures. Preserve correct prior
+work and avoid re-solving the whole feature.
 
 ### 4. Call the wrapper script
 
