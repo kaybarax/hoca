@@ -164,7 +164,7 @@ def build_worker_hermes_prompt(
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
         "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
-        "- Do not set or override HOCA_REQUESTED_MODEL, HOCA_CLI_MODEL_OVERRIDE, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
+        "- Do not set or override HOCA_REQUESTED_MODEL, OLLAMA_MODEL, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
         "- Do not read, write, or run commands in any repository path other than project_path.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Task spec summary (read the JSON file for full fields):\n"

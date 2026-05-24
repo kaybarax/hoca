@@ -80,9 +80,6 @@ class TestLoadConfigDefaults:
             "OLLAMA_BASE_URL",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
-            "LLM_MODEL",
-            "LLM_BASE_URL",
-            "LLM_API_KEY",
             "HOCA_WEBHOOK_SECRET",
             "HOCA_WEBHOOK_URL",
             "HOCA_ALLOWED_REPOS",
@@ -211,25 +208,23 @@ class TestLoadConfigDefaults:
 
 
 class TestModelPoolConfig:
-    def test_empty_model_pool_preserves_legacy_single_model_config(
+    def test_empty_model_pool_uses_ollama_fallback_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "LLM_MODEL=openai/gpt-oss-20b\n"
-            "LLM_BASE_URL=http://localhost:1234/v1\n"
-            "LLM_API_KEY=lm-studio\n"
+            "OLLAMA_MODEL=qwen-32b-pro\n"
+            "OLLAMA_BASE_URL=http://10.0.0.1:11434\n"
         )
-        for key in ["LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY"]:
+        for key in ["OLLAMA_MODEL", "OLLAMA_BASE_URL"]:
             monkeypatch.delenv(key, raising=False)
         _clear_role_model_env(monkeypatch)
 
         cfg = load_config(dotenv_path=env_file)
 
-        assert cfg.llm_model == "openai/gpt-oss-20b"
-        assert cfg.llm_base_url == "http://localhost:1234/v1"
+        assert cfg.ollama_model == "qwen-32b-pro"
+        assert cfg.ollama_base_url == "http://10.0.0.1:11434"
         assert cfg.model_pool.is_active is False
-        assert cfg.model_pool.resolve_role("worker") is None
 
     def test_loads_active_model_pool_from_dotenv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -425,9 +420,6 @@ class TestLegacyEnvVarBackwardCompat:
             "OLLAMA_BASE_URL",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
-            "LLM_MODEL",
-            "LLM_BASE_URL",
-            "LLM_API_KEY",
             "TELEGRAM_BOT_TOKEN",
             "TELEGRAM_CHAT_ID",
         ]:
@@ -452,7 +444,7 @@ class TestLegacyEnvVarBackwardCompat:
         cfg = load_config(dotenv_path=env_file)
         assert cfg.max_total_rounds == 5
 
-    def test_legacy_llm_env_vars_still_work(
+    def test_legacy_llm_env_vars_are_ignored(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -463,8 +455,8 @@ class TestLegacyEnvVarBackwardCompat:
         )
         self._clear_legacy_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
-        assert cfg.llm_model == "ollama/qwen-32b-pro"
-        assert cfg.llm_base_url == "http://10.0.0.1:11434"
+        assert not hasattr(cfg, "llm_model")
+        assert cfg.ollama_model == "qwen-14b-pro"
 
     def test_ollama_host_alias(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -562,7 +554,7 @@ class TestLegacyEnvVarBackwardCompat:
         assert cfg.max_webhook_bytes == 32768
         assert cfg.workspace_root is not None
 
-    def test_empty_model_pool_preserves_legacy_single_model(
+    def test_empty_model_pool_uses_ollama_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -574,4 +566,4 @@ class TestLegacyEnvVarBackwardCompat:
         self._clear_legacy_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.model_pool.is_active is False
-        assert cfg.llm_model == "ollama/qwen-32b-pro"
+        assert cfg.ollama_model == "qwen-14b-pro"

@@ -144,8 +144,6 @@ class HocaConfig:
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_api_base: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen-14b-pro"
-    llm_model: str = "ollama/qwen-14b-pro"
-    llm_base_url: str = "http://127.0.0.1:11434"
     model_pool: ModelPoolConfig = ModelPoolConfig()
 
     webhook_secret: str = ""
@@ -211,14 +209,6 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
 
     workspace_root = _resolve_path(config_value("HOCA_WORKSPACE_ROOT") or None)
 
-    llm_model = config_value("LLM_MODEL", "ollama/qwen-14b-pro")
-    if llm_model.startswith("ollama/"):
-        default_base_url = "http://127.0.0.1:11434"
-    elif llm_model.startswith("openai/"):
-        default_base_url = "http://localhost:1234/v1"
-    else:
-        default_base_url = ""
-
     ollama_default = "http://127.0.0.1:11434"
     ollama_host = config_value("OLLAMA_HOST") or ollama_default
     ollama_base_url = config_value("OLLAMA_BASE_URL") or ollama_host
@@ -262,8 +252,6 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ollama_base_url=ollama_base_url,
         ollama_api_base=ollama_api_base,
         ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
-        llm_model=llm_model,
-        llm_base_url=config_value("LLM_BASE_URL", default_base_url),
         model_pool=_load_model_pool(config_value),
         webhook_secret=config_value("HOCA_WEBHOOK_SECRET"),
         webhook_url=config_value("HOCA_WEBHOOK_URL"),

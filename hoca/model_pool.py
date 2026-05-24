@@ -152,12 +152,14 @@ def role_model_names_for_task_spec(config: HocaConfig) -> dict[str, str]:
     if config.model_pool.is_active:
         return role_model_names_for_report(config.model_pool)
 
-    legacy_name = config.llm_model
+    fallback_name = config.ollama_model
+    if not fallback_name.startswith("ollama/"):
+        fallback_name = f"ollama/{fallback_name}"
     return {
-        "manager": legacy_name,
-        "worker": legacy_name,
-        "reviewer": legacy_name,
-        "fallback": legacy_name,
+        "manager": fallback_name,
+        "worker": fallback_name,
+        "reviewer": fallback_name,
+        "fallback": fallback_name,
     }
 
 

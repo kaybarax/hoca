@@ -6,8 +6,8 @@ usage() {
   cat <<'EOF'
 Usage: resolve-role-model-env.sh <manager|worker|reviewer|fallback>
 
-Exports role-specific LLM_MODEL, LLM_BASE_URL, and LLM_API_KEY when the model pool
-is active. No-op when legacy single-model mode or --model CLI override is in effect.
+Exports role-specific LLM_MODEL, LLM_BASE_URL, and LLM_API_KEY from the resolved
+role model.
 EOF
 }
 

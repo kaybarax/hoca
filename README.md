@@ -51,9 +51,9 @@ Human or GitHub Issue
 | **Git + GitHub CLI** | Version control and pull request layer. |
 
 The profile-backed workflow is enabled with `HOCA_USE_HERMES_PROFILES=true`.
-When it is disabled, HOCA keeps the compatibility path: the script-backed
-Manager -> OpenHands Worker -> OpenHands Reviewer pipeline still works with the
-legacy `LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` settings.
+When it is disabled, HOCA keeps the script-backed Manager -> OpenHands Worker
+-> OpenHands Reviewer pipeline, using the resolved manager/worker/reviewer role
+model settings.
 
 ## Requirements
 
@@ -89,9 +89,8 @@ your machine can comfortably run the 32B model, HOCA also supports it:
 | `qwen-14b-pro` | `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
 | `qwen-7b-pro` | `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
 
-Other Ollama-compatible coding models (such as `deepseek-coder` variants) can
-be used by setting the `LLM_MODEL` and `OLLAMA_MODEL` environment variables in
-your `.env` file.
+Other Ollama-compatible coding models can be used by setting `OLLAMA_MODEL` for
+the local fallback and by configuring the role model blocks below.
 
 ### Role Model Pool
 
@@ -117,54 +116,30 @@ HOCA_REVIEWER_MODEL_API_KEY=lm-studio
 
 The manager can use a balanced planning model, the worker can use a
 coding-specialized model, and the reviewer can use a stronger reasoning model
-when available. Empty role blocks are ignored; if no role model blocks are
-active, HOCA preserves the older global `LLM_MODEL`, `LLM_BASE_URL`, and
-`LLM_API_KEY` behavior. If one role is empty while another role is active, HOCA
-uses the first active role model as the fallback. Only the selected role model's
-credentials are forwarded to that phase, and API keys are redacted from reports
-and logs.
+when available. Configure all three roles explicitly; use the same values in
+multiple role blocks when they should share one model. If a role is empty while
+another role is active, HOCA uses the first active role model as the fallback.
+Only the selected role model's credentials are forwarded to that phase, and API
+keys are redacted from reports and logs.
 
-### LM Studio (Local OpenAI-compatible)
+### LM Studio And Cloud Models
 
-HOCA supports [LM Studio](https://lmstudio.ai) as a local LLM provider via its
-OpenAI-compatible API:
+Use the same role blocks for local OpenAI-compatible servers and cloud models:
 
 ```env
-LLM_MODEL=openai/gpt-oss-20b
-LLM_BASE_URL=http://localhost:1234/v1
-LLM_API_KEY=lm-studio
+HOCA_REVIEWER_MODEL_NAME=reviewer
+HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
+HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
+HOCA_REVIEWER_MODEL_API_KEY=lm-studio
+
+HOCA_WORKER_MODEL_NAME=worker
+HOCA_WORKER_MODEL_MODEL=deepseek/deepseek-chat
+HOCA_WORKER_MODEL_BASE_URL=
+HOCA_WORKER_MODEL_API_KEY=<your-api-key>
 ```
 
-### Cloud / Enterprise LLMs
-
-HOCA supports cloud LLMs through litellm provider prefixes:
-
-```env
-# DeepSeek
-LLM_MODEL=deepseek/deepseek-chat
-LLM_API_KEY=<your-api-key>
-
-# Gemini
-LLM_MODEL=gemini/gemini-2.0-flash
-LLM_API_KEY=<your-api-key>
-
-# Together AI
-LLM_MODEL=together_ai/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
-LLM_API_KEY=<your-api-key>
-```
-
-**Model fallback:** `scripts/select-model.sh` checks which models are available.
-For Ollama, it tries `OLLAMA_MODEL` first (default `qwen-14b-pro`), then falls
-back through `qwen-14b-pro`, `qwen-7b-pro`, and `qwen-32b-pro`. For LM Studio,
-it queries the `/v1/models` endpoint. For cloud providers, no validation is
-needed. If no provider is available, the run fails with a clear diagnostic.
-
-For a single run, choose the model explicitly:
-
-```sh
-bin/hoca run /path/to/repo "Implement feature X" --model qwen-14b-pro
-bin/hoca issue /path/to/repo 123 "Fix the login bug" --model qwen-14b-pro
-```
+**Ollama fallback:** when no role model blocks are active, HOCA uses
+`OLLAMA_MODEL` and `OLLAMA_BASE_URL` as the local fallback.
 
 Smaller models trade capability for speed and lower memory use. For high-risk
 work, human review is recommended regardless of model size.
@@ -257,7 +232,7 @@ Both `run` and `issue` accept optional flags:
 
 - `--auto-merge` — enable guarded auto-merge (disabled by default)
 - `--notify-telegram` — send Telegram notifications on completion
-- `--model MODEL` — use a specific Ollama alias for this run, such as `qwen-14b-pro`
+- `--dev-branch BRANCH` — manager override for the target repo development branch
 
 ## Default Behavior
 

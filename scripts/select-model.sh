@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# If LLM_MODEL is already set with a provider prefix, echo the bare model name and exit.
+# If a role model has already been resolved into LLM_MODEL, echo the bare model
+# name for provider-backed runs.
 if [[ -n "${LLM_MODEL:-}" ]]; then
   case "$LLM_MODEL" in
     openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
@@ -35,7 +36,7 @@ fi
 
 # Ollama path (default)
 if ! command -v ollama >/dev/null 2>&1; then
-  echo "No LLM provider available. Install Ollama, start LM Studio, or set LLM_MODEL to a cloud provider." >&2
+  echo "No LLM provider available. Install Ollama, start LM Studio, or configure a HOCA role model provider." >&2
   exit 1
 fi
 

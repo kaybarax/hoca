@@ -33,3 +33,6 @@ def test_env_example_explains_safety_and_role_credential_forwarding() -> None:
     assert "full: unrestricted bridge egress; explicit opt-in only" in content
     assert "Only the selected role model is forwarded" in content
     assert "Raw role model credentials" in content
+    assert "LLM_MODEL=" not in content
+    assert "LLM_BASE_URL=" not in content
+    assert "LLM_API_KEY=" not in content

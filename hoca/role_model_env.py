@@ -13,7 +13,6 @@ from hoca.config import HocaConfig, ModelSlot, RoleName, load_config
 DoctorLineStatus = Literal["ok", "warn", "fail"]
 
 MODEL_ROLES: tuple[RoleName, ...] = ("manager", "worker", "reviewer")
-CLI_OVERRIDE_FLAG = "HOCA_CLI_MODEL_OVERRIDE"
 PROVIDER_API_KEY_ENV_KEYS: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
     "DEEPSEEK_API_KEY",
@@ -60,14 +59,6 @@ class RoleLlmSelection:
         return out
 
 
-def uses_cli_model_override(env: dict[str, str] | None = None) -> bool:
-    """True when run-hoca-task --model should pin all phases to one model."""
-    source = env if env is not None else os.environ
-    if source.get(CLI_OVERRIDE_FLAG, "").strip().lower() in {"1", "true", "yes", "on"}:
-        return True
-    return bool(source.get("HOCA_REQUESTED_MODEL", "").strip())
-
-
 def should_resolve_role_model(config: HocaConfig, env: dict[str, str] | None = None) -> bool:
     if (env or os.environ).get("HOCA_SKIP_ROLE_MODEL_RESOLUTION", "").strip().lower() in {
         "1",
@@ -75,8 +66,6 @@ def should_resolve_role_model(config: HocaConfig, env: dict[str, str] | None = N
         "yes",
         "on",
     }:
-        return False
-    if uses_cli_model_override(env):
         return False
     return config.model_pool.is_active
 
@@ -88,12 +77,15 @@ def resolve_role_llm(role: RoleName, config: HocaConfig) -> RoleLlmSelection:
             raise ValueError(f"Cannot resolve model for role {role!r}")
         return _selection_from_slot(role, slot)
 
+    fallback_model = config.ollama_model
+    if not fallback_model.startswith("ollama/"):
+        fallback_model = f"ollama/{fallback_model}"
     return RoleLlmSelection(
         role=role,
-        slot_name=config.llm_model,
-        llm_model=config.llm_model,
-        base_url=config.llm_base_url,
-        api_key=_legacy_api_key(config),
+        slot_name="ollama-fallback",
+        llm_model=fallback_model,
+        base_url=config.ollama_base_url,
+        api_key="ollama",
     )
 
 
@@ -105,14 +97,6 @@ def _selection_from_slot(role: RoleName, slot: ModelSlot) -> RoleLlmSelection:
         base_url=slot.base_url,
         api_key=slot.api_key,
     )
-
-
-def _legacy_api_key(config: HocaConfig) -> str:
-    if config.llm_model.startswith("ollama/"):
-        return "ollama"
-    if config.llm_model.startswith("openai/"):
-        return "lm-studio"
-    return ""
 
 
 def _provider_api_key_env_vars(model: str, api_key: str) -> dict[str, str]:
@@ -207,7 +191,7 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
     pool = config.model_pool
 
     if not pool.is_active:
-        lines.append(("ok", "Model pool inactive; using legacy LLM_MODEL configuration."))
+        lines.append(("ok", "Model pool inactive; using Ollama fallback configuration."))
         return lines
 
     active = pool.active_slots

@@ -99,10 +99,6 @@ RECOMMENDED_RAM_GB="$(config_value HOCA_RECOMMENDED_RAM_GB)"
 RECOMMENDED_RAM_GB="${RECOMMENDED_RAM_GB:-48}"
 DEFAULT_MODEL="$(config_value OLLAMA_MODEL)"
 DEFAULT_MODEL="${DEFAULT_MODEL:-qwen-14b-pro}"
-DOCTOR_LLM_MODEL="$(config_value LLM_MODEL)"
-DOCTOR_LLM_MODEL="${DOCTOR_LLM_MODEL:-ollama/qwen-14b-pro}"
-DOCTOR_LLM_BASE_URL="$(config_value LLM_BASE_URL)"
-DOCTOR_LLM_API_KEY="$(config_value LLM_API_KEY)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -193,39 +189,32 @@ else
 fi
 
 section "Ollama"
-case "$DOCTOR_LLM_MODEL" in
-  ollama/*)
-    if command -v ollama >/dev/null 2>&1; then
-      if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-        ok "Ollama server is reachable at http://127.0.0.1:11434."
-      else
-        fail "Ollama server is not reachable. Start it with: ollama serve"
-      fi
+if command -v ollama >/dev/null 2>&1; then
+  if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    ok "Ollama server is reachable at http://127.0.0.1:11434."
+  else
+    fail "Ollama server is not reachable. Start it with: ollama serve"
+  fi
 
-      if OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
-        MODEL_COUNT="$(printf '%s\n' "$OLLAMA_LIST" | awk 'NR > 1 && NF > 0 { count++ } END { print count + 0 }')"
-        if [ "$MODEL_COUNT" -gt 0 ]; then
-          ok "Ollama models available: $MODEL_COUNT"
-          if printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
-            ok "Default Ollama model found: $DEFAULT_MODEL"
-          else
-            warn "Default Ollama model not found: $DEFAULT_MODEL"
-            warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
-          fi
-        else
-          warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
-        fi
+  if OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
+    MODEL_COUNT="$(printf '%s\n' "$OLLAMA_LIST" | awk 'NR > 1 && NF > 0 { count++ } END { print count + 0 }')"
+    if [ "$MODEL_COUNT" -gt 0 ]; then
+      ok "Ollama models available: $MODEL_COUNT"
+      if printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
+        ok "Default Ollama model found: $DEFAULT_MODEL"
       else
-        warn "Could not list Ollama models."
+        warn "Default Ollama model not found: $DEFAULT_MODEL"
+        warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
       fi
     else
-      warn "Skipping Ollama checks because ollama is missing."
+      warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
     fi
-    ;;
-  *)
-    ok "Skipping Ollama checks (LLM_MODEL is not Ollama-based)."
-    ;;
-esac
+  else
+    warn "Could not list Ollama models."
+  fi
+else
+  warn "Skipping Ollama checks because ollama is missing."
+fi
 
 section "OpenHands CLI"
 OH_CAPABILITIES=""
@@ -257,36 +246,6 @@ else
   warn "Skipping OpenHands flag checks because openhands is missing."
 fi
 
-section "LLM Provider"
-LLM_MODEL_CHECK="$DOCTOR_LLM_MODEL"
-case "$LLM_MODEL_CHECK" in
-  ollama/*)
-    if command -v ollama >/dev/null 2>&1; then
-      ok "Ollama command available (provider: ollama)."
-    else
-      fail "LLM_MODEL uses Ollama but ollama command not found. Install Ollama."
-    fi
-    ;;
-  openai/*)
-    LM_URL="${DOCTOR_LLM_BASE_URL:-http://localhost:1234/v1}"
-    if curl -fsS "$LM_URL/models" >/dev/null 2>&1; then
-      ok "LM Studio reachable at $LM_URL (provider: openai)."
-    else
-      warn "LM Studio not reachable at $LM_URL. Ensure LM Studio is running."
-    fi
-    ;;
-  deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
-    if [ -n "$DOCTOR_LLM_API_KEY" ] && [ "$DOCTOR_LLM_API_KEY" != "ollama" ]; then
-      ok "Cloud provider configured: $LLM_MODEL_CHECK (API key set)."
-    else
-      fail "Cloud provider $LLM_MODEL_CHECK requires LLM_API_KEY to be set."
-    fi
-    ;;
-  *)
-    warn "Unknown LLM provider prefix in LLM_MODEL=$LLM_MODEL_CHECK."
-    ;;
-esac
-
 section "Environment"
 DOCTOR_ENV_FILE="${HOCA_DOTENV_PATH:-.env}"
 if [ -f "$DOCTOR_ENV_FILE" ]; then
@@ -303,14 +262,6 @@ if [ -f "$DOCTOR_ENV_FILE" ]; then
 else
   warn ".env not found. Copy .env.example to .env if using webhook or notifications."
 fi
-
-for var in LLM_MODEL LLM_BASE_URL LLM_API_KEY; do
-  if [ -n "$(config_value "$var")" ]; then
-    ok "$var is set."
-  else
-    warn "$var is not set. Wrapper defaults may be used."
-  fi
-done
 
 WEBHOOK_ENABLED="$(config_value HOCA_WEBHOOK_ENABLED)"
 WEBHOOK_URL="$(config_value HOCA_WEBHOOK_URL)"

@@ -8,9 +8,9 @@ Usage: run-reviewer-hermes.sh /path/to/project /path/to/task-spec.json /path/to/
 Run a reviewer pass through the hoca-reviewer Hermes profile when
 HOCA_USE_HERMES_PROFILES=true, or fall back to review-with-openhands.sh in legacy mode.
 
-Reviewer model selection is resolved in hoca.reviewer_hermes (model pool role reviewer,
-or legacy LLM_MODEL). run-hoca-task.sh sources resolve-role-model-env.sh reviewer
-before each review phase when the model pool is active.
+Reviewer model selection is resolved in hoca.reviewer_hermes from the reviewer
+role model. run-hoca-task.sh sources resolve-role-model-env.sh reviewer before
+each review phase.
 
 Options:
   -h, --help            Show this help message

@@ -14,7 +14,6 @@ from hoca.role_model_env import (
     resolve_role_llm,
     should_resolve_role_model,
     strip_pool_credentials,
-    uses_cli_model_override,
 )
 
 
@@ -47,10 +46,10 @@ def _active_pool_config() -> ModelPoolConfig:
 
 
 class TestRoleModelResolution:
-    def test_legacy_config_uses_single_llm_model(self) -> None:
+    def test_inactive_pool_uses_ollama_fallback(self) -> None:
         cfg = HocaConfig(
-            llm_model="ollama/qwen-14b-pro",
-            llm_base_url="http://127.0.0.1:11434",
+            ollama_model="qwen-14b-pro",
+            ollama_base_url="http://127.0.0.1:11434",
         )
 
         selection = resolve_role_llm("worker", cfg)
@@ -71,12 +70,11 @@ class TestRoleModelResolution:
         assert reviewer.api_key == "secret-reviewer"
         assert should_resolve_role_model(cfg) is True
 
-    def test_cli_override_skips_role_resolution(self) -> None:
+    def test_requested_model_env_does_not_skip_role_resolution(self) -> None:
         cfg = HocaConfig(model_pool=_active_pool_config())
-        env = {"HOCA_CLI_MODEL_OVERRIDE": "1", "LLM_MODEL": "ollama/qwen-7b-pro"}
+        env = {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "LLM_MODEL": "ollama/qwen-7b-pro"}
 
-        assert uses_cli_model_override(env) is True
-        assert should_resolve_role_model(cfg, env) is False
+        assert should_resolve_role_model(cfg, env) is True
 
     def test_apply_role_strips_other_pool_credentials(self) -> None:
         cfg = HocaConfig(model_pool=_active_pool_config())
@@ -123,8 +121,8 @@ class TestRoleModelResolution:
         assert worker_env["DEEPSEEK_API_KEY"] == "secret-worker"
         assert "OPENAI_API_KEY" not in worker_env
 
-    def test_export_shell_omits_legacy_mode(self) -> None:
-        cfg = HocaConfig(llm_model="ollama/qwen-14b-pro")
+    def test_export_shell_omits_inactive_pool(self) -> None:
+        cfg = HocaConfig(ollama_model="qwen-14b-pro")
 
         assert export_shell("worker", config=cfg) == ""
 
@@ -249,7 +247,7 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
     ]
 
 
-def test_load_config_empty_pool_preserves_legacy(
+def test_load_config_empty_pool_ignores_legacy_llm_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env_file = tmp_path / ".env"
@@ -267,7 +265,7 @@ def test_load_config_empty_pool_preserves_legacy(
     cfg = load_config(dotenv_path=env_file)
 
     assert cfg.model_pool.is_active is False
-    assert resolve_role_llm("worker", cfg).llm_model == "openai/gpt-oss-20b"
+    assert resolve_role_llm("worker", cfg).llm_model == "ollama/qwen-14b-pro"
 
 
 def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:

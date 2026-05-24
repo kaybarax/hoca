@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
-  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--model MODEL]"
+  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH]"
   exit 1
 fi
 
@@ -13,7 +13,6 @@ shift 2
 ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
-REQUESTED_MODEL=""
 if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
   MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
 elif [ -n "${HOCA_MAX_REPAIR_ATTEMPTS:-}" ]; then
@@ -49,14 +48,6 @@ while [ "$#" -gt 0 ]; do
     --notify-telegram)
       NOTIFY_TELEGRAM="true"
       shift
-      ;;
-    --model)
-      if [ "$#" -lt 2 ]; then
-        echo "Missing value for --model"
-        exit 1
-      fi
-      REQUESTED_MODEL="$2"
-      shift 2
       ;;
     --dev-branch)
       if [ "$#" -lt 2 ]; then
@@ -153,24 +144,6 @@ generate_run_task_spec() {
   echo "Generating task spec..."
   "${generate_args[@]}"
 }
-
-if [ -n "$REQUESTED_MODEL" ]; then
-  export HOCA_CLI_MODEL_OVERRIDE=1
-  export HOCA_REQUESTED_MODEL="$REQUESTED_MODEL"
-  case "$REQUESTED_MODEL" in
-    openai/*|deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
-      export LLM_MODEL="$REQUESTED_MODEL"
-      ;;
-    ollama/*)
-      export LLM_MODEL="$REQUESTED_MODEL"
-      export OLLAMA_MODEL="${REQUESTED_MODEL#ollama/}"
-      ;;
-    *)
-      export OLLAMA_MODEL="$REQUESTED_MODEL"
-      export LLM_MODEL="ollama/$REQUESTED_MODEL"
-      ;;
-  esac
-fi
 
 cd "$PROJECT_PATH"
 
@@ -436,7 +409,7 @@ EARLY_INIT_STATUS_ARGS=(
   --max-total-rounds "$MAX_TOTAL_ROUNDS"
   --auto-merge "$AUTO_MERGE"
   --notify-telegram "$NOTIFY_TELEGRAM"
-  --requested-model "$REQUESTED_MODEL"
+  --requested-model ""
   --repo-root "$REPO_ROOT"
   --starting-branch "$INITIAL_BRANCH"
   --task-base-branch "$TASK_BASE_REF"
@@ -599,7 +572,7 @@ INIT_STATUS_ARGS=(
   --max-total-rounds "$MAX_TOTAL_ROUNDS"
   --auto-merge "$AUTO_MERGE"
   --notify-telegram "$NOTIFY_TELEGRAM"
-  --requested-model "$REQUESTED_MODEL"
+  --requested-model ""
   --repo-root "$REPO_ROOT"
   --starting-branch "$INITIAL_BRANCH"
   --task-base-branch "$TASK_BASE_REF"
@@ -683,10 +656,8 @@ run_openhands_phase() {
   local used_worker_hermes="false"
 
   echo "Running OpenHands ($phase_label)..."
-  if [ -z "$REQUESTED_MODEL" ]; then
-    # shellcheck disable=SC1090
-    source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
-  fi
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
   set +e
   if hermes_profiles_enabled; then
     used_worker_hermes="true"
@@ -824,10 +795,8 @@ while true; do
   fi
 
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
-  if [ -z "$REQUESTED_MODEL" ]; then
-    # shellcheck disable=SC1090
-    source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
-  fi
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
   set +e
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
@@ -866,10 +835,8 @@ while true; do
   break
 done
 
-if [ -z "$REQUESTED_MODEL" ]; then
-  # shellcheck disable=SC1090
-  source "$SCRIPT_DIR/clear-role-model-env.sh"
-fi
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/clear-role-model-env.sh"
 
 echo "Inspecting changed files..."
 git_status_short_for_task | tee "$RUN_DIR/git-status.txt"

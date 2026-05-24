@@ -23,7 +23,7 @@ from hoca.worker_hermes import (
 
 
 def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in ["HOCA_REQUESTED_MODEL", "HOCA_CLI_MODEL_OVERRIDE"]:
+    for key in ["HOCA_REQUESTED_MODEL"]:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("LLM_MODEL", "ollama/qwen-14b-pro")
     monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:11434")

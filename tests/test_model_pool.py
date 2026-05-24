@@ -248,16 +248,16 @@ class TestRoleModelSelection:
         assert config.resolve_role("reviewer").model == "openai/gpt-oss-20b"
         assert config.resolve_role("manager").name == "local-fast"
 
-    def test_role_model_names_for_task_spec_uses_legacy_llm_model(self) -> None:
-        cfg = HocaConfig(llm_model="openai/gpt-oss-20b")
+    def test_role_model_names_for_task_spec_uses_ollama_fallback(self) -> None:
+        cfg = HocaConfig(ollama_model="qwen-14b-pro")
 
         names = role_model_names_for_task_spec(cfg)
 
         assert names == {
-            "manager": "openai/gpt-oss-20b",
-            "worker": "openai/gpt-oss-20b",
-            "reviewer": "openai/gpt-oss-20b",
-            "fallback": "openai/gpt-oss-20b",
+            "manager": "ollama/qwen-14b-pro",
+            "worker": "ollama/qwen-14b-pro",
+            "reviewer": "ollama/qwen-14b-pro",
+            "fallback": "ollama/qwen-14b-pro",
         }
 
     def test_role_model_names_for_task_spec_resolves_inherited_roles(self) -> None:
