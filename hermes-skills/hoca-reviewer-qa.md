@@ -82,6 +82,64 @@ addressed before approval; use `null` for non-blocking observations.
 Do not block on pure preference, naming taste, or formatting when correctness,
 safety, tests, and scope are sound.
 
+## Structural quality bar
+
+The reviewer should be ambitious about maintainability when the submitted change
+materially affects structure. Passing tests are necessary but not enough when the
+diff makes future work harder.
+
+For every meaningful change, ask:
+
+- Is there a behavior-preserving simplification that would delete complexity
+  instead of merely rearranging it?
+- Can the change be reframed so fewer concepts, branches, flags, modes, or helper
+  layers are needed?
+- Did the diff add ad-hoc conditionals, scattered special cases, or narrow edge
+  handling inside an already busy flow?
+- Is this logic in the canonical package, module, service, or layer that already
+  owns the concept?
+- Did the change duplicate an existing helper or introduce a bespoke near-copy
+  instead of reusing the local convention?
+- Does the abstraction earn its keep, or is it a thin wrapper, identity adapter,
+  pass-through helper, or magic generic path around simple data?
+- Did the change introduce unnecessary optionality, casts, loosely shaped objects,
+  or silent fallback behavior where a clearer contract should exist?
+- Did a cohesive module become more coupled, stateful, or difficult to scan?
+- Did a file cross roughly 1000 lines, or did an already-large file get new
+  responsibilities that should be decomposed?
+- Is orchestration needlessly sequential, or can independent work be expressed
+  more simply with parallel steps?
+- Can related updates be made more atomic so partial state is easier to reason
+  about?
+
+Treat these as presumptive maintainability findings when they are visible in the
+changed code and materially affect future change safety:
+
+- A complicated implementation has an obvious simpler framing that would remove
+  branches, modes, or helper layers.
+- New feature checks are scattered across shared paths instead of isolated behind
+  the owning abstraction.
+- One-off booleans, nullable modes, or temporary branches complicate existing
+  control flow.
+- A file grows past a healthy size boundary without a strong structural reason.
+- A wrapper, adapter, cast-heavy boundary, or generic mechanism adds indirection
+  without clarifying the model.
+- Feature logic leaks across package, service, API, or domain boundaries.
+- The diff moves complexity around but does not reduce the concepts a reader must
+  hold in mind.
+
+Preferred remedies include deleting unnecessary layers, collapsing duplicate
+branches into one clearer flow, extracting focused helpers or modules, moving
+logic to the canonical owner, making type boundaries explicit, separating
+orchestration from business logic, and restructuring related updates so they are
+more atomic.
+
+Do not turn this bar into cosmetic nitpicking. A structural finding should cite a
+specific file or flow, explain the future maintenance risk, and name the smallest
+repair that would make the design safer. Classify serious structural regressions
+as `maintainability` with `medium` or `high` severity when they should block
+approval; use `low` or `nit` only for valid but deferrable cleanup.
+
 ## Reviewer procedures
 
 Follow these procedures for each review pass.
@@ -200,6 +258,9 @@ Use `LGTM` only when all are true:
 - Tests are adequate for `risk_level` (or gaps are explicitly accepted by policy)
 - Scope fits `expected_areas` and respects `non_goals`
 - Review was completed with sufficient context (not `blocked`)
+- No clear structural regression remains, including obvious spaghetti growth,
+  needless abstraction, wrong-layer logic, unjustified file-size expansion, or a
+  visible simpler framing that would materially improve maintainability
 
 `LGTM` does not mean "perfect codebase" — it means acceptable to ship for this task
 under current policy.

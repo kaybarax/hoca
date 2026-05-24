@@ -75,6 +75,11 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "required_review_report_path:" in prompt
     assert "Manager-owned Git lifecycle only" in prompt
     assert "git add, git commit, git push" in prompt
+    assert "Structural quality bar" in prompt
+    assert "behavior-preserving simplifications" in prompt
+    assert "ad-hoc conditionals" in prompt
+    assert "canonical helpers" in prompt
+    assert "roughly 1000 lines" in prompt
     assert "secret-value" not in prompt
     assert "[redacted: possible secret]" in prompt
 

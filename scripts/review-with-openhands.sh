@@ -131,6 +131,24 @@ Review-only constraints:
 - Do not implement fixes or edit repository files during this review pass.
 - Inspect the changed files, diff, and working tree only to judge the submitted work.
 
+Structural quality bar:
+- Look for behavior-preserving simplifications that delete complexity instead of
+  merely rearranging it.
+- Treat ad-hoc conditionals, scattered special cases, one-off modes, and flag
+  growth in busy flows as maintainability risks when a cleaner abstraction or
+  model is visible.
+- Flag thin wrappers, pass-through helpers, cast-heavy or loosely typed
+  boundaries, and generic magic that obscure the real invariant.
+- Prefer canonical helpers, existing ownership boundaries, and the package or
+  module that already owns the concept over bespoke near-duplicates.
+- Watch for files pushed past roughly 1000 lines, or large busy files made harder
+  to scan, and ask for decomposition when the split is obvious.
+- Separate orchestration from business logic; flag unnecessarily sequential
+  orchestration or partial-update flows when a clearer atomic structure is
+  available.
+- Do not block on personal taste, but do block on structural regressions that
+  make future changes materially less safe or more difficult.
+
 Produce a structured HocaReviewReport as JSON (YAML is acceptable only if JSON is
 not practical). Write the report to:
 - ${STRUCTURED_REPORT_PATH}
@@ -165,6 +183,10 @@ Distinguish blockers from PR tech debt:
 - PR tech debt belongs in pr_notes.known_followups with required_fix null on the finding.
 - Do not block on pure preference, naming taste, or formatting when correctness,
   safety, tests, and scope are sound.
+- Do not approve merely because behavior works: LGTM also requires no clear
+  structural regression, no obvious simpler reframing left on the table, no
+  unjustified file-size expansion, no spaghetti growth, and no needless
+  abstraction or boundary drift.
 
 Also include the structured JSON in your final response inside a fenced \`\`\`json block.
 

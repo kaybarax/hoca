@@ -35,6 +35,25 @@ _SECRET_VALUE_PATTERN = re.compile(
 DEFAULT_HERMES_TIMEOUT_SECONDS = 1800
 DEFAULT_HERMES_MAX_TURNS = 20
 
+STRUCTURAL_REVIEW_RUBRIC = """Structural quality bar:
+- Look for behavior-preserving simplifications that delete complexity instead of
+  merely rearranging it.
+- Treat ad-hoc conditionals, scattered special cases, one-off modes, and flag
+  growth in busy flows as maintainability risks when a cleaner abstraction or
+  model is visible.
+- Flag thin wrappers, pass-through helpers, cast-heavy or loosely typed
+  boundaries, and generic magic that obscure the real invariant.
+- Prefer canonical helpers, existing ownership boundaries, and the package or
+  module that already owns the concept over bespoke near-duplicates.
+- Watch for files pushed past roughly 1000 lines, or large busy files made harder
+  to scan, and ask for decomposition when the split is obvious.
+- Separate orchestration from business logic; flag unnecessarily sequential
+  orchestration or partial-update flows when a clearer atomic structure is
+  available.
+- Do not block on personal taste, but do block on structural regressions that
+  make future changes materially less safe or more difficult.
+"""
+
 
 @dataclass(frozen=True)
 class ReviewerRunResult:
@@ -177,10 +196,12 @@ def build_reviewer_hermes_prompt(
         "Required steps:\n"
         "1. Read the task spec, changed-file list, diff, test summary, and worker report.\n"
         "2. Review correctness, security, tests, scope, maintainability, and unrelated edits.\n"
-        "3. Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.\n"
-        "4. Do not implement changes, stage files, commit, push, merge, or open pull requests.\n"
-        "5. Write exactly one structured HocaReviewReport JSON file at required_review_report_path.\n"
-        "6. Use verdict LGTM only when there are no blocking findings. Use fix_required or blocked otherwise.\n\n"
+        "3. Apply the structural quality bar below before approving.\n"
+        f"{STRUCTURAL_REVIEW_RUBRIC}\n"
+        "4. Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.\n"
+        "5. Do not implement changes, stage files, commit, push, merge, or open pull requests.\n"
+        "6. Write exactly one structured HocaReviewReport JSON file at required_review_report_path.\n"
+        "7. Use verdict LGTM only when there are no blocking findings. Use fix_required or blocked otherwise.\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
         f"- goal: {spec.goal.strip()}\n"
         f"- acceptance_criteria: {', '.join(spec.acceptance_criteria) or '(none)'}\n"
