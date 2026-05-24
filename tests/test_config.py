@@ -109,7 +109,7 @@ class TestLoadConfigDefaults:
         assert cfg.require_tests is True
         assert cfg.require_review is True
         assert cfg.stop_on_dirty_tree is True
-        assert cfg.dev_branch == "main"
+        assert cfg.dev_branch == ""
         assert cfg.sync_dev_branch is True
         assert cfg.restore_dev_branch is True
         assert cfg.auto_stage_reviewed_changes is True

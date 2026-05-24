@@ -34,6 +34,8 @@ def test_init_project_creates_templates_without_overwriting(tmp_path: Path) -> N
     assert result.returncode == 0, result.stderr
     assert existing_openhands.read_text() == "custom openhands\n"
     assert existing_pr_template.read_text() == "custom pr template\n"
+    assert (project_path / ".hoca" / "config.toml").is_file()
+    assert "dev_branch" in (project_path / ".hoca" / "config.toml").read_text()
     assert (project_path / ".hoca-runtime" / "runs").is_dir()
     assert (project_path / ".hoca-runtime" / "logs").is_dir()
 
@@ -56,6 +58,7 @@ def test_init_project_is_idempotent(tmp_path: Path) -> None:
 
     tracked_files = [
         ".openhands_instructions",
+        ".hoca/config.toml",
         "templates/PR_TEMPLATE.md",
         ".gitignore",
     ]

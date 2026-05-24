@@ -45,6 +45,23 @@ copy_template() {
 
 copy_template ".openhands_instructions"
 
+mkdir -p .hoca
+if [ ! -f ".hoca/config.toml" ]; then
+  CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+  if [ -n "$CURRENT_BRANCH" ]; then
+    cat > ".hoca/config.toml" <<EOF
+# Project-owned HOCA settings.
+# Set this to the branch new task branches should start from.
+dev_branch = "$CURRENT_BRANCH"
+EOF
+    CREATED+=(".hoca/config.toml")
+  else
+    EXISTED+=(".hoca/config.toml (skipped: detached HEAD)")
+  fi
+else
+  EXISTED+=(".hoca/config.toml")
+fi
+
 mkdir -p templates
 if [ ! -f "templates/PR_TEMPLATE.md" ]; then
   if [ -f "$HOCA_ROOT/templates/PR_TEMPLATE.md" ]; then

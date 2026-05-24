@@ -33,7 +33,8 @@ Read publication policy from `.env` / environment:
 
 - `HOCA_AUTO_MERGE`, `HOCA_REQUIRE_TESTS`, `HOCA_REQUIRE_REVIEW_LGTM`
 - `HOCA_AUTO_STAGE_REVIEWED_CHANGES` — when true, shortcut may build intended-file lists from reviewed changes
-- `HOCA_DEV_BRANCH`, `HOCA_SYNC_DEV_BRANCH` — development branch for task-base checkout and optional post-run restore
+- `HOCA_SYNC_DEV_BRANCH` — when true, sync the manager-resolved development branch before task-base checkout
+- `HOCA_DEV_BRANCH` — optional override; prefer target repo `.hoca/config.toml` or `origin/HEAD`
 - `HOCA_KEEP_RUNTIME` — when false, `.hoca-runtime` may be removed after successful PR creation
 
 ## Manager-only publication
@@ -182,8 +183,8 @@ After publication or a terminal non-publish outcome:
 5. When `HOCA_KEEP_RUNTIME` is not true and publication completed via the shortcut,
    `.hoca-runtime` may be removed after PR creation — do not delete mid-run artifacts
    needed for human staging
-6. Branch restoration: when `HOCA_DEV_BRANCH` is configured and policy allows, check out
-   the development branch so the engineer returns to their normal working branch.
+6. Branch restoration: when the manager resolved a development branch and policy allows,
+   check out that branch so the engineer returns to their normal working branch.
    Do not delete `main`, `master`, or the default branch. Task branches may be deleted
    by GitHub only when auto-merge completes with `--delete-branch` and repository
    settings allow it

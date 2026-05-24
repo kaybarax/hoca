@@ -289,6 +289,23 @@ def test_run_forwards_model_flag(monkeypatch, tmp_path: Path) -> None:
     assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--model", "qwen-14b-pro"])]
 
 
+def test_run_forwards_dev_branch_flag(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["run", str(project_path), "A task", "--dev-branch", "develop"])
+
+    assert result.exit_code == 0
+    assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--dev-branch", "develop"])]
+
+
 def test_issue_constructs_task_and_passes_issue_id(monkeypatch, tmp_path: Path) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
@@ -382,6 +399,38 @@ def test_issue_forwards_model_flag(monkeypatch, tmp_path: Path) -> None:
                 "7",
                 "--model",
                 "qwen-14b-pro",
+            ],
+        )
+    ]
+
+
+def test_issue_forwards_dev_branch_flag(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(
+        main,
+        ["issue", str(project_path), "7", "Add tests", "--dev-branch", "develop"],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "run-hoca-task.sh",
+            [
+                str(project_path),
+                "Fix GitHub issue #7: Add tests",
+                "--issue-id",
+                "7",
+                "--dev-branch",
+                "develop",
             ],
         )
     ]

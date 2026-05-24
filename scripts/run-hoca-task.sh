@@ -22,6 +22,8 @@ else
   MAX_TOTAL_ROUNDS=3
 fi
 DEV_BRANCH="${HOCA_DEV_BRANCH:-}"
+REQUESTED_DEV_BRANCH=""
+DEV_BRANCH_SOURCE=""
 SYNC_DEV_BRANCH="${HOCA_SYNC_DEV_BRANCH:-true}"
 RESTORE_DEV_BRANCH="${HOCA_RESTORE_DEV_BRANCH:-true}"
 AUTO_STAGE_REVIEWED_CHANGES="${HOCA_AUTO_STAGE_REVIEWED_CHANGES:-true}"
@@ -54,6 +56,15 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       REQUESTED_MODEL="$2"
+      shift 2
+      ;;
+    --dev-branch)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --dev-branch"
+        exit 1
+      fi
+      REQUESTED_DEV_BRANCH="$2"
+      DEV_BRANCH="$2"
       shift 2
       ;;
     *)
@@ -202,11 +213,26 @@ is_dependency_lockfile_path() {
 
 checkout_dev_branch() {
   if [ -z "$DEV_BRANCH" ]; then
+    local resolution
+    if resolution="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.dev_branch "$PROJECT_PATH" --show-source)"; then
+      DEV_BRANCH="${resolution%%$'\t'*}"
+      DEV_BRANCH_SOURCE="${resolution#*$'\t'}"
+    fi
+  elif [ -n "$REQUESTED_DEV_BRANCH" ]; then
+    DEV_BRANCH_SOURCE="CLI override"
+  else
+    DEV_BRANCH_SOURCE="HOCA_DEV_BRANCH"
+  fi
+
+  if [ -z "$DEV_BRANCH" ]; then
     TASK_BASE_REF="HEAD"
-    echo "Development branch: not configured (HOCA_DEV_BRANCH is unset)"
+    echo "Development branch: unresolved"
     echo "Development branch sync: skipped"
     echo "Task branch base: current HEAD ($(git rev-parse --short HEAD))"
     return
+  fi
+  if [ -n "$DEV_BRANCH_SOURCE" ]; then
+    echo "Development branch source: $DEV_BRANCH_SOURCE"
   fi
   if [ "$CURRENT_BRANCH" = "$DEV_BRANCH" ]; then
     echo "Development branch: $DEV_BRANCH"

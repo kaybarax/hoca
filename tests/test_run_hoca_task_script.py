@@ -526,6 +526,13 @@ def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
     tmp_path: Path,
 ) -> None:
     init_repo(tmp_path)
+    current_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
     fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -533,10 +540,11 @@ def test_run_hoca_task_logs_current_head_base_when_no_dev_branch_configured(
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Development branch: not configured (HOCA_DEV_BRANCH is unset)" in result.stdout
-    assert "Development branch sync: skipped" in result.stdout
-    assert "Task branch base: current HEAD" in result.stdout
-    assert "Creating branch: feat/update-readme from HEAD" in result.stdout
+    assert "Development branch source: current branch" in result.stdout
+    assert f"Development branch: {current_branch}" in result.stdout
+    assert "Development branch sync: skipped (no origin remote configured)" in result.stdout
+    assert f"Task branch base: {current_branch}" in result.stdout
+    assert f"Creating branch: feat/update-readme from {current_branch}" in result.stdout
 
 
 def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
@@ -575,6 +583,35 @@ def test_run_hoca_task_switches_to_configured_dev_branch_before_task_branch(
     assert branch == "feat/update-readme"
     assert not (tmp_path / "previous.txt").exists()
     assert '"starting_branch": "feat/previous-task"' in latest_status(tmp_path)
+    assert '"task_base_branch": "main"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_uses_project_config_dev_branch(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
+    (tmp_path / ".hoca").mkdir()
+    (tmp_path / ".hoca" / "config.toml").write_text('dev_branch = "main"\n', encoding="utf-8")
+    subprocess.run(["git", "add", "--", ".hoca/config.toml"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add hoca project config"],
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=tmp_path, check=True)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Development branch source: .hoca/config.toml" in result.stdout
+    assert "Switching to development branch: main" in result.stdout
+    assert "Task branch base: main" in result.stdout
+    assert "Creating branch: feat/update-readme from main" in result.stdout
     assert '"task_base_branch": "main"' in latest_status(tmp_path)
 
 
