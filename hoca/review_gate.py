@@ -13,12 +13,6 @@ from hoca.review_report_parser import (
     try_extract_structured_report,
 )
 
-LEGACY_REVIEW_WARNING = (
-    "Warning: converted legacy review text to HocaReviewReport; "
-    "structured review output is preferred."
-)
-
-
 class ReviewGateError(ValueError):
     """Raised when a structured review report is present but invalid."""
 
@@ -141,9 +135,7 @@ def materialize_structured_report_from_text(
 
 def has_review_artifacts(run_dir: Path, *, round_number: int = 1) -> bool:
     run_dir = run_dir.resolve()
-    return (run_dir / "openhands-review.txt").exists() or default_report_path(
-        run_dir, round_number
-    ).exists()
+    return default_report_path(run_dir, round_number).exists()
 
 
 def code_review_pr_fragment(result: ReviewGateResult) -> str:
@@ -185,7 +177,9 @@ def try_resolve_review_gate(
     project_path: Path | None = None,
 ) -> ReviewGateResult | None:
     run_dir = run_dir.resolve()
-    if not has_review_artifacts(run_dir, round_number=round_number):
+    if not has_review_artifacts(run_dir, round_number=round_number) and not (
+        structured_report_path and structured_report_path.exists()
+    ):
         return None
     resolved_review_text = review_text_path or (run_dir / "openhands-review.txt")
     return evaluate_review_gate(
@@ -313,9 +307,6 @@ def main(argv: list[str] | None = None) -> int:
     if result is None:
         print("Review artifacts were not found.", file=sys.stderr)
         return 3
-
-    if result.source == "legacy":
-        print(LEGACY_REVIEW_WARNING, file=sys.stderr)
 
     if args.print == "verdict":
         print(result.report.verdict)

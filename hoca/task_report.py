@@ -372,9 +372,8 @@ def _format_what_happened_section(
 
 def _format_code_review_status(run_dir: Path) -> str:
     review_round = current_round(run_dir, prefix="review-report-", subdir="reviews") or 1
-    legacy_review = run_dir / "openhands-review.txt"
     structured_review = run_dir / "reviews" / f"review-report-{review_round}.json"
-    if not legacy_review.is_file() and not structured_review.is_file():
+    if not structured_review.is_file():
         return "Not run"
 
     try:

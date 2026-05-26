@@ -1,4 +1,4 @@
-"""Run a reviewer pass via Hermes profile or legacy OpenHands wrapper."""
+"""Run a reviewer pass via the hoca-reviewer Hermes profile."""
 
 from __future__ import annotations
 
@@ -106,13 +106,11 @@ def _resolve_max_turns() -> int:
 
 def verify_profile_prerequisites(*, hermes_home: Path | None = None) -> None:
     if not hermes_installed():
-        raise RuntimeError(
-            "hermes command not found. Install Hermes or disable HOCA_USE_HERMES_PROFILES."
-        )
+        raise RuntimeError("hermes command not found. Install Hermes before running HOCA.")
     if not profile_exists(PROFILE_REVIEWER, hermes_home=hermes_home):
         raise RuntimeError(
             f"Hermes profile {PROFILE_REVIEWER!r} is not installed. "
-            "Run scripts/setup-hermes-profiles.sh before enabling profile mode."
+            "Run scripts/setup-hermes-profiles.sh before running HOCA."
         )
 
 
@@ -400,45 +398,12 @@ def _evaluate_profile_report(
     return result.report_path, 4
 
 
-def _run_legacy_review_wrapper(
-    *,
-    project_path: Path,
-    task: str,
-    run_dir: Path,
-    round_number: int,
-) -> CommandResult:
-    script = repo_root() / "scripts" / "review-with-openhands.sh"
-    env = os.environ.copy()
-    env["HOCA_REVIEW_ROUND"] = str(round_number)
-    cfg = load_config()
-    env = apply_role_to_env("reviewer", cfg, env)
-    env["HOCA_AGENT_ROLE"] = "reviewer"
-    if cfg.model_pool.is_active:
-        print(log_line_for_selection(resolve_role_llm("reviewer", cfg)), file=sys.stderr)
-
-    completed = subprocess.run(
-        [str(script), str(project_path), task, str(run_dir)],
-        cwd=project_path,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    return CommandResult(
-        (str(script), str(project_path), task, str(run_dir)),
-        completed.returncode,
-        completed.stdout,
-        completed.stderr,
-    )
-
-
 def run_reviewer_hermes(
     *,
     project_path: Path,
     task_spec_path: Path,
     run_dir: Path,
     round_number: int,
-    use_hermes_profiles: bool | None = None,
     hermes_home: Path | None = None,
 ) -> ReviewerRunResult:
     if round_number < 1:
@@ -452,57 +417,41 @@ def run_reviewer_hermes(
     inputs = prepare_reviewer_inputs(
         project_path=project_path, run_dir=run_dir, round_number=round_number
     )
-    cfg = load_config()
-    profile_mode = cfg.use_hermes_profiles if use_hermes_profiles is None else use_hermes_profiles
-
-    if profile_mode:
-        verify_profile_prerequisites(hermes_home=hermes_home)
-        prompt = build_reviewer_hermes_prompt(
-            spec=spec,
-            project_path=project_path,
-            run_dir=run_dir,
-            round_number=round_number,
-            task_spec_path=task_spec_path,
-            inputs=inputs,
-        )
-        (run_dir / f"reviewer-hermes-prompt-round-{round_number}.txt").write_text(
-            prompt + "\n", encoding="utf-8"
-        )
-        result = _invoke_hermes_reviewer(
-            prompt=prompt,
-            run_dir=run_dir,
-            timeout_seconds=_resolve_timeout_seconds(),
-            max_turns=_resolve_max_turns(),
-        )
-        report_path, exit_code = _evaluate_profile_report(
-            run_dir=run_dir,
-            round_number=round_number,
-            process_exit_code=result.returncode,
-        )
-        return ReviewerRunResult(
-            mode="profile",
-            exit_code=exit_code,
-            review_report_path=report_path,
-            hermes_stdout_path=run_dir / "logs" / "reviewer-hermes-stdout.txt",
-            hermes_stderr_path=run_dir / "logs" / "reviewer-hermes-stderr.txt",
-        )
-
-    result = _run_legacy_review_wrapper(
+    verify_profile_prerequisites(hermes_home=hermes_home)
+    prompt = build_reviewer_hermes_prompt(
+        spec=spec,
         project_path=project_path,
-        task=spec.goal,
         run_dir=run_dir,
         round_number=round_number,
+        task_spec_path=task_spec_path,
+        inputs=inputs,
+    )
+    (run_dir / f"reviewer-hermes-prompt-round-{round_number}.txt").write_text(
+        prompt + "\n", encoding="utf-8"
+    )
+    result = _invoke_hermes_reviewer(
+        prompt=prompt,
+        run_dir=run_dir,
+        timeout_seconds=_resolve_timeout_seconds(),
+        max_turns=_resolve_max_turns(),
+    )
+    report_path, exit_code = _evaluate_profile_report(
+        run_dir=run_dir,
+        round_number=round_number,
+        process_exit_code=result.returncode,
     )
     return ReviewerRunResult(
-        mode="legacy",
-        exit_code=result.returncode,
-        review_report_path=review_report_path(run_dir, round_number),
+        mode="profile",
+        exit_code=exit_code,
+        review_report_path=report_path,
+        hermes_stdout_path=run_dir / "logs" / "reviewer-hermes-stdout.txt",
+        hermes_stderr_path=run_dir / "logs" / "reviewer-hermes-stderr.txt",
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run a HOCA reviewer pass via Hermes profile or legacy OpenHands wrapper."
+        description="Run a HOCA reviewer pass via the hoca-reviewer Hermes profile."
     )
     parser.add_argument("project_path", help="Path to the target Git repository")
     parser.add_argument("task_spec_path", help="Path to task-spec.json")

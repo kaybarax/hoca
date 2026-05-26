@@ -7,9 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from hoca.contracts import HocaReviewFinding, HocaReviewReport
-
-LEGACY_LGTM_TOKEN = "LGTM"
+from hoca.contracts import HocaReviewReport
 
 
 class ReviewReportParseError(ValueError):
@@ -20,46 +18,6 @@ class ReviewReportParseError(ValueError):
 class ReviewReportParseResult:
     report: HocaReviewReport
     source: str
-
-
-def legacy_text_to_report(
-    review_text: str,
-    *,
-    run_id: str,
-    round_number: int,
-) -> HocaReviewReport:
-    if not review_text.strip():
-        raise ReviewReportParseError("Review output is empty.")
-
-    if LEGACY_LGTM_TOKEN in review_text:
-        verdict = "LGTM"
-        findings: list[HocaReviewFinding] = []
-        summary = "Legacy review output contained LGTM."
-    else:
-        verdict = "fix_required"
-        summary = "Legacy review output did not contain LGTM."
-        findings = [
-            HocaReviewFinding(
-                id=f"legacy-review-{round_number}",
-                severity="medium",
-                category="correctness",
-                file=None,
-                summary=summary,
-                required_fix=review_text.strip() or "Review requested changes.",
-            )
-        ]
-
-    return HocaReviewReport(
-        run_id=run_id,
-        round=round_number,
-        role="reviewer",
-        verdict=verdict,
-        findings=findings,
-        pr_notes={
-            "summary": [summary],
-            "known_followups": [],
-        },
-    )
 
 
 def _fenced_code_blocks(text: str, languages: tuple[str, ...]) -> list[str]:
@@ -311,9 +269,4 @@ def parse_review_report_text(
     report = try_extract_structured_report(review_text)
     if report is not None:
         return ReviewReportParseResult(report=report, source="structured")
-    return ReviewReportParseResult(
-        report=legacy_text_to_report(
-            review_text, run_id=run_id, round_number=round_number
-        ),
-        source="legacy",
-    )
+    raise ReviewReportParseError("Review output must contain a structured HocaReviewReport.")

@@ -122,8 +122,6 @@ class ModelPoolConfig:
 
 @dataclass(frozen=True)
 class HocaConfig:
-    use_hermes_profiles: bool = False
-    use_structured_reports: bool = True
     use_kanban: bool = False
     use_sandbox: bool = True
     use_worktree_sandbox: bool = True
@@ -189,9 +187,6 @@ def _resolve_max_total_rounds(config_value) -> int:
     explicit = config_value("HOCA_MAX_TOTAL_ROUNDS")
     if explicit:
         return int(explicit)
-    legacy = config_value("HOCA_MAX_REPAIR_ATTEMPTS")
-    if legacy:
-        return int(legacy) + 1
     return 3
 
 
@@ -214,19 +209,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     ollama_base_url = config_value("OLLAMA_BASE_URL") or ollama_host
     ollama_api_base = config_value("OLLAMA_API_BASE") or ollama_base_url
 
-    require_review_explicit = config_value("HOCA_REQUIRE_REVIEW") or None
-    require_aider_lgtm = config_value("HOCA_REQUIRE_AIDER_LGTM") or None
-    require_review = parse_bool(
-        require_review_explicit or require_aider_lgtm, default=True
-    )
-
     return HocaConfig(
-        use_hermes_profiles=parse_bool(
-            config_value("HOCA_USE_HERMES_PROFILES") or None, default=False
-        ),
-        use_structured_reports=parse_bool(
-            config_value("HOCA_USE_STRUCTURED_REPORTS") or None, default=True
-        ),
         use_kanban=parse_bool(config_value("HOCA_USE_KANBAN") or None, default=False),
         use_sandbox=parse_bool(config_value("HOCA_USE_SANDBOX") or None, default=True),
         use_worktree_sandbox=parse_bool(
@@ -236,7 +219,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         max_total_rounds=_resolve_max_total_rounds(config_value),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
-        require_review=require_review,
+        require_review=parse_bool(config_value("HOCA_REQUIRE_REVIEW") or None, default=True),
         stop_on_dirty_tree=parse_bool(
             config_value("HOCA_STOP_ON_DIRTY_TREE") or None, default=True
         ),

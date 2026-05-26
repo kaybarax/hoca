@@ -1,4 +1,4 @@
-"""Run a worker attempt via Hermes profile or legacy OpenHands wrapper."""
+"""Run a worker attempt via the hoca-worker Hermes profile."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from hoca.config import HocaConfig, load_config
+from hoca.config import load_config
 from hoca.env_allowlist import filter_env
 from hoca.role_model_env import (
     apply_role_to_env,
@@ -25,7 +25,7 @@ from hoca.paths import repo_root
 from hoca.profiles import PROFILE_WORKER, hermes_installed, profile_exists
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
-from hoca.subprocess_utils import CommandResult, run_command
+from hoca.subprocess_utils import CommandResult
 
 _SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"
@@ -181,39 +181,13 @@ def build_worker_hermes_prompt(
     return _redact_secret_like_lines(prompt)
 
 
-def build_legacy_openhands_task(*, spec: HocaTaskSpec, repair_brief: str | None = None) -> str:
-    task_body = repair_brief.strip() if repair_brief and repair_brief.strip() else spec.goal.strip()
-    prompt = (
-        "HOCA worker implementation task.\n\n"
-        "Original task:\n"
-        f"{task_body}\n\n"
-        "Scope contract:\n"
-        f"{_format_list_section('non_goals', spec.non_goals)}"
-        f"{_format_list_section('expected_areas', spec.expected_areas)}"
-        f"{_format_list_section('acceptance_criteria', spec.acceptance_criteria)}"
-        f"{_format_list_section('test_commands', spec.test_commands)}"
-        f"- risk_level: {spec.risk_level}\n\n"
-        f"{ITERATIVE_WORKER_RUBRIC}\n"
-        f"{PSTACK_WORKER_PRINCIPLES}\n"
-        "Safety constraints:\n"
-        "- Work only inside the current repository root supplied by HOCA.\n"
-        "- Do not stage, commit, push, merge, open pull requests, or use GitHub CLI publication commands.\n"
-        "- Do not read or modify secret-like files such as .env, keys, tokens, kubeconfigs, or credential stores.\n"
-        "- If .env.example is needed, access only that exact path and never use .env* globs.\n"
-        "- Keep changes within expected_areas unless the task cannot be completed safely; if so, stop and report the blocker.\n"
-    )
-    return _redact_secret_like_lines(prompt)
-
-
 def verify_profile_prerequisites(*, hermes_home: Path | None = None) -> None:
     if not hermes_installed():
-        raise RuntimeError(
-            "hermes command not found. Install Hermes or disable HOCA_USE_HERMES_PROFILES."
-        )
+        raise RuntimeError("hermes command not found. Install Hermes before running HOCA.")
     if not profile_exists(PROFILE_WORKER, hermes_home=hermes_home):
         raise RuntimeError(
             f"Hermes profile {PROFILE_WORKER!r} is not installed. "
-            "Run scripts/setup-hermes-profiles.sh before enabling profile mode."
+            "Run scripts/setup-hermes-profiles.sh before running HOCA."
         )
 
 
@@ -237,33 +211,6 @@ def _resolve_max_turns() -> int:
     if max_turns <= 0:
         raise ValueError("HOCA_HERMES_MAX_TURNS must be greater than 0")
     return max_turns
-
-
-def _worker_execution_env(cfg: HocaConfig | None = None) -> dict[str, str]:
-    config = cfg or load_config()
-    env = apply_role_to_env("worker", config)
-    env["HOCA_AGENT_ROLE"] = "worker"
-    return env
-
-
-def _run_openhands_wrapper(
-    *,
-    project_path: Path,
-    task: str,
-    run_dir: Path,
-    cfg: HocaConfig | None = None,
-) -> CommandResult:
-    config = cfg or load_config()
-    env = _worker_execution_env(config)
-    if config.model_pool.is_active:
-        selection = resolve_role_llm("worker", config)
-        print(log_line_for_selection(selection), file=sys.stderr)
-    script = repo_root() / "scripts" / "run-openhands-task.sh"
-    return run_command(
-        [str(script), str(project_path), task, str(run_dir)],
-        cwd=project_path,
-        env=env,
-    )
 
 
 def _invoke_hermes_worker(
@@ -374,7 +321,7 @@ def _ensure_worker_attempt_report(
     *,
     round_number: int,
     status: str,
-    mode: str = "legacy",
+    mode: str = "profile",
     project_path: Path | None = None,
 ) -> Path:
     attempt_path = worker_attempt_path(run_dir, round_number)
@@ -426,40 +373,6 @@ def _project_has_changes(project_path: Path) -> bool:
     )
 
 
-def _attempt_report_status(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return None
-    status = data.get("status") if isinstance(data, dict) else None
-    return status if isinstance(status, str) else None
-
-
-def _profile_attempt_needs_openhands_fallback(
-    *,
-    run_dir: Path,
-    round_number: int,
-    process_exit_code: int,
-    project_path: Path,
-) -> bool:
-    if process_exit_code != 0:
-        return False
-    if os.environ.get("HOCA_PROFILE_OPENHANDS_FALLBACK", "true").strip().lower() in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }:
-        return False
-    if _project_has_changes(project_path):
-        return False
-
-    attempt_status = _attempt_report_status(worker_attempt_path(run_dir, round_number))
-    return attempt_status in {"failed", "blocked"} or attempt_status is None
-
-
 def run_worker_hermes(
     *,
     project_path: Path,
@@ -467,7 +380,6 @@ def run_worker_hermes(
     run_dir: Path,
     round_number: int,
     repair_brief: str | None = None,
-    use_hermes_profiles: bool | None = None,
     hermes_home: Path | None = None,
 ) -> WorkerRunResult:
     if round_number < 1:
@@ -479,122 +391,51 @@ def run_worker_hermes(
     ensure_run_layout(run_dir)
 
     spec = load_task_spec(task_spec_path)
-    cfg = load_config()
-    profile_mode = cfg.use_hermes_profiles if use_hermes_profiles is None else use_hermes_profiles
-
-    if profile_mode:
-        verify_profile_prerequisites(hermes_home=hermes_home)
-        prompt = build_worker_hermes_prompt(
-            spec=spec,
-            project_path=project_path,
-            run_dir=run_dir,
-            round_number=round_number,
-            task_spec_path=task_spec_path,
-            repair_brief=repair_brief,
-        )
-        prompt_path = run_dir / f"worker-hermes-prompt-round-{round_number}.txt"
-        prompt_path.write_text(prompt + "\n", encoding="utf-8")
-
-        result = _invoke_hermes_worker(
-            prompt=prompt,
-            run_dir=run_dir,
-            timeout_seconds=_resolve_timeout_seconds(),
-            max_turns=_resolve_max_turns(),
-        )
-        if _profile_attempt_needs_openhands_fallback(
-            run_dir=run_dir,
-            round_number=round_number,
-            process_exit_code=result.returncode,
-            project_path=project_path,
-        ):
-            openhands_task = build_legacy_openhands_task(
-                spec=spec,
-                repair_brief=repair_brief,
-            )
-            fallback_task_path = run_dir / f"openhands-profile-fallback-round-{round_number}.txt"
-            fallback_task_path.write_text(openhands_task + "\n", encoding="utf-8")
-            fallback_result = _run_openhands_wrapper(
-                project_path=project_path,
-                task=openhands_task,
-                run_dir=run_dir,
-                cfg=cfg,
-            )
-            fallback_status = _infer_worker_status(
-                run_dir,
-                process_exit_code=fallback_result.returncode,
-            )
-            attempt_path = record_worker_attempt(
-                run_dir,
-                round_number=round_number,
-                status=fallback_status,
-                mode="legacy",
-                project_path=project_path,
-                summary=[
-                    "Hermes profile worker exited without producing project changes; "
-                    "HOCA reran the implementation through the direct OpenHands wrapper.",
-                    f"Profile worker exit code: {result.returncode}.",
-                    f"Fallback OpenHands exit code: {fallback_result.returncode}.",
-                ],
-            )
-            return WorkerRunResult(
-                mode="profile-fallback",
-                exit_code=fallback_result.returncode,
-                worker_attempt_path=attempt_path,
-                hermes_stdout_path=run_dir / "logs" / "worker-hermes-stdout.txt",
-                hermes_stderr_path=run_dir / "logs" / "worker-hermes-stderr.txt",
-            )
-
-        status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
-        status = _missing_profile_attempt_status(
-            run_dir,
-            round_number=round_number,
-            process_exit_code=result.returncode,
-            inferred_status=status,
-            project_path=project_path,
-        )
-        attempt_path = _ensure_worker_attempt_report(
-            run_dir,
-            round_number=round_number,
-            status=status,
-            mode="profile",
-            project_path=project_path,
-        )
-        return WorkerRunResult(
-            mode="profile",
-            exit_code=result.returncode,
-            worker_attempt_path=attempt_path,
-            hermes_stdout_path=run_dir / "logs" / "worker-hermes-stdout.txt",
-            hermes_stderr_path=run_dir / "logs" / "worker-hermes-stderr.txt",
-        )
-
-    openhands_task = build_legacy_openhands_task(spec=spec, repair_brief=repair_brief)
-    task_path = run_dir / f"openhands-task-round-{round_number}.txt"
-    task_path.write_text(openhands_task + "\n", encoding="utf-8")
-
-    result = _run_openhands_wrapper(
+    verify_profile_prerequisites(hermes_home=hermes_home)
+    prompt = build_worker_hermes_prompt(
+        spec=spec,
         project_path=project_path,
-        task=openhands_task,
         run_dir=run_dir,
-        cfg=cfg,
+        round_number=round_number,
+        task_spec_path=task_spec_path,
+        repair_brief=repair_brief,
+    )
+    prompt_path = run_dir / f"worker-hermes-prompt-round-{round_number}.txt"
+    prompt_path.write_text(prompt + "\n", encoding="utf-8")
+
+    result = _invoke_hermes_worker(
+        prompt=prompt,
+        run_dir=run_dir,
+        timeout_seconds=_resolve_timeout_seconds(),
+        max_turns=_resolve_max_turns(),
     )
     status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=round_number,
+        process_exit_code=result.returncode,
+        inferred_status=status,
+        project_path=project_path,
+    )
     attempt_path = _ensure_worker_attempt_report(
         run_dir,
         round_number=round_number,
         status=status,
-        mode="legacy",
+        mode="profile",
         project_path=project_path,
     )
     return WorkerRunResult(
-        mode="legacy",
+        mode="profile",
         exit_code=result.returncode,
         worker_attempt_path=attempt_path,
+        hermes_stdout_path=run_dir / "logs" / "worker-hermes-stdout.txt",
+        hermes_stderr_path=run_dir / "logs" / "worker-hermes-stderr.txt",
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run a HOCA worker attempt via Hermes profile or legacy OpenHands wrapper."
+        description="Run a HOCA worker attempt via the hoca-worker Hermes profile."
     )
     parser.add_argument("project_path", help="Path to the target Git repository")
     parser.add_argument("task_spec_path", help="Path to task-spec.json")

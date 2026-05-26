@@ -240,7 +240,7 @@ def record_worker_attempt(
     round_number: int,
     status: str,
     summary: list[str] | None = None,
-    mode: str = "legacy",
+    mode: str = "profile",
     project_path: Path | None = None,
 ) -> Path:
     ensure_run_layout(run_dir)
@@ -298,10 +298,7 @@ def record_worker_attempt(
         if blocked_reason:
             blocked_reason = _redact_secret_like_values(blocked_reason)
 
-    if mode == "profile":
-        commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
-    else:
-        commands_run = ["run-openhands-task.sh"]
+    commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
 
     auto_summary = summary or [f"Worker attempt {round_number} recorded with status {status}."]
     monitor_lines = _build_monitor_summary(monitor)
@@ -534,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_parser.add_argument("run_dir")
     worker_parser.add_argument("--round", type=int, required=True)
     worker_parser.add_argument("--status", default="completed")
-    worker_parser.add_argument("--mode", default="legacy", choices=["legacy", "profile"])
+    worker_parser.add_argument("--mode", default="profile", choices=["profile"])
     worker_parser.add_argument("--project-path", default=None)
 
     validation_parser = subparsers.add_parser("record-validation", help="Write validation report.")
@@ -592,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_dir,
                 round_number=args.round,
                 status=args.status,
-                mode=getattr(args, "mode", "legacy"),
+                mode=getattr(args, "mode", "profile"),
                 project_path=proj,
             )
             print(path)

@@ -54,7 +54,6 @@ WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
         "HOCA_REVIEW_ROUND",
         "HOCA_REVIEW_REPORT_PATH",
         "HOCA_SKIP_ROLE_MODEL_RESOLUTION",
-        "HOCA_USE_STRUCTURED_REPORTS",
         "HERMES_ACCEPT_HOOKS",
         "HERMES_HOME",
         "HOCA_ROOT",
