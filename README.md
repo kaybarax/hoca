@@ -50,10 +50,8 @@ Human or GitHub Issue
 | **Ollama / LM Studio / Cloud** | LLM runtime. Runs models locally (Ollama, LM Studio) or via cloud APIs (DeepSeek, Gemini, etc.). |
 | **Git + GitHub CLI** | Version control and pull request layer. |
 
-The profile-backed workflow is enabled with `HOCA_USE_HERMES_PROFILES=true`.
-When it is disabled, HOCA keeps the script-backed Manager -> OpenHands Worker
--> OpenHands Reviewer pipeline, using the resolved manager/worker/reviewer role
-model settings.
+HOCA runs through the profile-backed Manager -> Worker -> Reviewer workflow
+using the resolved manager/worker/reviewer role model settings.
 
 ## Requirements
 
@@ -166,8 +164,7 @@ After installation:
 
 ### Hermes Profiles
 
-To use the upgraded multi-agent workflow, install or refresh the bundled Hermes
-profiles:
+Install or refresh the bundled Hermes profiles:
 
 ```sh
 scripts/setup-hermes-profiles.sh
@@ -178,12 +175,6 @@ The setup creates profile scaffolding for:
 - `hoca-manager`
 - `hoca-worker`
 - `hoca-reviewer`
-
-Then enable profile dispatch:
-
-```env
-HOCA_USE_HERMES_PROFILES=true
-```
 
 Profiles give each role its own instructions, identity, and default behavior.
 They are not security sandboxes by themselves; HOCA still relies on scoped
@@ -267,9 +258,7 @@ HOCA stops for human intervention when the failure is classified as
 environmental or pre-existing, when the review tool itself crashes, or when
 all rounds are exhausted. Configure the round limit with
 `HOCA_MAX_TOTAL_ROUNDS` (default `3`): round 1 is the initial implementation
-plus review, and rounds 2-3 are repair plus review cycles. The legacy
-`HOCA_MAX_REPAIR_ATTEMPTS` variable is still accepted (value + 1 = total
-rounds).
+plus review, and rounds 2-3 are repair plus review cycles.
 
 ### Optional Durable Kanban Mode
 
@@ -281,7 +270,7 @@ HOCA_USE_KANBAN=false
 
 The standard `bin/hoca run /path/to/repo "Task"` workflow does not require a
 Hermes Kanban board or Kanban setup. Keep `HOCA_USE_KANBAN=false` for the
-script-backed Manager -> Worker -> Reviewer pipeline. Future Kanban commands can
+profile-backed Manager -> Worker -> Reviewer pipeline. Future Kanban commands can
 opt in to durable multi-agent coordination incrementally for longer-running work
 that needs restartable state, role handoffs, and an auditable task board.
 
