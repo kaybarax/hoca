@@ -6,7 +6,7 @@ usage() {
 Usage: generate-task-spec.sh /path/to/project "raw task" /path/to/run-dir [options]
 
 Gather repository metadata and project instructions, then write task-spec.json
-for a HOCA run. Works without Hermes profiles; manager/Hermes may refine later.
+for a HOCA profile-backed run.
 
 Options:
   --issue-id ID           Optional linked issue id

@@ -5,8 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: run-reviewer-hermes.sh /path/to/project /path/to/task-spec.json /path/to/run-dir ROUND
 
-Run a reviewer pass through the hoca-reviewer Hermes profile when
-HOCA_USE_HERMES_PROFILES=true, or fall back to review-with-openhands.sh in legacy mode.
+Run a reviewer pass through the hoca-reviewer Hermes profile.
 
 Reviewer model selection is resolved in hoca.reviewer_hermes from the reviewer
 role model. run-hoca-task.sh sources resolve-role-model-env.sh reviewer before

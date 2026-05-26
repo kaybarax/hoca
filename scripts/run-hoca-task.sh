@@ -15,8 +15,6 @@ AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
   MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
-elif [ -n "${HOCA_MAX_REPAIR_ATTEMPTS:-}" ]; then
-  MAX_TOTAL_ROUNDS="$((HOCA_MAX_REPAIR_ATTEMPTS + 1))"
 else
   MAX_TOTAL_ROUNDS=3
 fi
@@ -642,48 +640,28 @@ apply_round_loop_repair() {
   sync_run_status
 }
 
-hermes_profiles_enabled() {
-  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c \
-    'from hoca.config import load_config; import sys; sys.exit(0 if load_config().use_hermes_profiles else 1)' \
-    >/dev/null 2>&1
-}
-
 run_openhands_phase() {
   local phase_label="${1:-implementation}"
   local round_number="${2:-1}"
   local repair_brief_path="${3:-}"
   local openhands_exit=0
-  local used_worker_hermes="false"
 
-  echo "Running OpenHands ($phase_label)..."
+  echo "Running worker profile ($phase_label)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
   set +e
-  if hermes_profiles_enabled; then
-    used_worker_hermes="true"
-    echo "Routing worker attempt through run-worker-hermes.sh..."
-    local worker_cmd=(
-      "$SCRIPT_DIR/run-worker-hermes.sh"
-      "$WORKER_PROJECT_PATH"
-      "$(task_spec_path_for_run)"
-      "$RUN_DIR"
-      "$round_number"
-    )
-    if [ -n "$repair_brief_path" ]; then
-      worker_cmd+=(--repair-brief "$repair_brief_path")
-    fi
-    "${worker_cmd[@]}"
-    openhands_exit=$?
-  else
-    local phase_task
-    if [ -n "$repair_brief_path" ]; then
-      phase_task="$(cat "$repair_brief_path")"
-    else
-      phase_task="$(worker_task_prompt)"
-    fi
-    "$SCRIPT_DIR/run-openhands-task.sh" "$WORKER_PROJECT_PATH" "$phase_task" "$RUN_DIR"
-    openhands_exit=$?
+  local worker_cmd=(
+    "$SCRIPT_DIR/run-worker-hermes.sh"
+    "$WORKER_PROJECT_PATH"
+    "$(task_spec_path_for_run)"
+    "$RUN_DIR"
+    "$round_number"
+  )
+  if [ -n "$repair_brief_path" ]; then
+    worker_cmd+=(--repair-brief "$repair_brief_path")
   fi
+  "${worker_cmd[@]}"
+  openhands_exit=$?
   set -e
   if [ "$openhands_exit" -ne 0 ]; then
     local failure_status="failed"
@@ -693,19 +671,12 @@ run_openhands_phase() {
         failure_status="blocked"
       fi
     fi
-    if [ "$used_worker_hermes" != "true" ]; then
-      record_worker_attempt "$round_number" "$failure_status"
-    fi
     if [ "$failure_status" = "blocked" ]; then
       block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
     fi
     fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
   fi
-  if [ "$used_worker_hermes" = "true" ]; then
-    sync_run_status
-  else
-    record_worker_attempt "$round_number" "completed"
-  fi
+  sync_run_status
 }
 
 WORKER_ROUND=1

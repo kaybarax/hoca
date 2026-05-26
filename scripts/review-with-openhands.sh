@@ -188,11 +188,7 @@ Distinguish blockers from PR tech debt:
   unjustified file-size expansion, no spaghetti growth, and no needless
   abstraction or boundary drift.
 
-Also include the structured JSON in your final response inside a fenced \`\`\`json block.
-
-Legacy compatibility during transition:
-- If the changes are acceptable, end your final response with exactly: LGTM
-- If not acceptable, do not emit LGTM; explain required fixes clearly."
+Also include the structured JSON in your final response inside a fenced \`\`\`json block."
 
 PROMPT_FILE="$REVIEW_DIR/openhands-review-prompt.txt"
 printf '%s\n' "$REVIEW_TASK" > "$PROMPT_FILE"

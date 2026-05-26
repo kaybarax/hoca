@@ -486,7 +486,7 @@ main() {
     log "  1. Review rendered config.yaml files under $(hermes_home)/profiles/"
     log "  2. Run per-profile setup if API keys are needed: hermes -p hoca-manager setup"
     log "  3. Verify profiles: hermes -p hoca-manager doctor"
-    log "  4. Enable profiles in .env: HOCA_USE_HERMES_PROFILES=true"
+    log "  4. Run HOCA with the installed Hermes profiles."
   else
     fail "Hermes profile setup finished with errors."
   fi

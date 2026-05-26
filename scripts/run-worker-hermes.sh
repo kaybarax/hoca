@@ -5,8 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: run-worker-hermes.sh /path/to/project /path/to/task-spec.json /path/to/run-dir ROUND [options]
 
-Run a worker attempt through the hoca-worker Hermes profile when
-HOCA_USE_HERMES_PROFILES=true, or fall back to run-openhands-task.sh in legacy mode.
+Run a worker attempt through the hoca-worker Hermes profile.
 
 Worker model selection is resolved in hoca.worker_hermes from the worker role
 model. run-hoca-task.sh also sources resolve-role-model-env.sh worker before
