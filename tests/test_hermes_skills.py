@@ -60,7 +60,7 @@ def test_manager_skill_is_orchestration_focused() -> None:
     assert "hoca-reviewer-qa.md" in content
     assert "hoca-pr-publisher.md" in content
     assert "scripts/run-openhands-task.sh" in content
-    assert "scripts/review-with-openhands.sh" in content
+    assert "scripts/run-reviewer-hermes.sh" in content
 
 
 def test_manager_skill_defines_manual_procedures() -> None:
@@ -94,7 +94,7 @@ def test_manager_skill_references_structured_artifacts() -> None:
 def test_manager_skill_uses_wrapper_scripts_not_raw_openhands() -> None:
     content = (SKILLS_DIR / "hoca-manager.md").read_text(encoding="utf-8")
     assert "scripts/run-openhands-task.sh" in content
-    assert "scripts/review-with-openhands.sh" in content
+    assert "scripts/run-reviewer-hermes.sh" in content
     assert "scripts/check-definition-of-ready.sh" in content
     assert "scripts/hoca-doctor.sh" in content
     assert "scripts/run-tests.sh" in content

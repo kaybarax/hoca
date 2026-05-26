@@ -285,7 +285,7 @@ class TestRoleModelSelection:
         assert "secret" not in str(names)
 
 
-class TestModelPoolLegacyAndScale:
+class TestModelPoolFallbackAndScale:
     def test_one_configured_model_serves_all_roles(self) -> None:
         config = ModelPoolConfig(
             slots=(ModelSlot(name="solo", model="ollama/qwen-14b-pro", api_key="secret"),),

@@ -11,6 +11,36 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GUARDS = REPO_ROOT / "scripts" / "auto-merge-guards.sh"
 
 
+def write_review_report(run: Path, verdict: str = "LGTM") -> None:
+    (run / "reviews").mkdir(parents=True, exist_ok=True)
+    findings = []
+    if verdict != "LGTM":
+        findings = [
+            {
+                "id": "F1",
+                "severity": "medium",
+                "category": "correctness",
+                "file": None,
+                "summary": "Needs work.",
+                "required_fix": "Address reviewer feedback.",
+            }
+        ]
+    (run / "reviews" / "review-report-1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_id": run.name,
+                "round": 1,
+                "role": "reviewer",
+                "verdict": verdict,
+                "findings": findings,
+                "pr_notes": {"summary": ["reviewed"], "known_followups": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _run_guards(
     subcommand: str, run_dir: Path, *, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -32,7 +62,7 @@ def minimal_auto_merge_run(tmp_path: Path) -> Path:
     run.mkdir()
     (run / "status.json").write_text(json.dumps({"auto_merge": "true"}), encoding="utf-8")
     (run / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
-    (run / "openhands-review.txt").write_text("LGTM all good\n", encoding="utf-8")
+    write_review_report(run)
     (run / "risk-level.txt").write_text("low\n", encoding="utf-8")
     (run / "staged-files.txt").write_text("lib/widget.py\n", encoding="utf-8")
     return run
@@ -68,7 +98,7 @@ def test_precheck_fails_without_tests_exit_code(minimal_auto_merge_run: Path):
 
 
 def test_precheck_fails_without_lgtm(minimal_auto_merge_run: Path):
-    (minimal_auto_merge_run / "openhands-review.txt").write_text("needs work\n", encoding="utf-8")
+    write_review_report(minimal_auto_merge_run, "fix_required")
     proc = _run_guards(
         "precheck",
         minimal_auto_merge_run,

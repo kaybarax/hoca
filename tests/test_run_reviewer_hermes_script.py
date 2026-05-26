@@ -65,7 +65,6 @@ def run_script(
     env = os.environ.copy()
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
-    env["HOCA_USE_HERMES_PROFILES"] = "false"
     env["HOCA_USE_SANDBOX"] = "false"
     if fake_bin is not None:
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -81,11 +80,14 @@ def run_script(
     )
 
 
-def test_script_legacy_mode_writes_review_report(tmp_path: Path) -> None:
+def test_script_profile_mode_writes_review_report(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     make_fake_ollama(fake_bin)
-    make_fake_review_openhands(fake_bin)
+    make_fake_profile_hermes(fake_bin)
+    hermes_home = tmp_path / "hermes-home"
+    (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
+    capture_env = tmp_path / "reviewer-env.txt"
     project = tmp_path / "project"
     init_repo(project)
     (project / "README.md").write_text("changed\n", encoding="utf-8")
@@ -98,6 +100,10 @@ def test_script_legacy_mode_writes_review_report(tmp_path: Path) -> None:
         str(task_spec_path),
         str(run_dir),
         "1",
+        extra_env={
+            "HERMES_HOME": str(hermes_home),
+            "HERMES_CAPTURE_ENV": str(capture_env),
+        },
         fake_bin=fake_bin,
     )
 
@@ -107,7 +113,7 @@ def test_script_legacy_mode_writes_review_report(tmp_path: Path) -> None:
     assert json.loads(report.read_text(encoding="utf-8"))["verdict"] == "LGTM"
 
 
-def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -> None:
+def test_script_fails_without_hermes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     init_repo(project)
     run_dir = project / ".hoca-runtime" / "runs" / "run-profile"
@@ -121,10 +127,7 @@ def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -
         str(task_spec_path),
         str(run_dir),
         "1",
-        extra_env={
-            "PATH": f"{empty_bin}:/usr/bin:/bin",
-            "HOCA_USE_HERMES_PROFILES": "true",
-        },
+        extra_env={"PATH": f"{empty_bin}:/usr/bin:/bin"},
     )
 
     assert result.returncode == 1
@@ -151,7 +154,6 @@ def test_profile_mode_pins_nested_reviewer_to_selected_model(tmp_path: Path) -> 
         str(run_dir),
         "1",
         extra_env={
-            "HOCA_USE_HERMES_PROFILES": "true",
             "HERMES_HOME": str(hermes_home),
             "HOCA_REVIEWER_MODEL_NAME": "reviewer-cloud",
             "HOCA_REVIEWER_MODEL_MODEL": "deepseek/deepseek-v4-flash",
@@ -170,5 +172,6 @@ def test_profile_mode_pins_nested_reviewer_to_selected_model(tmp_path: Path) -> 
 def test_script_documents_required_behavior() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     assert "hoca.reviewer_hermes" in script
-    assert "HOCA_USE_HERMES_PROFILES" in script
+    removed_profile_toggle = "HOCA_USE_" + "HERMES_PROFILES"
+    assert removed_profile_toggle not in script
     assert "Not a Git repository" in script

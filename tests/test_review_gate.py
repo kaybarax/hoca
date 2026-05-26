@@ -6,7 +6,6 @@ import pytest
 
 from hoca.contracts import HocaReviewReport
 from hoca.review_gate import (
-    LEGACY_REVIEW_WARNING,
     ReviewGateError,
     ReviewGateResult,
     code_review_pr_fragment,
@@ -17,53 +16,19 @@ from hoca.review_gate import (
     try_extract_structured_report,
     try_resolve_review_gate,
 )
-from hoca.review_report_parser import ReviewReportParseError, legacy_text_to_report
 
 
-def test_legacy_lgtm_converts_to_approved_structured_report(tmp_path: Path) -> None:
+def test_unstructured_lgtm_text_is_rejected(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     review_text = run_dir / "openhands-review.txt"
     review_text.write_text("Looks correct.\nLGTM\n", encoding="utf-8")
 
-    result = evaluate_review_gate(run_dir, review_text_path=review_text, run_id="run-1")
-
-    assert result.approved is True
-    assert result.source == "legacy"
-    assert result.report.verdict == "LGTM"
-    assert result.report.findings == []
-    assert result.report_path == run_dir / "reviews" / "review-report-1.json"
-    assert HocaReviewReport.from_json(result.report_path.read_text(encoding="utf-8")).verdict == "LGTM"
+    with pytest.raises(ReviewGateError, match="structured HocaReviewReport"):
+        evaluate_review_gate(run_dir, review_text_path=review_text, run_id="run-1")
 
 
-def test_legacy_lgtm_compatibility_accepts_token_in_text() -> None:
-    report = legacy_text_to_report(
-        "LGTM all good",
-        run_id="run-1",
-        round_number=1,
-    )
-
-    assert report.verdict == "LGTM"
-
-
-def test_legacy_empty_output_is_rejected() -> None:
-    with pytest.raises(ReviewReportParseError, match="empty"):
-        legacy_text_to_report("", run_id="run-1", round_number=1)
-
-
-def test_legacy_missing_lgtm_converts_to_fix_required(tmp_path: Path) -> None:
-    report = legacy_text_to_report(
-        "Please add tests for the changed behavior.",
-        run_id="run-1",
-        round_number=1,
-    )
-
-    assert report.verdict == "fix_required"
-    assert report.findings[0].id == "legacy-review-1"
-    assert report.findings[0].required_fix == "Please add tests for the changed behavior."
-
-
-def test_structured_report_is_preferred_over_legacy_text(tmp_path: Path) -> None:
+def test_structured_report_is_used_when_review_text_is_freeform(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     reports = run_dir / "reviews"
     reports.mkdir(parents=True)
@@ -183,7 +148,7 @@ def test_try_resolve_review_gate_returns_none_without_artifacts(tmp_path: Path) 
     assert try_resolve_review_gate(run_dir, run_id="run-1") is None
 
 
-def test_cli_print_status_for_legacy_lgtm(tmp_path: Path, capsys) -> None:
+def test_cli_rejects_free_text_lgtm(tmp_path: Path, capsys) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     review_text = run_dir / "openhands-review.txt"
@@ -201,11 +166,11 @@ def test_cli_print_status_for_legacy_lgtm(tmp_path: Path, capsys) -> None:
                 "status",
             ]
         )
-        == 0
+        == 3
     )
     captured = capsys.readouterr()
-    assert captured.out.strip() == "LGTM"
-    assert LEGACY_REVIEW_WARNING in captured.err
+    assert captured.out.strip() == ""
+    assert "Review artifacts were not found" in captured.err
 
 
 def test_cli_does_not_warn_for_structured_review(tmp_path: Path, capsys) -> None:
@@ -240,7 +205,7 @@ def test_cli_does_not_warn_for_structured_review(tmp_path: Path, capsys) -> None
     )
     captured = capsys.readouterr()
     assert captured.out.strip() == "LGTM"
-    assert LEGACY_REVIEW_WARNING not in captured.err
+    assert captured.err == ""
 
 
 def test_code_review_pr_fragment_reflects_blocked_verdict() -> None:
@@ -308,7 +273,7 @@ def test_try_extract_structured_report_prefers_json_before_yaml() -> None:
 def test_try_extract_structured_report_from_openhands_message_event() -> None:
     review_text = (
         '{"kind":"MessageEvent","source":"user","llm_message":{"content":[{"text":"'
-        'Legacy prompt says LGTM | fix_required | blocked"}]}}\n'
+        'Free text prompt says LGTM | fix_required | blocked"}]}}\n'
         '{"kind":"MessageEvent","source":"agent","llm_message":{"content":[{"text":'
         '"{\\"schema_version\\":1,\\"run_id\\":\\"run-1\\",\\"round\\":1,'
         '\\"role\\":\\"reviewer\\",\\"verdict\\":\\"fix_required\\",'

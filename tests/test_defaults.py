@@ -15,8 +15,6 @@ from hoca.config import (
 
 def test_required_defaults_are_safe() -> None:
     cfg = HocaConfig()
-    assert cfg.use_hermes_profiles is False
-    assert cfg.use_structured_reports is True
     assert cfg.use_kanban is False
     assert cfg.use_sandbox is True
     assert cfg.use_worktree_sandbox is True

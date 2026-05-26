@@ -44,16 +44,16 @@ class TestLoadConfigDefaults:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / "hoca.env"
-        env_file.write_text("HOCA_USE_HERMES_PROFILES=true\n", encoding="utf-8")
+        env_file.write_text("HOCA_MAX_TOTAL_ROUNDS=4\n", encoding="utf-8")
         target_repo = tmp_path / "target"
         target_repo.mkdir()
         monkeypatch.chdir(target_repo)
         monkeypatch.setenv("HOCA_DOTENV_PATH", str(env_file))
-        monkeypatch.delenv("HOCA_USE_HERMES_PROFILES", raising=False)
+        monkeypatch.delenv("HOCA_MAX_TOTAL_ROUNDS", raising=False)
 
         cfg = load_config()
 
-        assert cfg.use_hermes_profiles is True
+        assert cfg.max_total_rounds == 4
 
     def test_defaults_without_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         empty_env = tmp_path / ".env"
@@ -62,19 +62,15 @@ class TestLoadConfigDefaults:
             "HOCA_AUTO_MERGE",
             "HOCA_REQUIRE_TESTS",
             "HOCA_REQUIRE_REVIEW",
-            "HOCA_REQUIRE_AIDER_LGTM",
             "HOCA_STOP_ON_DIRTY_TREE",
             "HOCA_SYNC_DEV_BRANCH",
             "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
-            "HOCA_USE_HERMES_PROFILES",
-            "HOCA_USE_STRUCTURED_REPORTS",
             "HOCA_USE_KANBAN",
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
-            "HOCA_MAX_REPAIR_ATTEMPTS",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_HOST",
             "OLLAMA_BASE_URL",
@@ -93,8 +89,6 @@ class TestLoadConfigDefaults:
 
         cfg = load_config(dotenv_path=empty_env)
 
-        assert cfg.use_hermes_profiles is False
-        assert cfg.use_structured_reports is True
         assert cfg.use_kanban is False
         assert cfg.use_sandbox is True
         assert cfg.use_worktree_sandbox is True
@@ -126,8 +120,6 @@ class TestLoadConfigDefaults:
             "HOCA_RESTORE_DEV_BRANCH=false\n"
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES=false\n"
             "HOCA_WORKSPACE_ROOT=~/projects\n"
-            "HOCA_USE_HERMES_PROFILES=true\n"
-            "HOCA_USE_STRUCTURED_REPORTS=false\n"
             "HOCA_USE_KANBAN=true\n"
             "HOCA_USE_SANDBOX=false\n"
             "HOCA_USE_WORKTREE_SANDBOX=false\n"
@@ -141,8 +133,6 @@ class TestLoadConfigDefaults:
             "HOCA_RESTORE_DEV_BRANCH",
             "HOCA_AUTO_STAGE_REVIEWED_CHANGES",
             "HOCA_WORKSPACE_ROOT",
-            "HOCA_USE_HERMES_PROFILES",
-            "HOCA_USE_STRUCTURED_REPORTS",
             "HOCA_USE_KANBAN",
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
@@ -161,38 +151,9 @@ class TestLoadConfigDefaults:
         assert cfg.auto_stage_reviewed_changes is False
         assert cfg.workspace_root is not None
         assert "~" not in str(cfg.workspace_root)
-        assert cfg.use_hermes_profiles is True
-        assert cfg.use_structured_reports is False
         assert cfg.use_kanban is True
         assert cfg.use_sandbox is False
         assert cfg.use_worktree_sandbox is False
-        assert cfg.max_total_rounds == 5
-
-    def test_legacy_max_repair_attempts_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("HOCA_MAX_REPAIR_ATTEMPTS=2\n")
-        monkeypatch.delenv("HOCA_MAX_TOTAL_ROUNDS", raising=False)
-        monkeypatch.delenv("HOCA_MAX_REPAIR_ATTEMPTS", raising=False)
-
-        cfg = load_config(dotenv_path=env_file)
-
-        assert cfg.max_total_rounds == 3
-
-    def test_max_total_rounds_takes_precedence_over_legacy_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text(
-            "HOCA_MAX_TOTAL_ROUNDS=5\n"
-            "HOCA_MAX_REPAIR_ATTEMPTS=1\n"
-        )
-        monkeypatch.delenv("HOCA_MAX_TOTAL_ROUNDS", raising=False)
-        monkeypatch.delenv("HOCA_MAX_REPAIR_ATTEMPTS", raising=False)
-
-        cfg = load_config(dotenv_path=env_file)
-
         assert cfg.max_total_rounds == 5
 
     def test_env_var_overrides_dotenv(
@@ -398,16 +359,14 @@ class TestSafeRepr:
         assert safe["ollama_model"] == "test-model"
 
 
-class TestLegacyEnvVarBackwardCompat:
-    """Task 17.3: existing .env files remain mostly usable after the upgrade."""
+class TestCurrentEnvVars:
+    """Current .env variables remain usable after the profile-only upgrade."""
 
     @staticmethod
-    def _clear_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _clear_current_env(monkeypatch: pytest.MonkeyPatch) -> None:
         for key in [
             "HOCA_MAX_TOTAL_ROUNDS",
-            "HOCA_MAX_REPAIR_ATTEMPTS",
             "HOCA_REQUIRE_REVIEW",
-            "HOCA_REQUIRE_AIDER_LGTM",
             "HOCA_AUTO_MERGE",
             "HOCA_REQUIRE_TESTS",
             "HOCA_NOTIFY_TELEGRAM",
@@ -426,25 +385,16 @@ class TestLegacyEnvVarBackwardCompat:
             monkeypatch.delenv(key, raising=False)
         _clear_role_model_env(monkeypatch)
 
-    def test_hoca_max_repair_attempts_alias(
+    def test_hoca_max_total_rounds(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
-        env_file.write_text("HOCA_MAX_REPAIR_ATTEMPTS=2\n")
-        self._clear_legacy_env(monkeypatch)
-        cfg = load_config(dotenv_path=env_file)
-        assert cfg.max_total_rounds == 3
-
-    def test_hoca_max_total_rounds_overrides_legacy_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("HOCA_MAX_TOTAL_ROUNDS=5\nHOCA_MAX_REPAIR_ATTEMPTS=1\n")
-        self._clear_legacy_env(monkeypatch)
+        env_file.write_text("HOCA_MAX_TOTAL_ROUNDS=5\n")
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.max_total_rounds == 5
 
-    def test_legacy_llm_env_vars_are_ignored(
+    def test_direct_llm_env_vars_are_ignored_by_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -453,7 +403,7 @@ class TestLegacyEnvVarBackwardCompat:
             "LLM_BASE_URL=http://10.0.0.1:11434\n"
             "LLM_API_KEY=my-key\n"
         )
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert not hasattr(cfg, "llm_model")
         assert cfg.ollama_model == "qwen-14b-pro"
@@ -463,7 +413,7 @@ class TestLegacyEnvVarBackwardCompat:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("OLLAMA_HOST=http://10.0.0.5:11434\n")
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.ollama_host == "http://10.0.0.5:11434"
         assert cfg.ollama_base_url == "http://10.0.0.5:11434"
@@ -476,7 +426,7 @@ class TestLegacyEnvVarBackwardCompat:
             "OLLAMA_HOST=http://host-value:11434\n"
             "OLLAMA_BASE_URL=http://base-url-value:11434\n"
         )
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.ollama_base_url == "http://base-url-value:11434"
         assert cfg.ollama_host == "http://host-value:11434"
@@ -486,7 +436,7 @@ class TestLegacyEnvVarBackwardCompat:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("OLLAMA_API_BASE=http://10.0.0.7:11434\n")
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.ollama_api_base == "http://10.0.0.7:11434"
 
@@ -495,32 +445,20 @@ class TestLegacyEnvVarBackwardCompat:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("OLLAMA_BASE_URL=http://10.0.0.9:11434\n")
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.ollama_api_base == "http://10.0.0.9:11434"
 
-    def test_require_aider_lgtm_alias(
+    def test_require_review_controls_review_gate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
-        env_file.write_text("HOCA_REQUIRE_AIDER_LGTM=false\n")
-        self._clear_legacy_env(monkeypatch)
+        env_file.write_text("HOCA_REQUIRE_REVIEW=false\n")
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.require_review is False
 
-    def test_require_review_overrides_legacy_aider_lgtm(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text(
-            "HOCA_REQUIRE_REVIEW=true\n"
-            "HOCA_REQUIRE_AIDER_LGTM=false\n"
-        )
-        self._clear_legacy_env(monkeypatch)
-        cfg = load_config(dotenv_path=env_file)
-        assert cfg.require_review is True
-
-    def test_legacy_notification_env_vars(
+    def test_notification_env_vars(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -529,13 +467,13 @@ class TestLegacyEnvVarBackwardCompat:
             "TELEGRAM_BOT_TOKEN=bot123\n"
             "TELEGRAM_CHAT_ID=chat456\n"
         )
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.notify_telegram is True
         assert cfg.telegram_bot_token == "bot123"
         assert cfg.telegram_chat_id == "chat456"
 
-    def test_legacy_webhook_env_vars(
+    def test_webhook_env_vars(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -546,7 +484,7 @@ class TestLegacyEnvVarBackwardCompat:
             "HOCA_MAX_WEBHOOK_BYTES=32768\n"
             "HOCA_WORKSPACE_ROOT=/tmp/code\n"
         )
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.webhook_secret == "sec123"
         assert cfg.webhook_url == "https://example.com/webhook"
@@ -563,7 +501,7 @@ class TestLegacyEnvVarBackwardCompat:
             "LLM_BASE_URL=http://127.0.0.1:11434\n"
             "LLM_API_KEY=ollama\n"
         )
-        self._clear_legacy_env(monkeypatch)
+        self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.model_pool.is_active is False
         assert cfg.ollama_model == "qwen-14b-pro"

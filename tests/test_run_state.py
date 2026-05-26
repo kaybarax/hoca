@@ -412,11 +412,22 @@ def test_write_final_state_writes_atomic_json(tmp_path: Path) -> None:
     assert not path.with_suffix(".json.tmp").exists()
 
 
-def test_summarize_run_for_pr_body_from_legacy_files(tmp_path: Path) -> None:
+def test_summarize_run_for_pr_body_from_current_artifacts(tmp_path: Path) -> None:
     run_dir = ensure_run_dir(tmp_path, "run-pr")
     (run_dir / "changed-files.txt").write_text("src/app.py\n", encoding="utf-8")
     (run_dir / "tests-summary.md").write_text("# Tests\n\npassed\n", encoding="utf-8")
-    (run_dir / "openhands-review.txt").write_text("LGTM\n", encoding="utf-8")
+    write_json_atomic(
+        optional_report_path(run_dir, "review_report", round_number=1),
+        {
+            "schema_version": 1,
+            "run_id": "run-pr",
+            "round": 1,
+            "role": "reviewer",
+            "verdict": "LGTM",
+            "findings": [],
+            "pr_notes": {"summary": ["Looks good."], "known_followups": []},
+        },
+    )
     (run_dir / "risk-notes.txt").write_text("Low rollout risk.\n", encoding="utf-8")
 
     fragments = summarize_run_for_pr_body(
@@ -475,7 +486,7 @@ def test_summarize_run_for_pr_body_uses_structured_reports(tmp_path: Path) -> No
     assert "Needs another pass" not in fragments["code-review"]
 
 
-def test_summarize_run_for_pr_body_prefers_structured_lgtm_over_legacy_text(
+def test_summarize_run_for_pr_body_uses_structured_lgtm(
     tmp_path: Path,
 ) -> None:
     run_dir = ensure_run_dir(tmp_path, "run-structured-lgtm")
@@ -503,8 +514,6 @@ def test_workflow_fields_from_config_defaults() -> None:
     fields = workflow_fields_from_config(cfg)
     assert fields == {
         "workflow_version": WORKFLOW_VERSION,
-        "use_hermes_profiles": False,
-        "structured_reports": True,
         "max_total_rounds": 3,
         "sandbox_mode": "docker",
         "worktree_mode": True,
@@ -518,12 +527,10 @@ def test_write_initial_status_includes_workflow_metadata(tmp_path: Path) -> None
         run_id="run-status-init",
         task="Fix status metadata",
         max_total_rounds=5,
-        cfg=HocaConfig(use_hermes_profiles=True, use_structured_reports=False, use_sandbox=False),
+        cfg=HocaConfig(use_sandbox=False),
     )
     data = read_json(run_dir / "status.json")
     assert data["workflow_version"] == WORKFLOW_VERSION
-    assert data["use_hermes_profiles"] is True
-    assert data["structured_reports"] is False
     assert data["max_total_rounds"] == 5
     assert data["current_round"] == 0
     assert data["final_state"] is None
@@ -585,7 +592,7 @@ def test_write_status_preserves_existing_fields_and_syncs(tmp_path: Path) -> Non
     write_initial_status(
         run_dir,
         run_id="run-status-update",
-        task="Keep legacy consumers working",
+        task="Keep current consumers working",
         auto_merge="true",
         cfg=HocaConfig(),
     )
@@ -593,6 +600,6 @@ def test_write_status_preserves_existing_fields_and_syncs(tmp_path: Path) -> Non
     data = read_json(run_dir / "status.json")
     assert data["status"] == "running"
     assert data["run_id"] == "run-status-update"
-    assert data["task"] == "Keep legacy consumers working"
+    assert data["task"] == "Keep current consumers working"
     assert data["auto_merge"] == "true"
     assert data["workflow_version"] == WORKFLOW_VERSION

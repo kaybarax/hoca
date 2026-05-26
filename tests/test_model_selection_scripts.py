@@ -343,8 +343,11 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
         '  echo "openhands --headless --task --override-with-envs --json"\n'
         "  exit 0\n"
         "fi\n"
-        "echo 'Review complete.'\n"
-        "echo 'LGTM'\n",
+        "cat <<'JSON'\n"
+        '{"schema_version":1,"run_id":"run","round":1,"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
+        '"known_followups":[]}}\n'
+        "JSON\n",
         encoding="utf-8",
     )
     openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
@@ -376,7 +379,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     assert "Do not implement fixes" in prompt
     assert "Severity rubric:" in prompt
     assert "PR tech debt" in prompt
-    assert "end your final response with exactly: LGTM" in prompt
+    assert "structured JSON" in prompt
 
 
 def test_review_with_openhands_materializes_structured_json_from_output(tmp_path: Path) -> None:

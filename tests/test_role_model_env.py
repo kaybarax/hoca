@@ -157,7 +157,7 @@ class TestRoleModelResolution:
 
 
 class TestModelPoolDoctorLines:
-    def test_inactive_pool_reports_legacy_mode(self) -> None:
+    def test_inactive_pool_reports_ollama_fallback_mode(self) -> None:
         lines = model_pool_doctor_lines(HocaConfig())
 
         assert any(status == "ok" and "inactive" in message for status, message in lines)
@@ -247,7 +247,7 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
     ]
 
 
-def test_load_config_empty_pool_ignores_legacy_llm_env(
+def test_load_config_empty_pool_ignores_direct_llm_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env_file = tmp_path / ".env"

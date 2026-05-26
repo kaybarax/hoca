@@ -21,7 +21,14 @@ def init_repo(path: Path) -> None:
 
 def write_run_files(run_dir: Path, *, producer: str = "reviewer") -> None:
     run_dir.mkdir(parents=True)
-    (run_dir / "openhands-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
+    reviews_dir = run_dir / "reviews"
+    reviews_dir.mkdir()
+    (reviews_dir / "review-report-1.json").write_text(
+        '{"schema_version":1,"run_id":"run-1","round":1,"role":"reviewer",'
+        '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
+        '"known_followups":[]}}\n',
+        encoding="utf-8",
+    )
     (run_dir / "intended-files-source.txt").write_text(f"{producer}\n", encoding="utf-8")
 
 
@@ -140,7 +147,14 @@ def test_safe_stage_requires_lgtm_review(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
     write_run_files(run_dir)
-    (run_dir / "openhands-review.txt").write_text("Needs changes.\n", encoding="utf-8")
+    (run_dir / "reviews" / "review-report-1.json").write_text(
+        '{"schema_version":1,"run_id":"run-1","round":1,"role":"reviewer",'
+        '"verdict":"fix_required","findings":[{"id":"F1","severity":"medium",'
+        '"category":"correctness","file":null,"summary":"Needs changes.",'
+        '"required_fix":"Update the implementation."}],"pr_notes":{"summary":["Needs changes."],'
+        '"known_followups":[]}}\n',
+        encoding="utf-8",
+    )
     (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
 

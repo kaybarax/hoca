@@ -8,14 +8,14 @@ from click.testing import CliRunner
 
 from hoca.cli import main
 
-LEGACY_CLI_COMMANDS = {
+CLI_COMMANDS = {
     "doctor": "Check local HOCA dependencies",
     "init-project": "Install HOCA project-level templates",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
 }
 
-LEGACY_DIRECT_ENTRYPOINTS = [
+DIRECT_ENTRYPOINTS = [
     "bin/hoca",
     "scripts/hoca-doctor.sh",
     "scripts/init-project.sh",
@@ -42,18 +42,18 @@ def test_cli_help_displays_group_help() -> None:
     assert "report" in result.output
 
 
-def test_legacy_cli_commands_remain_registered() -> None:
-    for command, help_text in LEGACY_CLI_COMMANDS.items():
+def test_cli_commands_remain_registered() -> None:
+    for command, help_text in CLI_COMMANDS.items():
         result = CliRunner().invoke(main, [command, "--help"])
 
         assert result.exit_code == 0
         assert help_text in result.output
 
 
-def test_legacy_direct_entrypoints_remain_executable_and_parseable() -> None:
+def test_direct_entrypoints_remain_executable_and_parseable() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    for relative_path in LEGACY_DIRECT_ENTRYPOINTS:
+    for relative_path in DIRECT_ENTRYPOINTS:
         entrypoint = repo_root / relative_path
 
         assert entrypoint.is_file()

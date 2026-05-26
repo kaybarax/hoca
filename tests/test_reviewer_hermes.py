@@ -16,22 +16,6 @@ from hoca.reviewer_hermes import (
 from tests.test_worker_hermes import clear_model_env, init_repo, make_fake_ollama, sample_task_spec
 
 
-def make_fake_review_openhands(fake_bin: Path) -> None:
-    openhands = fake_bin / "openhands"
-    openhands.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        'if [[ "${1:-}" == "--help" ]]; then\n'
-        '  echo "openhands --headless --task --override-with-envs --json"\n'
-        "  exit 0\n"
-        "fi\n"
-        "echo 'Review complete.'\n"
-        "echo 'LGTM'\n",
-        encoding="utf-8",
-    )
-    openhands.chmod(openhands.stat().st_mode | 0o100)
-
-
 def test_verify_profile_prerequisites_requires_hermes_and_reviewer_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -84,42 +68,6 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "[redacted: possible secret]" in prompt
 
 
-def test_run_reviewer_hermes_legacy_mode_writes_review_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    make_fake_ollama(fake_bin)
-    make_fake_review_openhands(fake_bin)
-    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
-
-    project = tmp_path / "project"
-    init_repo(project)
-    (project / "README.md").write_text("changed\n", encoding="utf-8")
-    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
-    ensure_run_layout(run_dir)
-    spec = sample_task_spec(repo_root=str(project))
-    task_spec_path = run_dir / "task-spec.json"
-    task_spec_path.write_text(spec.to_json(), encoding="utf-8")
-
-    result = run_reviewer_hermes(
-        project_path=project,
-        task_spec_path=task_spec_path,
-        run_dir=run_dir,
-        round_number=1,
-        use_hermes_profiles=False,
-    )
-
-    assert result.mode == "legacy"
-    assert result.exit_code == 0
-    assert result.review_report_path == review_report_path(run_dir, 1)
-    report = HocaReviewReport.from_json(result.review_report_path.read_text(encoding="utf-8"))
-    assert report.verdict == "LGTM"
-    assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
-    assert (run_dir / "review" / "git-diff.patch").is_file()
-
-
 def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -168,7 +116,6 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
         task_spec_path=task_spec_path,
         run_dir=run_dir,
         round_number=2,
-        use_hermes_profiles=True,
         hermes_home=hermes_home,
     )
 
@@ -217,7 +164,6 @@ def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
         task_spec_path=task_spec_path,
         run_dir=run_dir,
         round_number=1,
-        use_hermes_profiles=True,
         hermes_home=hermes_home,
     )
 
@@ -267,7 +213,6 @@ def test_run_reviewer_hermes_normalizes_multiline_pr_notes(
         task_spec_path=task_spec_path,
         run_dir=run_dir,
         round_number=1,
-        use_hermes_profiles=True,
         hermes_home=hermes_home,
     )
 
@@ -310,7 +255,6 @@ def test_run_reviewer_hermes_missing_profile_report_is_blocked(
         task_spec_path=task_spec_path,
         run_dir=run_dir,
         round_number=1,
-        use_hermes_profiles=True,
         hermes_home=hermes_home,
     )
 

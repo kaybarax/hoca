@@ -63,7 +63,6 @@ def run_script(
     env = os.environ.copy()
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
-    env["HOCA_USE_HERMES_PROFILES"] = "false"
     env["HOCA_USE_SANDBOX"] = "false"
     if fake_bin is not None:
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -109,11 +108,31 @@ def write_task_spec(run_dir: Path) -> Path:
     return path
 
 
-def test_script_legacy_mode_writes_worker_attempt(tmp_path: Path) -> None:
+def make_fake_worker_hermes(fake_bin: Path) -> None:
+    hermes = fake_bin / "hermes"
+    hermes.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
+        'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
+        'cat > "$RUN_DIR/attempts/worker-attempt-1.json" <<EOF\n'
+        '{"schema_version":1,"run_id":"run-shell","round":1,"role":"worker",'
+        '"status":"completed","changed_files":[],"summary":["ok"],'
+        '"commands_run":["run-worker-hermes.sh"],"tests_run":[],"known_risks":[],'
+        '"blocked_reason":null,"artifact_paths":{}}\n'
+        "EOF\n",
+        encoding="utf-8",
+    )
+    hermes.chmod(hermes.stat().st_mode | stat.S_IXUSR)
+
+
+def test_script_profile_mode_writes_worker_attempt(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     make_fake_ollama(fake_bin)
-    make_fake_openhands(fake_bin)
+    make_fake_worker_hermes(fake_bin)
+    hermes_home = tmp_path / "hermes-home"
+    (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
 
     project = tmp_path / "project"
     init_repo(project)
@@ -126,6 +145,7 @@ def test_script_legacy_mode_writes_worker_attempt(tmp_path: Path) -> None:
         str(task_spec_path),
         str(run_dir),
         "1",
+        extra_env={"HERMES_HOME": str(hermes_home), "HERMES_TEST_RUN_DIR": str(run_dir)},
         fake_bin=fake_bin,
     )
 
@@ -137,7 +157,7 @@ def test_script_legacy_mode_writes_worker_attempt(tmp_path: Path) -> None:
     assert data["round"] == 1
 
 
-def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -> None:
+def test_script_fails_without_hermes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     init_repo(project)
     run_dir = project / ".hoca-runtime" / "runs" / "run-profile"
@@ -152,10 +172,7 @@ def test_script_fails_when_profile_mode_enabled_without_hermes(tmp_path: Path) -
         str(task_spec_path),
         str(run_dir),
         "1",
-        extra_env={
-            "PATH": f"{empty_bin}:/usr/bin:/bin",
-            "HOCA_USE_HERMES_PROFILES": "true",
-        },
+        extra_env={"PATH": f"{empty_bin}:/usr/bin:/bin"},
     )
 
     assert result.returncode == 1
@@ -166,5 +183,6 @@ def test_script_documents_required_behavior() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     assert "hoca.worker_hermes" in script
     assert "--repair-brief" in script
-    assert "HOCA_USE_HERMES_PROFILES" in script
+    removed_profile_toggle = "HOCA_USE_" + "HERMES_PROFILES"
+    assert removed_profile_toggle not in script
     assert "Not a Git repository" in script

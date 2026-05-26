@@ -12,7 +12,6 @@ from hoca.contracts import HocaAttemptReport, HocaRoleModelSelection, HocaSandbo
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
-    build_legacy_openhands_task,
     build_worker_hermes_prompt,
     _infer_worker_status,
     _missing_profile_attempt_status,
@@ -135,25 +134,6 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
     assert "- repo_root: /Users/example/original-checkout" not in prompt
 
 
-def test_build_legacy_openhands_task_prefers_repair_brief() -> None:
-    spec = sample_task_spec(goal="Original goal")
-    repair = "Fix failing tests in src/app.py"
-    repair_prompt = build_legacy_openhands_task(spec=spec, repair_brief=repair)
-    goal_prompt = build_legacy_openhands_task(spec=spec)
-
-    assert repair in repair_prompt
-    assert "Original goal" not in repair_prompt
-    assert "Bounded iteration discipline" in repair_prompt
-    assert "Implementation quality principles" in repair_prompt
-    assert "Fix root causes" in repair_prompt
-    assert "acceptance_criteria" in repair_prompt
-    assert "Do not stage, commit, push" in repair_prompt
-
-    assert spec.goal in goal_prompt
-    assert "completion is genuinely true" in goal_prompt
-    assert "Use the type system honestly" in goal_prompt
-
-
 def test_load_task_spec_reads_json(tmp_path: Path) -> None:
     spec_path = tmp_path / "task-spec.json"
     spec = sample_task_spec()
@@ -229,83 +209,6 @@ def init_repo(path: Path) -> None:
     (path / "README.md").write_text("initial\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
-
-
-def test_run_worker_hermes_legacy_mode_writes_attempt_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    make_fake_ollama(fake_bin)
-    make_fake_openhands(fake_bin)
-    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
-
-    project = tmp_path / "project"
-    init_repo(project)
-    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
-    ensure_run_layout(run_dir)
-    spec = sample_task_spec(repo_root=str(project))
-    task_spec_path = run_dir / "task-spec.json"
-    task_spec_path.write_text(spec.to_json(), encoding="utf-8")
-
-    result = run_worker_hermes(
-        project_path=project,
-        task_spec_path=task_spec_path,
-        run_dir=run_dir,
-        round_number=1,
-        use_hermes_profiles=False,
-    )
-
-    assert result.mode == "legacy"
-    assert result.exit_code == 0
-    assert result.worker_attempt_path == worker_attempt_path(run_dir, 1)
-    report = HocaAttemptReport.from_json(result.worker_attempt_path.read_text(encoding="utf-8"))
-    assert report.status == "completed"
-    assert report.round == 1
-    assert (run_dir / "openhands-task-round-1.txt").is_file()
-
-
-def test_run_worker_hermes_legacy_failure_still_writes_attempt_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    make_fake_ollama(fake_bin)
-    openhands = fake_bin / "openhands"
-    openhands.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        'if [[ "${1:-}" == "--help" ]]; then\n'
-        '  echo "openhands --headless --task --override-with-envs --json"\n'
-        "  exit 0\n"
-        "fi\n"
-        "exit 9\n",
-        encoding="utf-8",
-    )
-    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
-
-    project = tmp_path / "project"
-    init_repo(project)
-    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
-    ensure_run_layout(run_dir)
-    spec = sample_task_spec(repo_root=str(project))
-    task_spec_path = run_dir / "task-spec.json"
-    task_spec_path.write_text(spec.to_json(), encoding="utf-8")
-
-    result = run_worker_hermes(
-        project_path=project,
-        task_spec_path=task_spec_path,
-        run_dir=run_dir,
-        round_number=1,
-        use_hermes_profiles=False,
-    )
-
-    assert result.exit_code == 9
-    report = HocaAttemptReport.from_json(result.worker_attempt_path.read_text(encoding="utf-8"))
-    assert report.status == "failed"
 
 
 def test_run_worker_hermes_profile_mode_invokes_hermes(
@@ -394,7 +297,6 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
         run_dir=run_dir,
         round_number=2,
         repair_brief="Fix README formatting only.",
-        use_hermes_profiles=True,
         hermes_home=hermes_home,
     )
 
@@ -408,92 +310,6 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     assert (run_dir / "logs" / "worker-hermes-stderr.txt").is_file()
     report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
     assert report["status"] == "completed"
-
-
-def test_profile_mode_falls_back_to_openhands_when_profile_makes_no_changes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    make_fake_ollama(fake_bin)
-    make_fake_openhands(fake_bin)
-
-    hermes_home = tmp_path / "hermes-home"
-    profile_dir = hermes_home / "profiles" / "hoca-worker"
-    profile_dir.mkdir(parents=True)
-
-    hermes = fake_bin / "hermes"
-    hermes.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
-        'ROUND="${HERMES_TEST_ROUND:?}"\n'
-        'mkdir -p "$RUN_DIR/attempts"\n'
-        'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
-        "{\n"
-        '  "schema_version": 1,\n'
-        '  "run_id": "run-test",\n'
-        '  "round": '"${HERMES_TEST_ROUND}"',\n'
-        '  "role": "worker",\n'
-        '  "status": "failed",\n'
-        '  "changed_files": [],\n'
-        '  "summary": ["profile planned only"],\n'
-        '  "commands_run": ["run-openhands-task.sh"],\n'
-        '  "tests_run": [],\n'
-        '  "known_risks": [],\n'
-        '  "blocked_reason": "no project changes",\n'
-        '  "artifact_paths": {}\n'
-        "}\n"
-        "EOF\n"
-        "echo 'profile planned only'\n"
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    hermes.chmod(hermes.stat().st_mode | stat.S_IXUSR)
-
-    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
-    clear_model_env(monkeypatch)
-
-    project = tmp_path / "project"
-    init_repo(project)
-    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
-    ensure_run_layout(run_dir)
-    spec = sample_task_spec(repo_root=str(project), goal="fallback task")
-    task_spec_path = run_dir / "task-spec.json"
-    task_spec_path.write_text(spec.to_json(), encoding="utf-8")
-
-    monkeypatch.setenv("HERMES_TEST_RUN_DIR", str(run_dir))
-    monkeypatch.setenv("HERMES_TEST_ROUND", "1")
-
-    result = run_worker_hermes(
-        project_path=project,
-        task_spec_path=task_spec_path,
-        run_dir=run_dir,
-        round_number=1,
-        use_hermes_profiles=True,
-        hermes_home=hermes_home,
-    )
-
-    assert result.mode == "profile-fallback"
-    assert result.exit_code == 0
-    fallback_task = (project / "README.md").read_text(encoding="utf-8").strip()
-    assert "HOCA execution root:" in fallback_task
-    assert (
-        "the only repository root you may read, write, inspect, or run commands in"
-        in fallback_task
-    )
-    assert "fallback task" in fallback_task
-    assert "Bounded iteration discipline" in fallback_task
-    assert "Name the data shape first" in fallback_task
-    assert "Only report the attempt as completed" in fallback_task
-    report = HocaAttemptReport.from_json(
-        result.worker_attempt_path.read_text(encoding="utf-8")
-    )
-    assert report.status == "completed"
-    assert report.changed_files == ["README.md"]
-    assert any("direct OpenHands wrapper" in item for item in report.summary)
 
 
 def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path: Path) -> None:

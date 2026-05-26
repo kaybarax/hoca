@@ -45,7 +45,22 @@ def test_task_report_contains_required_run_fields(tmp_path: Path) -> None:
         "# Test Summary\n\n- **Status**: passed\n- **Command**: `pytest`\n",
         encoding="utf-8",
     )
-    (run_dir / "openhands-review.txt").write_text("Looks good.\nLGTM\n", encoding="utf-8")
+    reviews_dir = run_dir / "reviews"
+    reviews_dir.mkdir()
+    (reviews_dir / "review-report-1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_id": "run-1",
+                "round": 1,
+                "role": "reviewer",
+                "verdict": "LGTM",
+                "findings": [],
+                "pr_notes": {"summary": ["Looks good."], "known_followups": []},
+            }
+        ),
+        encoding="utf-8",
+    )
     (run_dir / "openhands-review-exit-code.txt").write_text("0\n", encoding="utf-8")
     (run_dir / "commit-hash.txt").write_text("abc123\n", encoding="utf-8")
 
@@ -68,7 +83,7 @@ def test_task_report_contains_required_run_fields(tmp_path: Path) -> None:
     assert "`abc123`" in report
 
 
-def test_task_report_prefers_structured_review_gate_over_legacy_text(tmp_path: Path) -> None:
+def test_task_report_uses_structured_review_gate(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-structured-review"
     run_dir.mkdir(parents=True)

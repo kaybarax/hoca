@@ -9,8 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_env_example_documents_hermes_upgrade_variables() -> None:
     content = (ROOT / ".env.example").read_text(encoding="utf-8")
     required_entries = [
-        "HOCA_USE_HERMES_PROFILES=false",
-        "HOCA_USE_STRUCTURED_REPORTS=true",
         "HOCA_USE_KANBAN=false",
         "HOCA_MAX_TOTAL_ROUNDS=3",
         "HOCA_NETWORK_MODE=offline",
