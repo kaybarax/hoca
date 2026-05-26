@@ -17,7 +17,7 @@ human review before merge.
 
 ## Role-specific skills (preferred)
 
-For multi-profile HOCA, use the focused skills instead of this monolithic file:
+Use the focused role skills for supported HOCA runs:
 
 | Skill | Profile | Scope |
 |-------|---------|-------|
@@ -27,8 +27,8 @@ For multi-profile HOCA, use the focused skills instead of this monolithic file:
 | `hoca-pr-publisher.md` | `hoca-manager` | Staging, commit, PR (manager-only) |
 | `hoca-sandbox-policy.md` | all | Sandbox defaults and constraints |
 
-This file remains the **compatibility entrypoint**: it preserves the original
-"Hoca OpenHands Boss" name and end-to-end shortcut for single-profile setups.
+This file is retained as a historical reference for the original
+"Hoca OpenHands Boss" name; supported runs use the role-specific profiles.
 
 ## Parameters
 

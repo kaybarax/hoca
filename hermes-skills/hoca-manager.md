@@ -19,7 +19,7 @@ deterministic safety gates for convenience.
 | `hoca-reviewer-qa.md` | Independent code review |
 | `hoca-pr-publisher.md` | Staging, commit, PR, merge policy |
 | `hoca-sandbox-policy.md` | Sandbox defaults and constraints |
-| `hoca.md` | Legacy unified entrypoint ("Hoca OpenHands Boss") |
+| `hoca.md` | Historical unified entrypoint ("Hoca OpenHands Boss") |
 
 ## Parameters
 
@@ -485,8 +485,7 @@ Invoke review only through HOCA wrappers:
 scripts/run-reviewer-hermes.sh "$project_path" "$task_spec_path" "$run_dir" "$round"
 ```
 
-The reviewer wrapper falls back to `scripts/review-with-openhands.sh` when Hermes
-profile mode is disabled.
+The reviewer wrapper requires the `hoca-reviewer` Hermes profile.
 
 Because `require_review_lgtm=true`, continue toward publication only when review
 returns `LGTM` or accepted findings are resolved within the round budget.

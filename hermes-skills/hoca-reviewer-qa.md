@@ -43,7 +43,7 @@ Use `templates/HocaReviewReport.yaml` as the field guide. The review wrapper
 writes `reviews/review-report-<round>.json` via `hoca.review_gate` when structured
 output is available; when running manually, write equivalent JSON at that path.
 
-Legacy `openhands-review.txt` may still exist for audit; the manager gate prefers
+`openhands-review.txt` may still exist for audit; the manager gate uses
 structured `HocaReviewReport.verdict`.
 
 ## Review categories
@@ -339,7 +339,7 @@ Stop with `verdict: blocked` and a clear summary when asked to:
 - Bypass the HOCA monitor, sandbox policy, or secret-path detections
 - Block on pure preference when correctness, safety, tests, and scope are sound
 - Present findings as binding commands (manager arbitrates)
-- Use legacy free-text `LGTM` tokens without a structured report when JSON is required
+- Use free-text `LGTM` tokens without a structured report when JSON is required
 
 Git lifecycle, staging, commits, PRs, and merge policy belong to `hoca-manager`
 and `hoca-pr-publisher.md`.
