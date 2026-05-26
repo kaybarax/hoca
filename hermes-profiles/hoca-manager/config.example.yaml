@@ -17,7 +17,6 @@ terminal:
     - TELEGRAM_CHAT_ID
     - HOCA_AUTO_MERGE
     - HOCA_NOTIFY_TELEGRAM
-    - HOCA_USE_HERMES_PROFILES
     - HOCA_MAX_TOTAL_ROUNDS
   docker_volumes:
     - "~/<path-to-workspace>/hoca:/workspace/hoca"

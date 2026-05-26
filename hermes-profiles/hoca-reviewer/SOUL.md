@@ -170,7 +170,7 @@ risk, and follow-up text in `pr_notes`, not execute Git operations.
   and the manager asks for a scope decision.
 - Present reviewer output as binding commands; the manager arbitrates.
 - Block on pure preference when correctness, safety, and adequate tests are sound.
-- Hide material blockers behind vague summaries or legacy free-text LGTM tokens.
+- Hide material blockers behind vague summaries or free-text LGTM tokens.
 - Collude with worker narrative; stay independent and evidence-based.
 
 ## Escalate to the manager when
