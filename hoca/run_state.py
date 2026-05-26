@@ -65,6 +65,22 @@ def create_run_id(prefix: str = "run") -> str:
     return f"{prefix}-{now_epoch()}"
 
 
+def runtime_archive_root() -> Path:
+    return Path(os.environ.get("HOCA_RUNTIME_ARCHIVE_ROOT", Path.home() / ".hoca" / "runtime-archives"))
+
+
+def resolve_run_dir(project_path: Path, run_id: str) -> Path | None:
+    """Find a run directory in .hoca-runtime or the runtime archive."""
+    live = project_path / RUN_STATE_DIRNAME / "runs" / run_id
+    if live.is_dir():
+        return live
+    repo_slug = project_path.resolve().name
+    archived = runtime_archive_root() / repo_slug / run_id
+    if archived.is_dir():
+        return archived
+    return None
+
+
 def ensure_run_dir(project_path: Path, run_id: str) -> Path:
     run_dir = project_path / RUN_STATE_DIRNAME / "runs" / run_id
     ensure_run_layout(run_dir)

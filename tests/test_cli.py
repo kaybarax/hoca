@@ -605,6 +605,44 @@ def test_report_fails_for_missing_run_dir(tmp_path: Path) -> None:
     assert "Run directory not found" in result.output
 
 
+def test_report_falls_back_to_runtime_archive(tmp_path: Path, monkeypatch) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+
+    archive_root = tmp_path / "archives"
+    archive_run_dir = archive_root / "repo" / "run-99999"
+    archive_run_dir.mkdir(parents=True)
+    report_file = archive_run_dir / "task-report.md"
+    report_file.write_text("## HOCA Task Report\nArchived run.\n")
+
+    monkeypatch.setenv("HOCA_RUNTIME_ARCHIVE_ROOT", str(archive_root))
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-99999"])
+
+    assert result.exit_code == 0
+    assert "Report:" in result.output
+    assert "run-99999" in result.output
+
+
+def test_report_regenerates_from_runtime_archive(tmp_path: Path, monkeypatch) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+
+    archive_root = tmp_path / "archives"
+    archive_run_dir = archive_root / "repo" / "run-99999"
+    archive_run_dir.mkdir(parents=True)
+
+    monkeypatch.setenv("HOCA_RUNTIME_ARCHIVE_ROOT", str(archive_root))
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-99999"])
+
+    assert result.exit_code == 0
+    assert "Report regenerated:" in result.output
+    assert (archive_run_dir / "task-report.md").is_file()
+
+
 def test_report_fails_for_non_repo(tmp_path: Path) -> None:
     project_path = tmp_path / "not-a-repo"
     project_path.mkdir()
