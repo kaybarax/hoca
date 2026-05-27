@@ -468,6 +468,28 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
     )
 
 
+def test_missing_profile_attempt_report_uses_hermes_log_failure_detail(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    (logs_dir / "worker-hermes-stdout.txt").write_text(
+        "No inference provider configured. Run 'hermes model' to choose a provider.\n",
+        encoding="utf-8",
+    )
+
+    path = record_worker_attempt(run_dir, round_number=1, status="failed", mode="profile")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.status == "failed"
+    assert (
+        report.blocked_reason
+        == "No inference provider configured. Run 'hermes model' to choose a provider."
+    )
+
+
 def test_missing_profile_attempt_report_with_changes_is_completed(
     tmp_path: Path,
 ) -> None:

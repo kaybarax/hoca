@@ -773,7 +773,11 @@ def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) ->
 
     assert result.returncode != 0
     assert "OpenHands failed with exit code" in result.stderr
+    assert "Worker failure: boom" in result.stderr
     assert '"reason": "openhands_failed"' in latest_status(tmp_path)
+    assert "Worker failure: boom" in (
+        latest_run_dir(tmp_path) / "failure-detail.txt"
+    ).read_text(encoding="utf-8")
 
 
 def test_run_hoca_task_cleans_target_runtime_and_archives_evidence_by_default(

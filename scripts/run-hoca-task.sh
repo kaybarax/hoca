@@ -446,6 +446,15 @@ write_failure_reason() {
   fi
 }
 
+latest_worker_failure_detail() {
+  local latest_attempt
+  latest_attempt="$(find "$RUN_DIR/attempts" -maxdepth 1 -name 'worker-attempt-*.json' -type f 2>/dev/null | sort | tail -n 1)"
+  if [ -z "$latest_attempt" ] || [ ! -f "$latest_attempt" ] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+  jq -r '.blocked_reason // ""' "$latest_attempt" 2>/dev/null || true
+}
+
 fail_run() {
   local reason="$1"
   local message="$2"
@@ -674,7 +683,13 @@ run_openhands_phase() {
     if [ "$failure_status" = "blocked" ]; then
       block_run "openhands_${STOP_REASON}" "OpenHands was stopped by the safety monitor ($STOP_REASON). Logs were saved in $RUN_DIR."
     fi
-    fail_run "openhands_failed" "OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
+    local worker_failure_detail
+    worker_failure_detail="$(latest_worker_failure_detail)"
+    local failure_message="OpenHands failed with exit code $openhands_exit. Logs were saved in $RUN_DIR."
+    if [ -n "$worker_failure_detail" ]; then
+      failure_message="$failure_message Worker failure: $worker_failure_detail"
+    fi
+    fail_run "openhands_failed" "$failure_message"
   fi
   sync_run_status
 }
@@ -712,12 +727,22 @@ latest_worker_attempt_status() {
 stop_if_worker_attempt_blocked() {
   local worker_status
   worker_status="$(latest_worker_attempt_status)"
+  local worker_failure_detail
+  worker_failure_detail="$(latest_worker_failure_detail)"
   case "$worker_status" in
     blocked)
-      block_run "worker_blocked" "Worker attempt was blocked; see $RUN_DIR/attempts for details."
+      local blocked_message="Worker attempt was blocked; see $RUN_DIR/attempts for details."
+      if [ -n "$worker_failure_detail" ]; then
+        blocked_message="$blocked_message Worker failure: $worker_failure_detail"
+      fi
+      block_run "worker_blocked" "$blocked_message"
       ;;
     failed)
-      fail_run "worker_failed" "Worker attempt failed; see $RUN_DIR/attempts for details."
+      local failed_message="Worker attempt failed; see $RUN_DIR/attempts for details."
+      if [ -n "$worker_failure_detail" ]; then
+        failed_message="$failed_message Worker failure: $worker_failure_detail"
+      fi
+      fail_run "worker_failed" "$failed_message"
       ;;
   esac
 }

@@ -412,6 +412,10 @@ status and logs under `.hoca-runtime/runs/<run_id>/`.
 
 Expect the worker to return `HocaAttemptReport` fields: `status`, `changed_files`,
 `summary`, `commands_run`, `known_risks`, `blocked_reason`, and artifact paths.
+If the worker or wrapper fails, inspect the latest worker attempt report plus
+`logs/worker-hermes-stdout.txt` and `logs/worker-hermes-stderr.txt`; record the
+concrete failure text in the run failure detail instead of only using a generic
+status such as `openhands_failed`.
 
 **Default rule**: route all non-trivial implementation through the worker for
 audit consistency, even when the manager could edit files directly.

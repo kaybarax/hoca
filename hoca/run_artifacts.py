@@ -91,7 +91,7 @@ def _read_test_commands_from_summary(run_dir: Path) -> list[str]:
 def _profile_blocked_reason(run_dir: Path) -> str | None:
     stdout_path = run_dir / "logs" / "worker-hermes-stdout.txt"
     if not stdout_path.is_file():
-        return None
+        return _profile_failure_log_excerpt(run_dir)
     lines = stdout_path.read_text(encoding="utf-8", errors="replace").splitlines()
     for index, line in enumerate(lines):
         if line.strip().lower().startswith("### blocked reason"):
@@ -104,6 +104,24 @@ def _profile_blocked_reason(run_dir: Path) -> str | None:
                     reason_lines.append(stripped)
             if reason_lines:
                 return _redact_secret_like_values(" ".join(reason_lines))
+    return _profile_failure_log_excerpt(run_dir)
+
+
+def _profile_failure_log_excerpt(run_dir: Path) -> str | None:
+    for relative_path in (
+        Path("logs") / "worker-hermes-stdout.txt",
+        Path("logs") / "worker-hermes-stderr.txt",
+    ):
+        path = run_dir / relative_path
+        if not path.is_file():
+            continue
+        lines = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if line.strip()
+        ]
+        if lines:
+            return _redact_secret_like_values(" ".join(lines[:3]))
     return None
 
 
@@ -491,6 +509,14 @@ def record_final_state(run_dir: Path) -> Path:
     if reason:
         reason_text = _redact_secret_like_values(str(reason).strip()) or None
         summary.append(f"Reason: {reason_text}")
+    failure_detail = None
+    failure_detail_path = run_dir / "failure-detail.txt"
+    if failure_detail_path.is_file():
+        failure_detail = _redact_secret_like_values(
+            failure_detail_path.read_text(encoding="utf-8", errors="replace").strip()
+        )
+        if failure_detail and failure_detail != reason_text:
+            summary.append(f"Detail: {failure_detail}")
 
     state = HocaRunFinalState(
         run_id=run_dir.name,
@@ -506,7 +532,9 @@ def record_final_state(run_dir: Path) -> Path:
         human_attention_required=human_attention_required_for_run(run_dir),
         unresolved_findings=unresolved_findings_for_run(run_dir),
         completed_at=status_data.get("ended_at") or status_data.get("started_at"),
-        blocked_reason=reason_text if status in ("blocked", "failed") else None,
+        blocked_reason=(failure_detail or reason_text)
+        if status in ("blocked", "failed")
+        else None,
     )
     path = write_final_state(run_dir, state.to_dict())
     sync_status_fields(run_dir)
