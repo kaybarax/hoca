@@ -525,6 +525,29 @@ else
   BRANCH="feat/${SLUG:-hoca-task}"
 fi
 
+allocate_task_branch() {
+  local requested_branch="$1"
+  local candidate="$requested_branch"
+  local suffix="${RUN_ID#run-}"
+  local counter=2
+
+  if ! git show-ref --verify --quiet "refs/heads/$candidate"; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="${requested_branch}-${suffix}"
+  while git show-ref --verify --quiet "refs/heads/$candidate"; do
+    candidate="${requested_branch}-${suffix}-${counter}"
+    counter=$((counter + 1))
+  done
+
+  echo "Task branch already exists: $requested_branch; using $candidate" >&2
+  printf '%s\n' "$candidate"
+}
+
+BRANCH="$(allocate_task_branch "$BRANCH")"
+
 USE_WORKTREE_SANDBOX="false"
 WORKTREE_PATH=""
 WORKER_PROJECT_PATH="$PROJECT_PATH"

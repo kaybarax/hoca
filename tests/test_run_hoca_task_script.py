@@ -650,6 +650,41 @@ def test_run_hoca_task_uses_cli_dev_branch_before_task_branch(
     assert '"task_base_branch": "main"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_uses_unique_branch_when_task_branch_exists(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "branch", "feat/update-readme"],
+        cwd=tmp_path,
+        check=True,
+    )
+    fake_bin = make_fake_preflight_bin(fake_tools_root(tmp_path))
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--dev-branch", "main")
+
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert "Task branch already exists: feat/update-readme; using feat/update-readme-" in (
+        result.stderr
+    )
+    assert branch.startswith("feat/update-readme-")
+    assert branch != "feat/update-readme"
+    assert f"Creating branch: {branch} from main" in result.stdout
+    assert f'"task_branch": "{branch}"' in (
+        latest_run_dir(tmp_path) / "task-spec.json"
+    ).read_text(encoding="utf-8")
+
+
 def test_run_hoca_task_uses_project_config_dev_branch(
     tmp_path: Path,
 ) -> None:
