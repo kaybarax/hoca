@@ -22,6 +22,7 @@ from hoca.worker_hermes import (
 
 
 def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOCA_DOTENV_PATH", os.devnull)
     for key in ["HOCA_REQUESTED_MODEL"]:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("LLM_MODEL", "ollama/qwen-14b-pro")
