@@ -64,13 +64,35 @@ _DANGEROUS_REQUEST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bgit\s+reset\s+--hard\b"),
     re.compile(r"\bgit\s+clean\s+(-\w*f)"),
     re.compile(r"\bgit\s+push\s+(--force|-f)\b"),
+    re.compile(r"\bgit\s+push\s+(?:origin\s+)?(?:main|master)\b"),
+    re.compile(r"\bpush\s+direct(?:ly)?\s+to\s+(?:main|master)\b", re.I),
     re.compile(r"\bforce\s+push\b", re.I),
+    re.compile(r"\bgit\s+merge\s+(?:main|master|origin/(?:main|master))\b"),
     re.compile(r"\bgh\s+pr\s+merge\b"),
     re.compile(r"\bdocker\s+system\s+prune\b"),
     re.compile(r"\bbrew\s+uninstall\b"),
     re.compile(r"\b(delete|drop|wipe|purge)\s+(all|every|entire)\b", re.I),
     re.compile(r"\b(expose|commit|print|log)\s+(the\s+)?(secrets?|credentials?|api\s*keys?)\b", re.I),
+    re.compile(
+        r"\b(?:edit|modify|change|write|create|add|update|commit)\b.*(?:^|[\s`'\"/])\.env(?!\.example)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:add|write|commit|store|save)\b.*\b(?:GITHUB_TOKEN|GH_TOKEN|API_KEY|SECRET|TOKEN)\b",
+        re.I,
+    ),
     re.compile(r"\bdisable\s+(all\s+)?(auth|authentication|authorization|security)\b", re.I),
+]
+
+_UNDERSPECIFIED_PRODUCTION_INFRA_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        r"\b(?:deploy|provision|configure|set\s+up|create|change|update)\b.*\b(?:prod|production)\b.*\b(?:infra|infrastructure|terraform|k8s|kubernetes|cluster|pipeline|deployment)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:prod|production)\b.*\b(?:infra|infrastructure|terraform|k8s|kubernetes|cluster|pipeline|deployment)\b",
+        re.I,
+    ),
 ]
 
 _VAGUE_TASK_PATTERNS: list[re.Pattern[str]] = [
@@ -180,6 +202,22 @@ def evaluate_definition_of_ready(
                 summary=(
                     "Task wording is too broad. Provide a concrete goal, expected areas, "
                     "and acceptance criteria."
+                ),
+            )
+        )
+
+    if (
+        normalized_task
+        and _matches_any(normalized_task, _UNDERSPECIFIED_PRODUCTION_INFRA_PATTERNS)
+        and not _has_concrete_target(normalized_task)
+    ):
+        checks.append(
+            DorCheck(
+                id="underspecified_production_infrastructure",
+                disposition="escalate",
+                summary=(
+                    "Production infrastructure work needs an explicit target, context, "
+                    "rollback expectations, and validation plan before delegation."
                 ),
             )
         )

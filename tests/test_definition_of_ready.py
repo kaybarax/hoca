@@ -79,8 +79,13 @@ class TestEvaluateDefinitionOfReady:
         "task",
         [
             "run git push --force to main",
+            "push directly to main after making the change",
+            "run git push origin main",
+            "run git merge main",
             "please rm -rf /",
             "expose the secrets in .env",
+            "update .env with the production API_KEY",
+            "add GITHUB_TOKEN to the repository config",
             "disable all authentication checks",
         ],
     )
@@ -123,6 +128,25 @@ class TestEvaluateDefinitionOfReady:
 
         assert result.outcome == DorOutcome.NEEDS_CLARIFICATION
         assert any(check.id == "material_ambiguity" for check in result.checks)
+
+    @pytest.mark.parametrize(
+        "task",
+        [
+            "Deploy production infrastructure",
+            "Set up production Kubernetes cluster",
+            "Update prod infra",
+        ],
+    )
+    def test_underspecified_production_infra_escalates(
+        self, tmp_path: Path, task: str
+    ) -> None:
+        result = evaluate_definition_of_ready(repo_path=tmp_path, task=task)
+
+        assert result.outcome == DorOutcome.NEEDS_CLARIFICATION
+        assert any(
+            check.id == "underspecified_production_infrastructure"
+            for check in result.checks
+        )
 
     def test_high_risk_specific_task_warns_but_remains_ready(self, tmp_path: Path) -> None:
         result = evaluate_definition_of_ready(
