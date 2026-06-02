@@ -183,6 +183,47 @@ class TestArbitrate:
         assert decision.next_worker_brief is not None
         assert "F1" in decision.next_worker_brief
 
+    def test_repair_decision_scopes_brief_to_material_findings_only(self) -> None:
+        decision = arbitrate(
+            review=_review(
+                round_number=1,
+                findings=[
+                    _finding(
+                        "F-material",
+                        severity="medium",
+                        category="correctness",
+                        required_fix="Fix the CORS preflight header behavior.",
+                    ),
+                    _finding(
+                        "F-debt",
+                        severity="low",
+                        category="style",
+                        required_fix=None,
+                    ),
+                    _finding(
+                        "F-rejected",
+                        severity="high",
+                        category="correctness",
+                        required_fix="Rewrite unrelated routing code.",
+                    ),
+                ],
+            ),
+            validation=ValidationStatus(),
+            explicitly_impossible=frozenset({"F-rejected"}),
+        )
+
+        assert decision.decision == "repair_required"
+        assert decision.accepted_findings == ["F-material"]
+        assert decision.rejected_findings == ["F-rejected"]
+        assert decision.downgraded_to_pr_notes == ["F-debt"]
+        assert decision.next_worker_brief is not None
+        assert "F-material" in decision.next_worker_brief
+        assert "Fix the CORS preflight header behavior." in decision.next_worker_brief
+        assert "Do not address rejected findings: F-rejected." in decision.next_worker_brief
+        assert "Leave downgraded findings for PR follow-up: F-debt." in decision.next_worker_brief
+        assert "Keep changes minimal and do not restart unrelated work." in decision.next_worker_brief
+        assert "Rewrite unrelated routing code." not in decision.next_worker_brief
+
     def test_fix_required_round_2_goes_to_repair(self) -> None:
         decision = arbitrate(
             review=_review(

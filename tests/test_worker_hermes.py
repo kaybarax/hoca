@@ -135,6 +135,23 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
     assert "- repo_root: /Users/example/original-checkout" not in prompt
 
 
+def test_build_worker_hermes_prompt_uses_active_dotenv_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dotenv_path = tmp_path / "hoca-run.env"
+    monkeypatch.setenv("HOCA_DOTENV_PATH", str(dotenv_path))
+
+    prompt = build_worker_hermes_prompt(
+        spec=sample_task_spec(),
+        project_path=Path("/Users/example/project"),
+        run_dir=Path("/Users/example/project/.hoca-runtime/runs/run-test"),
+        round_number=1,
+        task_spec_path=Path("/Users/example/project/.hoca-runtime/runs/run-test/task-spec.json"),
+    )
+
+    assert f'HOCA_DOTENV_PATH="{dotenv_path.resolve()}"' in prompt
+
+
 def test_load_task_spec_reads_json(tmp_path: Path) -> None:
     spec_path = tmp_path / "task-spec.json"
     spec = sample_task_spec()

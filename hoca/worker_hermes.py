@@ -117,10 +117,14 @@ def build_worker_hermes_prompt(
     round_number: int,
     task_spec_path: Path,
     repair_brief: str | None = None,
-) -> str:
+    ) -> str:
     hoca_root = repo_root()
     hoca_python = sys.executable
-    hoca_dotenv = hoca_root / ".env"
+    hoca_dotenv = Path(os.environ.get("HOCA_DOTENV_PATH", hoca_root / ".env")).expanduser()
+    if not hoca_dotenv.is_absolute():
+        hoca_dotenv = (hoca_root / hoca_dotenv).resolve()
+    else:
+        hoca_dotenv = hoca_dotenv.resolve()
     repair_section = ""
     if repair_brief and repair_brief.strip():
         repair_section = (
