@@ -6,13 +6,36 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from dotenv import dotenv_values
+try:
+    from dotenv import dotenv_values as _python_dotenv_values
+except ModuleNotFoundError:  # pragma: no cover - exercised by script subprocess tests
+    _python_dotenv_values = None
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
 _SECRET_PATTERN = re.compile(r"(token|secret|password|api_key|private_key)", re.IGNORECASE)
 RoleName = Literal["manager", "worker", "reviewer", "fallback"]
+
+
+def dotenv_values(path: Path) -> dict[str, str | None]:
+    if _python_dotenv_values is not None:
+        return _python_dotenv_values(path)
+
+    values: dict[str, str | None] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, value = stripped.split("=", 1)
+        name = name.strip()
+        if not name:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[name] = value
+    return values
 
 
 def parse_bool(value: str | None, *, default: bool) -> bool:
