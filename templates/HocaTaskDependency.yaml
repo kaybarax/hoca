@@ -1,0 +1,9 @@
+# Fleet task dependency entry.
+
+schema_version: 1
+
+task_id: task-auth-setup
+depends_on_task_id: task-db-bootstrap
+required: true
+reason: Must provision DB schema before auth setup.
+created_at: 2026-06-01T10:00:00Z

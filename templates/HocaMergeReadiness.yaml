@@ -1,0 +1,14 @@
+# Merge readiness state for a lane.
+
+schema_version: 1
+
+lane_id: lane-auth-01
+readiness: ready
+ci_status: passed
+pr_url: https://github.com/example/repo/pull/123
+checks:
+  - tests
+  - security review
+human_review_required: true
+reason: Tests and CI passed with no unresolved findings.
+checked_at: 2026-06-01T10:15:00Z

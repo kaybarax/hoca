@@ -1,0 +1,16 @@
+# Project registry entry for multi-project fleet orchestration.
+
+schema_version: 1
+
+project_id: example-project
+repo_path: /abs/path/to/repo
+display_name: Example project
+default_branch: main
+max_parallel_tasks: 2
+runtime_archive_root: /tmp/hoca-runtime-archives
+agent_policy:
+  adapter_preference: hermes
+  language: python
+created_at: 2026-06-01T10:00:00Z
+updated_at: 2026-06-01T10:00:00Z
+is_active: true

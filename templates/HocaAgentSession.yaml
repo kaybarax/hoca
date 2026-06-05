@@ -1,0 +1,15 @@
+# Running agent session for a lane.
+
+schema_version: 1
+
+session_id: sess-auth-01
+lane_id: lane-auth-01
+adapter_id: hermes-code
+status: running
+started_at: 2026-06-01T10:00:02Z
+ended_at: null
+log_path: /tmp/hoca/sessions/sess-auth-01.log
+process_id: 3344
+metadata:
+  runner: hermes
+  queue_position: 1

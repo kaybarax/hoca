@@ -8,10 +8,25 @@ import pytest
 from hoca.contracts import (
     HocaAttemptReport,
     HocaManagerDecision,
+    HocaNotification,
+    HocaResourceBudget,
     HocaReviewReport,
     HocaSandboxPolicy,
     HocaTaskSpec,
     HocaValidationReport,
+)
+from hoca.fleet_contracts import (
+    HocaAgentAdapterSpec,
+    HocaAgentSession,
+    HocaFleetTask,
+    HocaLane,
+    HocaLaneLease,
+    HocaMergeReadiness,
+    HocaProject,
+    HocaProjectMemoryEntry,
+    HocaReviewSignal,
+    HocaSchedulerDecision,
+    HocaTaskDependency,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -59,6 +74,76 @@ CONTRACT_TEMPLATES: tuple[tuple[type, str, tuple[str, ...]], ...] = (
         HocaSandboxPolicy,
         "HocaSandboxPolicy.yaml",
         (*HocaSandboxPolicy._required_fields, "schema_version"),
+    ),
+    (
+        HocaProject,
+        "HocaProject.yaml",
+        (*HocaProject._required_fields, "schema_version", "is_active"),
+    ),
+    (
+        HocaFleetTask,
+        "HocaFleetTask.yaml",
+        (*HocaFleetTask._required_fields, "schema_version"),
+    ),
+    (
+        HocaTaskDependency,
+        "HocaTaskDependency.yaml",
+        (*HocaTaskDependency._required_fields, "schema_version", "reason"),
+    ),
+    (
+        HocaLane,
+        "HocaLane.yaml",
+        (*HocaLane._required_fields, "schema_version", "attempt_number"),
+    ),
+    (
+        HocaLaneLease,
+        "HocaLaneLease.yaml",
+        (*HocaLaneLease._required_fields, "schema_version", "heartbeat_at", "process_id"),
+    ),
+    (
+        HocaAgentAdapterSpec,
+        "HocaAgentAdapterSpec.yaml",
+        (
+            *HocaAgentAdapterSpec._required_fields,
+            "schema_version",
+            "max_concurrency",
+            "default_for_tasks",
+        ),
+    ),
+    (
+        HocaAgentSession,
+        "HocaAgentSession.yaml",
+        (*HocaAgentSession._required_fields, "schema_version", "process_id"),
+    ),
+    (
+        HocaResourceBudget,
+        "HocaResourceBudget.yaml",
+        (*HocaResourceBudget._required_fields, "schema_version", "max_parallel_lanes"),
+    ),
+    (
+        HocaSchedulerDecision,
+        "HocaSchedulerDecision.yaml",
+        (*HocaSchedulerDecision._required_fields, "schema_version", "confidence"),
+    ),
+    (
+        HocaMergeReadiness,
+        "HocaMergeReadiness.yaml",
+        (*HocaMergeReadiness._required_fields, "schema_version", "checks"),
+    ),
+    (
+        HocaReviewSignal,
+        "HocaReviewSignal.yaml",
+        (*HocaReviewSignal._required_fields, "schema_version", "summary"),
+    ),
+    (
+        HocaNotification,
+        "HocaNotification.yaml",
+        (*HocaNotification._required_fields, "schema_version"),
+    ),
+    (
+        HocaProjectMemoryEntry,
+        "HocaProjectMemoryEntry.yaml",
+        (*HocaProjectMemoryEntry._required_fields, "schema_version", "created_at"),
     ),
 )
 

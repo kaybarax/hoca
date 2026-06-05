@@ -1,0 +1,16 @@
+# Persistent memory entry scoped to a project and optional task.
+
+schema_version: 1
+
+entry_id: memory-auth-01
+project_id: example-project
+key: recent-errors-patterns
+value:
+  pattern: duplicate_key
+  severity: low
+scope:
+  - lane-auth-01
+  - task-auth-setup
+created_at: 2026-06-01T10:25:00Z
+source_task_id: task-auth-setup
+actor: coordinator

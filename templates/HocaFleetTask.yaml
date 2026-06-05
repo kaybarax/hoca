@@ -1,0 +1,21 @@
+# Fleet task contract entry.
+
+schema_version: 1
+
+task_id: task-auth-setup
+project_id: example-project
+title: Add project auth setup task
+description: Implement scoped auth checks for multi-repo tasks.
+goal: Enable login and token validation in shared middleware.
+issue_id: null
+status: queued
+readiness: not_ready
+dependencies:
+  - task-init
+lane_ids: []
+created_at: 2026-06-01T10:00:00Z
+updated_at: 2026-06-01T10:00:00Z
+completed_at: null
+priority: 1
+metadata:
+  team: platform

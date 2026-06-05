@@ -1,0 +1,16 @@
+# Runtime resource budget for fleet and project scheduling.
+
+schema_version: 1
+
+budget_id: default
+project_id: example-project
+max_parallel_projects: 3
+max_parallel_tasks: 4
+max_parallel_lanes: 6
+max_agents: 8
+memory_limit_mb: 24576
+cpu_limit_percent: 400
+created_at: 2026-06-01T10:00:00Z
+updated_at: 2026-06-01T10:00:00Z
+metadata:
+  queue_timeout_seconds: 120

@@ -1,0 +1,21 @@
+# Lane contract entry for a task execution lane.
+
+schema_version: 1
+
+lane_id: lane-auth-01
+task_id: task-auth-setup
+project_id: example-project
+status: allocated
+worktree_path: /tmp/hoca-worktrees/task-auth-setup
+branch: hoca/auth-task
+adapter_id: hermes-code
+run_dir: /abs/work/path
+session_id: null
+run_ref: null
+attempt_number: 0
+created_at: 2026-06-01T10:00:00Z
+started_at: null
+updated_at: 2026-06-01T10:00:00Z
+completed_at: null
+metadata:
+  queue: parallel

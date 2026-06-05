@@ -1,0 +1,12 @@
+# Review signal captured from an agent or CI.
+
+schema_version: 1
+
+signal_id: sig-auth-01
+lane_id: lane-auth-01
+source: reviewer
+verdict: pass
+summary: UI fallback path has sufficient test coverage.
+details: Added snapshot coverage for error boundary and fallback.
+review_round: 2
+created_at: 2026-06-01T10:10:00Z

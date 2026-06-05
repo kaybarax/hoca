@@ -1,0 +1,15 @@
+# Lane lease contract entry.
+
+schema_version: 1
+
+lease_id: lease-auth-01
+lane_id: lane-auth-01
+project_id: example-project
+task_id: task-auth-setup
+branch: hoca/auth-task
+base_ref: main
+worktree_path: /tmp/hoca-worktrees/task-auth-setup
+acquired_at: 2026-06-01T10:00:01Z
+expires_at: 2026-06-01T12:00:00Z
+process_id: 12345
+heartbeat_at: 2026-06-01T10:05:00Z

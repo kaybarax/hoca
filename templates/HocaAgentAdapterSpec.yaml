@@ -1,0 +1,17 @@
+# Adapter policy for launching an execution agent.
+
+schema_version: 1
+
+adapter_id: hermes-code
+provider: hermes
+command_template: hermes run --agent="{adapter_id}" --worktree="{worktree_path}"
+runtime_home: /home/runner/hoca-runtime
+max_concurrency: 1
+default_for_tasks:
+  - backend
+  - tests
+capabilities:
+  - coding
+  - review
+is_active: true
+created_at: 2026-06-01T10:00:00Z
