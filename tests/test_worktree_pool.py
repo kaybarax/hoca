@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
@@ -17,9 +16,14 @@ from hoca.worktree_pool import (
 def _init_git_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True, capture_output=True
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
-    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True
+    )
     (path / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
@@ -44,7 +48,9 @@ def test_worktree_lease_roundtrip_and_stale_cleanup(tmp_path: Path) -> None:
         lease_id="lane-task-a-01",
     )
     assert lease.lease_id == "lane-task-a-01"
-    assert lease.worktree_path == str((repo / ".hoca-runtime" / "worktrees" / "lane-task-a-01").resolve())
+    assert lease.worktree_path == str(
+        (repo / ".hoca-runtime" / "worktrees" / "lane-task-a-01").resolve()
+    )
     assert pool.get_lease("lane-task-a-01") is not None
     assert len(pool.stale_leases()) == 0
 
@@ -72,7 +78,9 @@ def test_create_lease_does_not_touch_active_checkout(tmp_path: Path) -> None:
     before_branch = subprocess.run(
         ["git", "branch", "--show-current"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip()
-    before_diff = subprocess.run(["git", "diff", "--name-only"], cwd=repo, check=True, capture_output=True, text=True).stdout
+    before_diff = subprocess.run(
+        ["git", "diff", "--name-only"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
 
     pool = WorktreeLeasePool(control_root=tmp_path / "control")
     pool.create_lease(
@@ -88,7 +96,9 @@ def test_create_lease_does_not_touch_active_checkout(tmp_path: Path) -> None:
     after_branch = subprocess.run(
         ["git", "branch", "--show-current"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip()
-    after_diff = subprocess.run(["git", "diff", "--name-only"], cwd=repo, check=True, capture_output=True, text=True).stdout
+    after_diff = subprocess.run(
+        ["git", "diff", "--name-only"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
 
     assert after_branch == before_branch == "main"
     assert after_diff == before_diff == ""
@@ -99,7 +109,9 @@ def test_branch_generation_avoids_collisions(tmp_path: Path) -> None:
     repo.mkdir()
     _init_git_repo(repo)
     # create branch that may collide with the first generated candidate.
-    subprocess.run(["git", "branch", "hoca/fix-login-abc123"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "branch", "hoca/fix-login-abc123"], cwd=repo, check=True, capture_output=True
+    )
 
     first = generate_lane_branch(repo, "fix login", "abc123")
     assert first.startswith("hoca/fix-login-abc123")

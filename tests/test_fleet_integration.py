@@ -16,9 +16,14 @@ from hoca.scheduler import FleetScheduler
 def _init_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True, capture_output=True
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
-    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True
+    )
     (path / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
@@ -125,11 +130,17 @@ def test_notifications_wait_until_ready_for_human(tmp_path: Path, monkeypatch) -
     run_dir.mkdir()
     status_path = run_dir / "status.json"
     pr_url = "https://example.test/pr/1"
-    context = NotificationContext(project_id="proj-1", task_id="task-1", task="Add retry logic", run_dir=run_dir)
+    context = NotificationContext(
+        project_id="proj-1", task_id="task-1", task="Add retry logic", run_dir=run_dir
+    )
 
-    def fake_run_command_pending(command: list[str], cwd: Path | None = None) -> CompletedProcess[str]:
+    def fake_run_command_pending(
+        command: list[str], cwd: Path | None = None
+    ) -> CompletedProcess[str]:
         if command[:3] == ["gh", "pr", "checks"]:
-            return CompletedProcess(command, 0, '[{"name":"ci","status":"pending","conclusion":null}]', "")
+            return CompletedProcess(
+                command, 0, '[{"name":"ci","status":"pending","conclusion":null}]', ""
+            )
         return CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("hoca.fleet_monitor._run_command", fake_run_command_pending)
@@ -144,7 +155,9 @@ def test_notifications_wait_until_ready_for_human(tmp_path: Path, monkeypatch) -
 
     def fake_run_command_pass(command: list[str], cwd: Path | None = None) -> CompletedProcess[str]:
         if command[:3] == ["gh", "pr", "checks"]:
-            return CompletedProcess(command, 0, '[{"name":"ci","status":"completed","conclusion":"success"}]', "")
+            return CompletedProcess(
+                command, 0, '[{"name":"ci","status":"completed","conclusion":"success"}]', ""
+            )
         return CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("hoca.fleet_monitor._run_command", fake_run_command_pass)

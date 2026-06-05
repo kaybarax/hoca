@@ -64,9 +64,7 @@ VALID_FLEET_NOTIFICATION_STATUSES: frozenset[str] = frozenset(
 
 FleetReviewVerdict = Literal["pass", "needs_work", "blocked"]
 VALID_FLEET_REVIEW_VERDICTS: frozenset[str] = frozenset(("pass", "needs_work", "blocked"))
-VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
-    ("critical", "high", "medium", "low", "nit")
-)
+VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(("critical", "high", "medium", "low", "nit"))
 VALID_FINDING_CATEGORIES: frozenset[str] = frozenset(
     (
         "correctness",
@@ -155,7 +153,9 @@ def _string_map(data: dict[str, Any], field: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in value.items()}
 
 
-def _optional_string_map(data: dict[str, Any], field: str, *, default: dict[str, str] | None = None) -> dict[str, str]:
+def _optional_string_map(
+    data: dict[str, Any], field: str, *, default: dict[str, str] | None = None
+) -> dict[str, str]:
     value = data.get(field, default or {})
     if value is None:
         return {}
@@ -184,8 +184,8 @@ class JsonContract:
 
     @classmethod
     def _validate_required(cls, data: dict[str, Any]) -> None:
-        for field in cls._required_fields:
-            _required(data, field)
+        for required_field in cls._required_fields:
+            _required(data, required_field)
 
 
 @dataclass(frozen=True)
@@ -218,7 +218,11 @@ class HocaProject(JsonContract):
             default_branch=_required_single_line_string(data, "default_branch")
             if "default_branch" in data
             else "main",
-            max_parallel_tasks=_required_int({"max_parallel_tasks": data.get("max_parallel_tasks", 1)}, "max_parallel_tasks", minimum=1),
+            max_parallel_tasks=_required_int(
+                {"max_parallel_tasks": data.get("max_parallel_tasks", 1)},
+                "max_parallel_tasks",
+                minimum=1,
+            ),
             runtime_archive_root=str(data.get("runtime_archive_root", "")).strip(),
             agent_policy=_optional_string_map(data, "agent_policy", default={}),
             created_at=str(data.get("created_at", "")).strip(),
@@ -436,7 +440,9 @@ class HocaLaneLease(JsonContract):
             acquired_at=_required_single_line_string(data, "acquired_at"),
             expires_at=_optional_str(data, "expires_at"),
             process_id=(
-                int(data["process_id"]) if "process_id" in data and data["process_id"] is not None else None
+                int(data["process_id"])
+                if "process_id" in data and data["process_id"] is not None
+                else None
             ),
             heartbeat_at=_optional_str(data, "heartbeat_at"),
         )
@@ -498,7 +504,13 @@ class HocaAgentSession(JsonContract):
     process_id: int | None = None
     metadata: dict[str, str] | None = None
 
-    _required_fields: ClassVar[tuple[str, ...]] = ("session_id", "lane_id", "adapter_id", "status", "started_at")
+    _required_fields: ClassVar[tuple[str, ...]] = (
+        "session_id",
+        "lane_id",
+        "adapter_id",
+        "status",
+        "started_at",
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
@@ -541,7 +553,11 @@ class HocaResourceBudget(JsonContract):
     updated_at: str = ""
     metadata: dict[str, str] | None = None
 
-    _required_fields: ClassVar[tuple[str, ...]] = ("budget_id", "max_parallel_projects", "max_parallel_tasks")
+    _required_fields: ClassVar[tuple[str, ...]] = (
+        "budget_id",
+        "max_parallel_projects",
+        "max_parallel_tasks",
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
@@ -666,7 +682,13 @@ class HocaReviewSignal(JsonContract):
     required_fix: str | None = None
     created_at: str = ""
 
-    _required_fields: ClassVar[tuple[str, ...]] = ("signal_id", "lane_id", "source", "verdict", "created_at")
+    _required_fields: ClassVar[tuple[str, ...]] = (
+        "signal_id",
+        "lane_id",
+        "source",
+        "verdict",
+        "created_at",
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
@@ -699,8 +721,6 @@ class HocaReviewSignal(JsonContract):
             required_fix=_optional_str_or_none(data.get("required_fix"), "required_fix"),
             created_at=_required_single_line_string(data, "created_at"),
         )
-
-        
 
     @classmethod
     def from_json(cls, raw: str) -> Self:

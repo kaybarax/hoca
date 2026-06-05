@@ -9,13 +9,15 @@ import pytest
 
 import hoca.fleet_monitor as fleet_monitor
 
-from hoca.fleet_monitor import LaneMonitorSnapshot, monitor_lane, missing_artifact_reason
+from hoca.fleet_monitor import monitor_lane, missing_artifact_reason
 
 
 def test_monitor_lane_classifies_running_and_reads_status(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "status.json").write_text(json.dumps({"status": "running", "task": "Build"}), encoding="utf-8")
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "running", "task": "Build"}), encoding="utf-8"
+    )
 
     snapshot = monitor_lane("lane-1", run_dir, terminal_alive=True)
 
@@ -25,7 +27,9 @@ def test_monitor_lane_classifies_running_and_reads_status(tmp_path: Path) -> Non
     assert snapshot.should_process is True
 
 
-def test_monitor_lane_detects_ready_for_human_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_monitor_lane_detects_ready_for_human_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(
@@ -60,12 +64,16 @@ def test_monitor_lane_missing_artifacts_is_stable(tmp_path: Path) -> None:
 def test_missing_artifact_reason_reports_blocking_reason(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "status.json").write_text(json.dumps({"status": "failed", "reason": "build failed"}), encoding="utf-8")
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "failed", "reason": "build failed"}), encoding="utf-8"
+    )
 
     assert missing_artifact_reason(run_dir) == "build failed"
 
 
-def test_pr_check_classifies_failed_checks_from_github_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_pr_check_classifies_failed_checks_from_github_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(
@@ -88,7 +96,9 @@ def test_pr_check_classifies_failed_checks_from_github_output(monkeypatch: pytes
     assert snapshot.pr_check == "failed"
 
 
-def test_pr_check_classifies_pending_github_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_pr_check_classifies_pending_github_checks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(
@@ -111,7 +121,9 @@ def test_pr_check_classifies_pending_github_checks(monkeypatch: pytest.MonkeyPat
     assert snapshot.pr_check == "running"
 
 
-def test_pr_check_returns_unknown_when_github_check_command_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_pr_check_returns_unknown_when_github_check_command_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(
@@ -127,7 +139,9 @@ def test_pr_check_returns_unknown_when_github_check_command_fails(monkeypatch: p
     assert snapshot.pr_check == "unknown"
 
 
-def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_monitor_lane_uses_git_checks_before_pr_checks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     root = tmp_path
     (root / ".git").mkdir()
     run_dir = root / "run"
@@ -139,7 +153,7 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
                 "pr_url": "https://example.test/pr/4",
                 "base_ref": "main",
             }
-    ),
+        ),
         encoding="utf-8",
     )
 
@@ -151,7 +165,9 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
         ]
     )
 
-    def fake_run_command(command: list[str], *, cwd: Path | None = None) -> CompletedProcess[str] | None:
+    def fake_run_command(
+        command: list[str], *, cwd: Path | None = None
+    ) -> CompletedProcess[str] | None:
         calls.append(tuple(command))
         if command[:3] == ["git", "status", "--short"]:
             return CompletedProcess(command, 0, " M app.py\n?? notes.txt\n", "")
@@ -179,7 +195,9 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
     ]
 
 
-def test_monitor_lane_includes_active_hermes_worker_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_monitor_lane_includes_active_hermes_worker_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(

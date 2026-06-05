@@ -17,7 +17,8 @@ from hoca.tmux_sessions import (
 
 
 def _write_fake_tmux(path: Path, state_file: Path, send_log: Path) -> None:
-    path.write_text(f'''#!/usr/bin/env bash
+    path.write_text(
+        f'''#!/usr/bin/env bash
 set -euo pipefail
 STATE_FILE="{state_file}"
 SEND_LOG="{send_log}"
@@ -74,7 +75,9 @@ case "$1" in
     exit 0
     ;;
 esac
-''', encoding="utf-8")
+''',
+        encoding="utf-8",
+    )
     path.chmod(path.stat().st_mode | 0o111)
 
 

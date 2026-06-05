@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -49,16 +48,15 @@ def test_format_and_required_commands_detect_missing() -> None:
     assert "/tmp/work/bin/custom-agent" in missing_required_commands(spec)
 
 
-def test_adapter_start_collect_round_trip_with_fake_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_adapter_start_collect_round_trip_with_fake_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     agent = fake_bin / "hoca-fake-agent"
     _write_executable(
         agent,
-        "#!/usr/bin/env bash\n"
-        "echo agent-run\n"
-        "echo \"openai=$OPENAI_API_KEY\"\n"
-        "cat\n",
+        '#!/usr/bin/env bash\necho agent-run\necho "openai=$OPENAI_API_KEY"\ncat\n',
     )
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
 
@@ -94,16 +92,15 @@ def test_adapter_start_collect_round_trip_with_fake_command(tmp_path: Path, monk
     assert artifact.metadata["openai"] == "done"
 
 
-def test_adapter_start_filters_github_tokens_from_worker_phase(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_adapter_start_filters_github_tokens_from_worker_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     agent = fake_bin / "hoca-fake-agent"
     _write_executable(
         agent,
-        "#!/usr/bin/env bash\n"
-        "echo github=$GITHUB_TOKEN\n"
-        "echo gh=$GH_TOKEN\n"
-        "cat\n",
+        "#!/usr/bin/env bash\necho github=$GITHUB_TOKEN\necho gh=$GH_TOKEN\ncat\n",
     )
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
 
@@ -141,16 +138,15 @@ def test_adapter_start_filters_github_tokens_from_worker_phase(tmp_path: Path, m
     assert "gh=" in artifact.stdout
 
 
-def test_start_rejects_secret_like_extra_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_rejects_secret_like_extra_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     agent = fake_bin / "hoca-fake-agent"
     _write_executable(
         agent,
-        "#!/usr/bin/env bash\n"
-        "echo openai=$OPENAI_API_KEY\n"
-        "echo secret=$SECRET_TOKEN\n"
-        "cat\n",
+        "#!/usr/bin/env bash\necho openai=$OPENAI_API_KEY\necho secret=$SECRET_TOKEN\ncat\n",
     )
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
 
@@ -250,12 +246,7 @@ def test_send_with_stdin_pipe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     agent = fake_bin / "cat-sleeper"
-    _write_executable(
-        agent,
-        "#!/usr/bin/env bash\n"
-        "trap 'exit 0' TERM\n"
-        "cat\n"
-    )
+    _write_executable(agent, "#!/usr/bin/env bash\ntrap 'exit 0' TERM\ncat\n")
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
 
     spec = HocaAgentAdapterSpec(
@@ -337,7 +328,9 @@ def test_command_allowlist_blocks_unlisted_binary() -> None:
         AgentAdapter(spec=spec)
 
 
-def test_adapter_doctor_lines_reports_missing_required_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_adapter_doctor_lines_reports_missing_required_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     spec = HocaAgentAdapterSpec(
         adapter_id="openhands-hermes",
         provider="openhands",

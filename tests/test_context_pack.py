@@ -39,4 +39,3 @@ def test_context_pack_limits_and_deduplicates_listed_entries(tmp_path) -> None:
 
     pack = load_project_context_pack(project_id, control_root=tmp_path)
     assert pack.prompt_patterns == ("third", "fourth")
-

@@ -8,14 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from hoca.conflict_planner import (
-    DependencyPlan,
     LaneConflictProfile,
     conflict_profile_from_task,
     dependency_plan_from_task,
     dependency_launchable,
     detect_dependency_cycle,
     detect_task_conflicts,
-    lanes_conflict,
 )
 from hoca.control_paths import make_fleet_control_paths
 from hoca.fleet_contracts import (
@@ -90,11 +88,29 @@ class FleetScheduler:
         self.paths = make_fleet_control_paths(override=control_root)
 
     def _active_projects(self) -> dict[str, HocaProject]:
-        return {project.project_id: project for project in self.registry.list_projects() if project.is_active}
+        return {
+            project.project_id: project
+            for project in self.registry.list_projects()
+            if project.is_active
+        }
 
     @staticmethod
     def _active_lanes(lanes: list[HocaLane]) -> list[HocaLane]:
-        return [lane for lane in lanes if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing", "pr_created", "ready_for_human"}]
+        return [
+            lane
+            for lane in lanes
+            if lane.status
+            in {
+                "allocated",
+                "starting",
+                "running",
+                "validating",
+                "reviewing",
+                "repairing",
+                "pr_created",
+                "ready_for_human",
+            }
+        ]
 
     def _next_lane_id(self, task_id: str) -> str:
         existing = [lane.lane_id for lane in self.registry.list_lanes() if lane.task_id == task_id]
@@ -117,7 +133,9 @@ class FleetScheduler:
         tasks = self._sort_tasks(tasks)
         lanes = self._active_lanes(self.registry.list_lanes())
         active_ids = {lane.task_id for lane in lanes}
-        completed_ids = {lane.task_id for lane in self.registry.list_lanes() if lane.status == "cleaned"}
+        completed_ids = {
+            lane.task_id for lane in self.registry.list_lanes() if lane.status == "cleaned"
+        }
         all_tasks = {task.task_id: task for task in self.registry.list_tasks()}
 
         lane_profiles: list[LaneConflictProfile] = []
@@ -130,7 +148,6 @@ class FleetScheduler:
             else:
                 lane_profiles.append(conflict_profile_from_task(linked_task))
 
-        task_profiles = [conflict_profile_from_task(task) for task in tasks]
         dep_plans = [dependency_plan_from_task(task) for task in tasks]
 
         _, cycle = detect_dependency_cycle(dep_plans)
@@ -153,7 +170,9 @@ class FleetScheduler:
                 )
                 continue
 
-            task_lane_project_count = len([lane for lane in lanes if lane.project_id == task.project_id])
+            task_lane_project_count = len(
+                [lane for lane in lanes if lane.project_id == task.project_id]
+            )
             launchable, reason = dependency_launchable(
                 task.task_id,
                 dep_plans,
@@ -198,7 +217,9 @@ class FleetScheduler:
                 task=task,
                 active_lanes=lanes,
                 project_running_count=task_lane_project_count,
-                adapter_id=task.metadata.get("adapter_id", "default") if task.metadata else "default",
+                adapter_id=task.metadata.get("adapter_id", "default")
+                if task.metadata
+                else "default",
             )
             if not capacity.allowed:
                 decisions.append(
@@ -255,14 +276,19 @@ class FleetScheduler:
                 )
             )
 
-            if len([lane for lane in lanes if lane.status not in {"completed", "cleaned"}]) >= self.governor.budget.max_parallel_lanes:
+            if (
+                len([lane for lane in lanes if lane.status not in {"completed", "cleaned"}])
+                >= self.governor.budget.max_parallel_lanes
+            ):
                 break
 
         return decisions
 
 
 def _resolve_lock_path(control_root: Path | None) -> Path:
-    return make_fleet_control_paths(override=control_root).resource_state_json.with_name("scheduler.lock")
+    return make_fleet_control_paths(override=control_root).resource_state_json.with_name(
+        "scheduler.lock"
+    )
 
 
 def run_scheduler_loop(

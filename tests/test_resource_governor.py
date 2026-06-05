@@ -16,7 +16,12 @@ def _task(task_id: str, metadata: dict | None = None, *, weight: float = 1.0) ->
 
 
 def _project(*, max_parallel_tasks: int = 2) -> HocaProject:
-    return HocaProject(project_id="p", repo_path="/tmp/p", default_branch="main", max_parallel_tasks=max_parallel_tasks)
+    return HocaProject(
+        project_id="p",
+        repo_path="/tmp/p",
+        default_branch="main",
+        max_parallel_tasks=max_parallel_tasks,
+    )
 
 
 def test_default_budget_is_conservative() -> None:
@@ -43,7 +48,16 @@ def test_resource_cap_by_project_and_lane_budget() -> None:
     decision = governor.can_launch(
         project=project,
         task=task,
-        active_lanes=[HocaLane(lane_id="l1", task_id="t1", project_id="p", status="running", branch="b", attempt_number=0)],
+        active_lanes=[
+            HocaLane(
+                lane_id="l1",
+                task_id="t1",
+                project_id="p",
+                status="running",
+                branch="b",
+                attempt_number=0,
+            )
+        ],
         project_running_count=1,
         adapter_id="default",
     )
@@ -69,7 +83,14 @@ def test_resource_can_block_by_agents_weight() -> None:
         project=project,
         task=task,
         active_lanes=[
-            HocaLane(lane_id="l0", task_id="running", project_id="p", status="running", branch="b", attempt_number=0),
+            HocaLane(
+                lane_id="l0",
+                task_id="running",
+                project_id="p",
+                status="running",
+                branch="b",
+                attempt_number=0,
+            ),
         ],
         project_running_count=1,
         adapter_id="gpt",

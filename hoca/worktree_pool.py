@@ -124,7 +124,9 @@ class WorktreeLeasePool:
             acquired_at=now,
             heartbeat_at=now,
             expires_at=(
-                (datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                (datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
             ),
             process_id=process_id,
         )
@@ -273,7 +275,13 @@ def lane_short_id(lane_id: str, *, fallback: str = "lane") -> str:
 
 
 def _ref_exists(project_path: Path, ref: str, *, remote: bool = False) -> bool:
-    check = ["git", "show-ref", "--verify", "--quiet", f"refs/{'heads' if not remote else 'remotes/origin'}/{ref}"]
+    check = [
+        "git",
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/{'heads' if not remote else 'remotes/origin'}/{ref}",
+    ]
     result = subprocess.run(check, cwd=str(project_path), capture_output=True, text=True)
     return result.returncode == 0
 
@@ -328,7 +336,11 @@ def prune_orphaned_worktrees(
     base = worktree_base(project_path)
     if not base.exists():
         return []
-    managed = {Path(path).resolve() for path in managed_roots if _worktree_safe_relative_to_root(project_path, Path(path))}
+    managed = {
+        Path(path).resolve()
+        for path in managed_roots
+        if _worktree_safe_relative_to_root(project_path, Path(path))
+    }
     candidates: list[Path] = []
     for child in base.iterdir():
         if not child.is_dir():

@@ -13,7 +13,9 @@ from hoca.merge_readiness import (
 
 
 def init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    subprocess.run(
+        ["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
     subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)
     subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True)
 
@@ -41,7 +43,9 @@ def repo_default_branch(path: Path) -> str:
 
 def init_repo_with_branch_and_divergence(path: Path) -> str:
     base_branch = init_repo_with_commit(path)
-    subprocess.run(["git", "checkout", "-b", "feature"], cwd=path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=path, check=True, stdout=subprocess.PIPE
+    )
     (path / "feature.txt").write_text("feature\n", encoding="utf-8")
     subprocess.run(["git", "add", "feature.txt"], cwd=path, check=True)
     subprocess.run(["git", "commit", "-m", "feature"], cwd=path, check=True, stdout=subprocess.PIPE)
@@ -49,7 +53,9 @@ def init_repo_with_branch_and_divergence(path: Path) -> str:
     subprocess.run(["git", "checkout", base_branch], cwd=path, check=True, stdout=subprocess.PIPE)
     (path / "main.txt").write_text("mainline\n", encoding="utf-8")
     subprocess.run(["git", "add", "main.txt"], cwd=path, check=True)
-    subprocess.run(["git", "commit", "-m", "mainline"], cwd=path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "mainline"], cwd=path, check=True, stdout=subprocess.PIPE
+    )
 
     subprocess.run(["git", "checkout", "feature"], cwd=path, check=True, stdout=subprocess.PIPE)
     return base_branch
@@ -78,10 +84,14 @@ def run_ready_case(
 
 def test_local_merge_readiness_detects_clean_ready_branch(tmp_path: Path) -> None:
     base_branch = init_repo_with_commit(tmp_path)
-    subprocess.run(["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     (tmp_path / "feature.txt").write_text("feature\n", encoding="utf-8")
     subprocess.run(["git", "add", "feature.txt"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
 
     result = run_ready_case(tmp_path, tmp_path / "run", base_ref=base_branch)
     assert result == "ready"
@@ -112,7 +122,9 @@ def test_local_merge_readiness_blocks_detached_head(tmp_path: Path) -> None:
 
 def test_local_merge_readiness_blocks_whitespace_errors(tmp_path: Path) -> None:
     base_branch = init_repo_with_commit(tmp_path)
-    subprocess.run(["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     (tmp_path / "file.txt").write_text("bad   \n", encoding="utf-8")
     (tmp_path / "run").mkdir()
     (tmp_path / "run" / "changed-files.txt").write_text("file.txt\n", encoding="utf-8")
@@ -130,7 +142,9 @@ def test_local_merge_readiness_blocks_whitespace_errors(tmp_path: Path) -> None:
 
 def test_local_merge_readiness_blocks_unreviewed_files(tmp_path: Path) -> None:
     base_branch = init_repo_with_commit(tmp_path)
-    subprocess.run(["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     (tmp_path / "feature.txt").write_text("feature\n", encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -138,7 +152,9 @@ def test_local_merge_readiness_blocks_unreviewed_files(tmp_path: Path) -> None:
     (run_dir / "review").mkdir()
     (run_dir / "review" / "changed-files.txt").write_text("other.txt\n", encoding="utf-8")
     subprocess.run(["git", "add", "feature.txt"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
 
     result = evaluate_local_merge_readiness(
         LocalReadinessInputs(
@@ -151,7 +167,9 @@ def test_local_merge_readiness_blocks_unreviewed_files(tmp_path: Path) -> None:
 
 def test_local_merge_readiness_blocks_secret_like_paths(tmp_path: Path) -> None:
     base_branch = init_repo_with_commit(tmp_path)
-    subprocess.run(["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
     (tmp_path / ".env").write_text("TOKEN=1\n", encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -159,7 +177,9 @@ def test_local_merge_readiness_blocks_secret_like_paths(tmp_path: Path) -> None:
     (run_dir / "review").mkdir()
     (run_dir / "review" / "changed-files.txt").write_text(".env\n", encoding="utf-8")
     subprocess.run(["git", "add", ".env"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
 
     result = evaluate_local_merge_readiness(
         LocalReadinessInputs(
@@ -179,7 +199,9 @@ def test_local_merge_readiness_blocks_divergent_merge_base(tmp_path: Path) -> No
     (run_dir / "review" / "changed-files.txt").write_text("feature.txt\n", encoding="utf-8")
 
     result = evaluate_local_merge_readiness(
-        LocalReadinessInputs(lane_id="lane-6", run_dir=run_dir, repo_path=tmp_path, base_ref=base_branch)
+        LocalReadinessInputs(
+            lane_id="lane-6", run_dir=run_dir, repo_path=tmp_path, base_ref=base_branch
+        )
     )
     assert result.readiness == "blocked"
     assert "Base branch diverged" in (result.reason or "")
@@ -225,16 +247,20 @@ def test_local_merge_repair_plan_classifies_needs_rebase(tmp_path: Path) -> None
     assert called == [("lane-repair", plan.repair_brief_path)]
 
 
-def test_local_merge_repair_plan_classifies_merge_conflict_and_blocks_sender(tmp_path: Path) -> None:
+def test_local_merge_repair_plan_classifies_merge_conflict_and_blocks_sender(
+    tmp_path: Path,
+) -> None:
     base_branch = init_repo_with_branch_and_divergence(tmp_path)
     subprocess.run(["git", "checkout", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
     feature_path = tmp_path / "package.json"
     feature_path.write_text(
-        "{\n  <<<<<<< HEAD\n  \"name\": \"demo\"\n=======\n  \"name\": \"demo-conflict\"\n>>>>>>> branch\n}\n",
+        '{\n  <<<<<<< HEAD\n  "name": "demo"\n=======\n  "name": "demo-conflict"\n>>>>>>> branch\n}\n',
         encoding="utf-8",
     )
     subprocess.run(["git", "add", "package.json"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "commit", "-m", "feature work"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()

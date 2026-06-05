@@ -53,7 +53,9 @@ def mark_session_status(
     write_session(root, HocaAgentSession.from_dict(replacement))
 
 
-def build_session(*, session_id: str, lane_id: str, adapter_id: str, started_at: str) -> HocaAgentSession:
+def build_session(
+    *, session_id: str, lane_id: str, adapter_id: str, started_at: str
+) -> HocaAgentSession:
     return HocaAgentSession(
         session_id=session_id,
         lane_id=lane_id,

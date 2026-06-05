@@ -169,7 +169,6 @@ def _safe_instruction_excerpt(
     return redacted
 
 
-def gather_instruction_summaries(repo_root: Path) -> list[dict[str, str]]:
 def gather_instruction_summaries(
     repo_root: Path,
     *,

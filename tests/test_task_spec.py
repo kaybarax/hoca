@@ -59,7 +59,9 @@ def test_gather_instruction_summaries_redacts_secrets(tmp_path: Path) -> None:
     assert "[redacted: possible secret]" in agents["excerpt"]
 
 
-def test_gather_instruction_summaries_with_expected_areas_returns_relevant_excerpts(tmp_path: Path) -> None:
+def test_gather_instruction_summaries_with_expected_areas_returns_relevant_excerpts(
+    tmp_path: Path,
+) -> None:
     init_repo(tmp_path)
     summaries = gather_instruction_summaries(tmp_path, expected_areas=("src/app.py",))
     paths = [item["path"] for item in summaries]

@@ -64,7 +64,8 @@ class FleetRegistry:
 
         if next_project.repo_path != existing.get("repo_path"):
             if any(
-                existing_project_id != project_id and item.get("repo_path") == next_project.repo_path
+                existing_project_id != project_id
+                and item.get("repo_path") == next_project.repo_path
                 for existing_project_id, item in data.items()
             ):
                 raise ValueError("Project repository path already registered")
@@ -91,7 +92,10 @@ class FleetRegistry:
         self._write_index(self.paths.lanes_json, lanes)
 
     def list_tasks(self, *, project_id: str | None = None) -> list[HocaFleetTask]:
-        tasks = [HocaFleetTask.from_dict(value) for value in self._load_index(self.paths.tasks_json).values()]
+        tasks = [
+            HocaFleetTask.from_dict(value)
+            for value in self._load_index(self.paths.tasks_json).values()
+        ]
         if project_id is None:
             return tasks
         return [task for task in tasks if task.project_id == project_id]
@@ -131,8 +135,12 @@ class FleetRegistry:
         tasks[task_id] = replace(task, task_id=task_id).to_dict()
         self._write_index(self.paths.tasks_json, tasks)
 
-    def list_lanes(self, *, task_id: str | None = None, project_id: str | None = None) -> list[HocaLane]:
-        lanes = [HocaLane.from_dict(value) for value in self._load_index(self.paths.lanes_json).values()]
+    def list_lanes(
+        self, *, task_id: str | None = None, project_id: str | None = None
+    ) -> list[HocaLane]:
+        lanes = [
+            HocaLane.from_dict(value) for value in self._load_index(self.paths.lanes_json).values()
+        ]
         if task_id is not None:
             lanes = [lane for lane in lanes if lane.task_id == task_id]
         if project_id is not None:

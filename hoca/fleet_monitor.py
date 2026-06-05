@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -105,10 +104,16 @@ def _read_active_hermes_worker_status(
 
 
 def _snapshot_keys_for_artifacts(run_dir: Path) -> dict[str, bool]:
-    validation_matches = any(run_dir.glob(pattern) for pattern in ("validation-report-*.json", "tests-summary.md"))
+    validation_matches = any(
+        run_dir.glob(pattern) for pattern in ("validation-report-*.json", "tests-summary.md")
+    )
     review_matches = any(
         run_dir.glob(pattern)
-        for pattern in ("openhands-review.txt", "review-report-*.json", "reviews/review-report-*.json")
+        for pattern in (
+            "openhands-review.txt",
+            "review-report-*.json",
+            "reviews/review-report-*.json",
+        )
     )
     return {
         "has_validation_report": validation_matches,
@@ -129,7 +134,9 @@ def _infer_git_root(run_dir: Path) -> Path | None:
     return None
 
 
-def _run_command(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
+def _run_command(
+    command: list[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str] | None:
     try:
         return subprocess.run(
             command,
@@ -156,7 +163,11 @@ def _read_git_status_summary(run_dir: Path) -> int | None:
 
 
 def _read_git_diff_summary(root: Path, status: dict[str, Any]) -> int | None:
-    candidates = [value for value in [status.get("base_ref"), status.get("base_branch")] if isinstance(value, str)]
+    candidates = [
+        value
+        for value in [status.get("base_ref"), status.get("base_branch")]
+        if isinstance(value, str)
+    ]
     if not candidates:
         return None
 
@@ -168,7 +179,11 @@ def _read_git_diff_summary(root: Path, status: dict[str, Any]) -> int | None:
 
 
 def _check_merge_base(root: Path, status: dict[str, Any]) -> bool | None:
-    candidates = [value for value in [status.get("base_ref"), status.get("base_branch")] if isinstance(value, str)]
+    candidates = [
+        value
+        for value in [status.get("base_ref"), status.get("base_branch")]
+        if isinstance(value, str)
+    ]
     if not candidates:
         return None
 
@@ -201,7 +216,10 @@ def _pr_check(pr_url: str | None) -> str | None:
 
     if any(status in {"in_progress", "queued", "pending"} for status in statuses):
         return "running"
-    if any(conclusion in {"failure", "cancelled", "timed_out", "action_required"} for conclusion in conclusions):
+    if any(
+        conclusion in {"failure", "cancelled", "timed_out", "action_required"}
+        for conclusion in conclusions
+    ):
         return "failed"
     if all(conclusion in {"success", "neutral", "skipped"} for conclusion in conclusions):
         return "passed"

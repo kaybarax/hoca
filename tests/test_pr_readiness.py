@@ -101,7 +101,12 @@ def test_pr_readiness_stays_not_ready_when_checks_pending(tmp_path: Path) -> Non
     _fake_gh_binary(
         tmp_path / "bin",
         checks_payload=[{"name": "unit", "status": "in_progress", "conclusion": "neutral"}],
-        view_payload={"state": "OPEN", "isDraft": False, "mergeStateStatus": "CLEAN", "mergeable": True},
+        view_payload={
+            "state": "OPEN",
+            "isDraft": False,
+            "mergeStateStatus": "CLEAN",
+            "mergeable": True,
+        },
     )
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{tmp_path / 'bin'}:{old_path}"
@@ -126,7 +131,12 @@ def test_pr_readiness_blocks_when_checks_fail(tmp_path: Path) -> None:
     _fake_gh_binary(
         tmp_path / "bin",
         checks_payload=[{"name": "unit", "status": "completed", "conclusion": "failure"}],
-        view_payload={"state": "OPEN", "isDraft": False, "mergeStateStatus": "CLEAN", "mergeable": True},
+        view_payload={
+            "state": "OPEN",
+            "isDraft": False,
+            "mergeStateStatus": "CLEAN",
+            "mergeable": True,
+        },
     )
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{tmp_path / 'bin'}:{old_path}"

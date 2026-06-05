@@ -9,7 +9,13 @@ import time
 import click
 
 from hoca.doctor import run_doctor
-from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget, HocaSchedulerDecision
+from hoca.fleet_contracts import (
+    HocaFleetTask,
+    HocaLane,
+    HocaProject,
+    HocaResourceBudget,
+    HocaSchedulerDecision,
+)
 from hoca.fleet_registry import FleetRegistry
 from hoca.paths import repo_root
 from hoca.resource_governor import ResourceGovernor
@@ -43,7 +49,10 @@ def require_target_repo(project_path: Path) -> Path:
 
 def _secret_like_message(message: str) -> bool:
     lowered = message.lower()
-    return any(token in lowered for token in ("api_key", "api-key", "secret", "token", "password", "private_key"))
+    return any(
+        token in lowered
+        for token in ("api_key", "api-key", "secret", "token", "password", "private_key")
+    )
 
 
 def _append_send_log(run_dir: Path, lane_id: str, message: str, *, dry_run: bool) -> None:
@@ -55,7 +64,9 @@ def _append_send_log(run_dir: Path, lane_id: str, message: str, *, dry_run: bool
         log_file.write(f"{timestamp} {lane_id} {tag}={message}\n")
 
 
-def _resolve_lane_for_send(lane_id: str, *, control_root: Path | None = None) -> tuple[HocaLane, Path]:
+def _resolve_lane_for_send(
+    lane_id: str, *, control_root: Path | None = None
+) -> tuple[HocaLane, Path]:
     registry = FleetRegistry(control_root=control_root)
     lane = registry.get_lane(lane_id)
     if lane is None:
@@ -432,7 +443,9 @@ def task_show(task_id: str) -> None:
     click.echo(f"Updated At: {task.updated_at}")
 
 
-def _update_task_status(task_id: str, *, status: str, readiness: str | None = None) -> HocaFleetTask:
+def _update_task_status(
+    task_id: str, *, status: str, readiness: str | None = None
+) -> HocaFleetTask:
     registry = _registry()
     task = registry.get_task(task_id)
     if task is None:
@@ -508,7 +521,9 @@ def _default_resource_budget() -> HocaResourceBudget:
 
 
 def _default_scheduler() -> FleetScheduler:
-    return FleetScheduler(registry=_registry(), governor=ResourceGovernor(budget=_default_resource_budget()))
+    return FleetScheduler(
+        registry=_registry(), governor=ResourceGovernor(budget=_default_resource_budget())
+    )
 
 
 def _decision_summary(decision: HocaSchedulerDecision) -> str:
@@ -527,7 +542,12 @@ def _fleet_state_summary() -> list[str]:
     tasks = registry.list_tasks()
     lanes = registry.list_lanes()
     queued_tasks = [task for task in tasks if task.status == "queued"]
-    running_lanes = [lane for lane in lanes if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}]
+    running_lanes = [
+        lane
+        for lane in lanes
+        if lane.status
+        in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
+    ]
     blocked_lanes = [lane for lane in lanes if lane.status == "blocked"]
     ready_prs = [lane for lane in lanes if lane.status in {"pr_created", "ready_for_human"}]
     return [
@@ -584,7 +604,9 @@ def scheduler_start(interval: float, iterations: int) -> None:
             click.echo(f"Iteration {iteration}:")
             for decision in decisions:
                 click.echo(_decision_summary(decision))
-    click.echo(f"Scheduler loop finished after {len([iteration for iteration, _ in iterations_run if iteration >= 0])} iteration(s).")
+    click.echo(
+        f"Scheduler loop finished after {len([iteration for iteration, _ in iterations_run if iteration >= 0])} iteration(s)."
+    )
 
 
 @scheduler.command("status")
@@ -604,14 +626,20 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
         return cleaned_lane_ids
 
     remaining_lanes = {
-        lane_id: payload for lane_id, payload in lanes_index.items() if lane_id not in cleaned_lane_ids
+        lane_id: payload
+        for lane_id, payload in lanes_index.items()
+        if lane_id not in cleaned_lane_ids
     }
     registry._write_index(registry.paths.lanes_json, remaining_lanes)
 
     tasks_index = registry._load_index(registry.paths.tasks_json)
     tasks_changed = False
     for task_id, payload in tasks_index.items():
-        lane_ids = [lane_id for lane_id in list(payload.get("lane_ids") or []) if lane_id not in cleaned_lane_ids]
+        lane_ids = [
+            lane_id
+            for lane_id in list(payload.get("lane_ids") or [])
+            if lane_id not in cleaned_lane_ids
+        ]
         if lane_ids != list(payload.get("lane_ids") or []):
             payload["lane_ids"] = lane_ids
             tasks_index[task_id] = payload
@@ -700,7 +728,12 @@ def fleet_report(output: Path | None) -> None:
 
 
 @fleet.command("cleanup")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview cleaned-lane removal without changing files.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview cleaned-lane removal without changing files.",
+)
 def fleet_cleanup(dry_run: bool) -> None:
     """Remove cleaned lanes from the registry."""
     cleaned_lane_ids = _cleanup_cleaned_lanes(dry_run=dry_run)
@@ -946,7 +979,9 @@ def lane_stop(lane_id: str) -> None:
 @lane.command("send")
 @click.argument("lane_id")
 @click.argument("message")
-@click.option("--dry-run", is_flag=True, default=False, help="Plan send without dispatching to tmux.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Plan send without dispatching to tmux."
+)
 def lane_send(lane_id: str, message: str, dry_run: bool) -> None:
     """Send a manager-approved redirection to a lane session."""
     _send_to_lane(lane_id, message, dry_run=dry_run)

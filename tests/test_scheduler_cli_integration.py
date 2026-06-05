@@ -12,9 +12,14 @@ from hoca.fleet_registry import FleetRegistry
 def _init_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True, capture_output=True
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
-    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True
+    )
     (path / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)

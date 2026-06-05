@@ -83,7 +83,9 @@ def _configured_fanout_sources(run_dir: Path, review_round: int) -> tuple[Review
         candidate = Path(spec).expanduser()
         if candidate.exists() and candidate.is_file():
             sources.append(
-                ReviewSignalSource(path=candidate, source=name, review_round=review_round, command=None)
+                ReviewSignalSource(
+                    path=candidate, source=name, review_round=review_round, command=None
+                )
             )
             continue
         sources.append(
@@ -145,7 +147,9 @@ def _signal_id_from_dict(payload: dict[str, Any], *, default: str | None) -> str
     return _coalesce_text(payload, "id", "finding_id", "signal_id") or default
 
 
-def _signal_id(lane_id: str, source: str, review_round: int, idx: int, finding_id: str | None = None) -> str:
+def _signal_id(
+    lane_id: str, source: str, review_round: int, idx: int, finding_id: str | None = None
+) -> str:
     if finding_id:
         return f"{lane_id}:{source}:{review_round}:{finding_id}"
     return f"{lane_id}:{source}:{review_round}:{idx:03d}"
@@ -229,10 +233,7 @@ def _from_dict_payload(
 ) -> list[HocaReviewSignal]:
     source = str(payload.get("source") or default_source)
     verdict = _as_verdict(
-        payload.get("verdict")
-        or payload.get("status")
-        or payload.get("result")
-        or "needs_work"
+        payload.get("verdict") or payload.get("status") or payload.get("result") or "needs_work"
     )
 
     if "findings" in payload and isinstance(payload["findings"], list):
@@ -246,9 +247,7 @@ def _from_dict_payload(
                 or _coalesce_text(item, "description")
                 or "review finding"
             )
-            details = (
-                _coalesce_text(item, "required_fix", "fix", "evidence", "details")
-            )
+            details = _coalesce_text(item, "required_fix", "fix", "evidence", "details")
             signals.append(
                 HocaReviewSignal(
                     signal_id=_signal_id(lane_id, source, review_round, idx, finding_id),
@@ -407,7 +406,9 @@ def collect_review_signals(
             raw = _run_adapter_command(item.command)
         if raw is None:
             continue
-        batch = normalize_review_output(raw, lane_id=lane_id, source=item.source, review_round=item.review_round)
+        batch = normalize_review_output(
+            raw, lane_id=lane_id, source=item.source, review_round=item.review_round
+        )
         for signal in batch:
             key = (signal.signal_id, signal.summary, signal.verdict)
             if key not in seen:

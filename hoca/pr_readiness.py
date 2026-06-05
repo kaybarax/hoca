@@ -15,7 +15,16 @@ class PrReadinessInputs:
     run_dir: Path
     require_ui_screenshot: bool = False
     screenshot_path_patterns: tuple[str, ...] = ("screenshot", "screenshots")
-    ui_file_extensions: tuple[str, ...] = (".css", ".html", ".jsx", ".js", ".tsx", ".ts", ".vue", ".svelte")
+    ui_file_extensions: tuple[str, ...] = (
+        ".css",
+        ".html",
+        ".jsx",
+        ".js",
+        ".tsx",
+        ".ts",
+        ".vue",
+        ".svelte",
+    )
 
 
 def _artifact_text(path: Path) -> str | None:
@@ -106,7 +115,9 @@ def _classify_pr_checks(payload: object) -> str:
 
     if any(item in {"in_progress", "queued", "pending"} for item in statuses):
         return "pending"
-    if any(item in {"failure", "cancelled", "timed_out", "action_required"} for item in conclusions):
+    if any(
+        item in {"failure", "cancelled", "timed_out", "action_required"} for item in conclusions
+    ):
         return "failed"
     if all(item in {"success", "neutral", "skipped"} for item in conclusions):
         return "passed"
@@ -132,7 +143,9 @@ def _classify_pr_view(payload: object) -> tuple[str, str | None, str | None]:
     if merge_state and merge_state not in {"CLEAN", "MERGEABLE"}:
         return "blocked", "merge_state", f"PR merge state is {merge_state}."
 
-    review_decision = str(payload.get("reviewDecision", "")).upper() if payload.get("reviewDecision") else ""
+    review_decision = (
+        str(payload.get("reviewDecision", "")).upper() if payload.get("reviewDecision") else ""
+    )
     if review_decision in {"CHANGES_REQUESTED", "REVIEW_REQUIRED"}:
         return "draft_ready", "review", "PR has pending review findings."
 
@@ -184,7 +197,14 @@ def evaluate_pr_merge_readiness(inputs: PrReadinessInputs) -> HocaMergeReadiness
 
     checks.append("pr_view")
     pr_view_payload = _run_gh_json(
-        ["gh", "pr", "view", pr_ref, "--json", "state,isDraft,mergeStateStatus,mergeable,reviewDecision"]
+        [
+            "gh",
+            "pr",
+            "view",
+            pr_ref,
+            "--json",
+            "state,isDraft,mergeStateStatus,mergeable,reviewDecision",
+        ]
     )
     view_status, _, view_reason = _classify_pr_view(pr_view_payload)
     if view_status == "ready":

@@ -175,7 +175,9 @@ def _write_repair_brief(
     path = run_dir / MERGE_REPAIR_BRIEF_PATH
     report_path = None
     if readiness == "merge_conflict":
-        report_path = _write_conflict_report(run_dir, inputs, base_ref, changed_files, escalate_to_human)
+        report_path = _write_conflict_report(
+            run_dir, inputs, base_ref, changed_files, escalate_to_human
+        )
     run_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "lane_id": inputs.lane_id,
@@ -219,7 +221,9 @@ def evaluate_merge_repair_plan(inputs: LocalReadinessInputs) -> MergeRepairPlan:
 
     conflict_markers_seen = _has_conflict_markers(repo_path, changed_files)
     readiness = "merge_conflict" if conflict_markers_seen else "needs_rebase"
-    escalate_to_human = readiness == "merge_conflict" and any(_is_high_risk_file(item) for item in changed_files)
+    escalate_to_human = readiness == "merge_conflict" and any(
+        _is_high_risk_file(item) for item in changed_files
+    )
     can_auto_repair = readiness == "needs_rebase"
     reason = (
         "Merge conflict markers were detected while checking divergence."
@@ -286,7 +290,9 @@ def evaluate_local_merge_readiness(inputs: LocalReadinessInputs) -> HocaMergeRea
         issues.append("Target base reference is missing.")
         status = "not_ready"
     else:
-        return_code, output = _run_raw_command(repo_path, ["merge-base", "--is-ancestor", base_ref, "HEAD"])
+        return_code, output = _run_raw_command(
+            repo_path, ["merge-base", "--is-ancestor", base_ref, "HEAD"]
+        )
         if return_code != 0:
             repair_plan = evaluate_merge_repair_plan(
                 LocalReadinessInputs(

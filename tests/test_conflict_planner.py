@@ -54,6 +54,8 @@ def test_non_overlapping_tasks_can_run_together() -> None:
     right = conflict_profile_from_task(_task("b", {"owned_files": ["docs/README.md"]}))
     conflicts = detect_task_conflicts(left, [left, right])
     assert conflicts == []
+
+
 def test_high_conflict_serialization_file() -> None:
     left = conflict_profile_from_task(_task("a", {"owned_files": ["package-lock.json"]}))
     right = conflict_profile_from_task(_task("b", {"owned_files": ["README.md"]}))
@@ -86,14 +88,20 @@ def test_dependency_cycle_and_launchability() -> None:
     ]
     dep_plans = [dependency_plan_from_task(task) for task in tasks]
 
-    can_launch, reason = dependency_launchable("a", dep_plans, completed={"b"}, ready_for_pr=set(), lane_status_map={})
+    can_launch, reason = dependency_launchable(
+        "a", dep_plans, completed={"b"}, ready_for_pr=set(), lane_status_map={}
+    )
     assert can_launch is True
     assert reason == ""
 
-    can_launch, reason = dependency_launchable("a", dep_plans, completed=set(), ready_for_pr=set(), lane_status_map={})
+    can_launch, reason = dependency_launchable(
+        "a", dep_plans, completed=set(), ready_for_pr=set(), lane_status_map={}
+    )
     assert can_launch is False
     assert reason == "b"
 
-    can_launch, reason = dependency_launchable("c", dep_plans, completed={"a"}, ready_for_pr=set(), lane_status_map={})
+    can_launch, reason = dependency_launchable(
+        "c", dep_plans, completed={"a"}, ready_for_pr=set(), lane_status_map={}
+    )
     assert can_launch is False
     assert reason == "ready_pr"

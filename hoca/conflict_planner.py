@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
 
 from hoca.fleet_contracts import HocaFleetTask
 
@@ -94,7 +93,9 @@ def conflict_profile_from_task(task: HocaFleetTask) -> LaneConflictProfile:
         task_id=task.task_id,
         project_id=task.project_id,
         expected_areas=tuple(
-            item.strip("/") for item in _from_metadata(task, "expected_areas", as_set=True) if str(item).strip()
+            item.strip("/")
+            for item in _from_metadata(task, "expected_areas", as_set=True)
+            if str(item).strip()
         ),
         owned_files=tuple(_from_metadata(task, "owned_files", as_set=True)),
         readonly_files=tuple(_from_metadata(task, "readonly_files", as_set=True)),
@@ -131,7 +132,9 @@ def _normalize_files(profile: LaneConflictProfile) -> tuple[str, ...]:
     return tuple(sorted({_normalise_area(path) for path in profile.all_files if path}))
 
 
-def detect_path_overlaps(left: LaneConflictProfile, right: LaneConflictProfile) -> tuple[bool, tuple[str, ...]]:
+def detect_path_overlaps(
+    left: LaneConflictProfile, right: LaneConflictProfile
+) -> tuple[bool, tuple[str, ...]]:
     left_files = _normalize_files(left)
     right_files = _normalize_files(right)
     overlap: list[str] = []
@@ -264,7 +267,10 @@ def dependency_launchable(
         for _, target in by_task.items():
             if blocker in target.blocks and blocker == target_id:
                 continue
-        if blocker not in completed and lane_status_map.get(blocker) not in {"completed", "cleaned"}:
+        if blocker not in completed and lane_status_map.get(blocker) not in {
+            "completed",
+            "cleaned",
+        }:
             blockers.append(blocker)
 
     if blockers:
@@ -272,7 +278,9 @@ def dependency_launchable(
     return True, ""
 
 
-def apply_dependency_overrides(plan: list[DependencyPlan], *, override: dict[str, str] | None = None) -> list[DependencyPlan]:
+def apply_dependency_overrides(
+    plan: list[DependencyPlan], *, override: dict[str, str] | None = None
+) -> list[DependencyPlan]:
     if not override:
         return plan
     updated = []

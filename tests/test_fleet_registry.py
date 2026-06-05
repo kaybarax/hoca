@@ -56,7 +56,9 @@ def test_delete_project_cleans_project_tasks_and_lanes(tmp_path: Path) -> None:
     repo.mkdir()
     _init_git_repo(repo)
     registry = FleetRegistry(control_root=tmp_path / "control")
-    registry.create_project(HocaProject(project_id="p1", repo_path=str(repo), default_branch="main"))
+    registry.create_project(
+        HocaProject(project_id="p1", repo_path=str(repo), default_branch="main")
+    )
 
     task = HocaFleetTask(
         task_id="t1",
@@ -89,7 +91,9 @@ def test_task_dependency_and_project_reference_validation(tmp_path: Path) -> Non
     repo.mkdir()
     _init_git_repo(repo)
     registry = FleetRegistry(control_root=tmp_path / "control")
-    registry.create_project(HocaProject(project_id="p1", repo_path=str(repo), default_branch="main"))
+    registry.create_project(
+        HocaProject(project_id="p1", repo_path=str(repo), default_branch="main")
+    )
 
     parent = HocaFleetTask(task_id="parent", project_id="p1", status="queued", readiness="ready")
     registry.create_task(parent)
@@ -113,7 +117,9 @@ def test_task_dependency_and_project_reference_validation(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="Unknown dependency"):
         registry.create_task(bad)
 
-    missing = HocaFleetTask(task_id="unknown", project_id="not-a-project", status="queued", readiness="ready")
+    missing = HocaFleetTask(
+        task_id="unknown", project_id="not-a-project", status="queued", readiness="ready"
+    )
     with pytest.raises(ValueError, match="unknown project"):
         registry.create_task(missing)
 
@@ -123,7 +129,9 @@ def test_lane_requires_existing_task_and_project(tmp_path: Path) -> None:
     repo.mkdir()
     _init_git_repo(repo)
     registry = FleetRegistry(control_root=tmp_path / "control")
-    registry.create_project(HocaProject(project_id="p1", repo_path=str(repo), default_branch="main"))
+    registry.create_project(
+        HocaProject(project_id="p1", repo_path=str(repo), default_branch="main")
+    )
 
     task = HocaFleetTask(task_id="t1", project_id="p1", status="queued", readiness="ready")
     registry.create_task(task)

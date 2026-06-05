@@ -154,8 +154,12 @@ def test_infer_lane_reward_from_run_dir_captures_ci_review_and_prompts(tmp_path)
     _write_review_report(run_dir)
     _write_json(run_dir / "attempts" / "worker-attempt-1.json", {})
 
-    (run_dir / "worker-hermes-prompt-round-1.txt").write_text("first worker prompt\n", encoding="utf-8")
-    (run_dir / "reviewer-hermes-prompt-round-1.txt").write_text("second reviewer prompt\n", encoding="utf-8")
+    (run_dir / "worker-hermes-prompt-round-1.txt").write_text(
+        "first worker prompt\n", encoding="utf-8"
+    )
+    (run_dir / "reviewer-hermes-prompt-round-1.txt").write_text(
+        "second reviewer prompt\n", encoding="utf-8"
+    )
 
     reward = infer_lane_reward_from_run_dir(
         "project-memory",
@@ -170,7 +174,11 @@ def test_infer_lane_reward_from_run_dir_captures_ci_review_and_prompts(tmp_path)
     assert reward.review_passed is True
     assert reward.human_merged is False
     assert reward.blocked_reasons == ()
-    assert reward.prompt_patterns == ("worker:first worker prompt", "reviewer:second reviewer prompt", "status-pattern")
+    assert reward.prompt_patterns == (
+        "worker:first worker prompt",
+        "reviewer:second reviewer prompt",
+        "status-pattern",
+    )
 
 
 def test_infer_lane_reward_from_run_dir_flags_blocked_reasons(tmp_path) -> None:
@@ -217,7 +225,9 @@ def test_record_lane_reward_from_run_dir_appends_failure_patterns(tmp_path) -> N
     run_dir.mkdir(parents=True, exist_ok=True)
 
     _write_json(run_dir / "status.json", {"status": "blocked", "reason": "lane blocked by policy"})
-    _write_json(run_dir / "validation" / "validation-report-1.json", {"run_id": "run-1", "round": 1})
+    _write_json(
+        run_dir / "validation" / "validation-report-1.json", {"run_id": "run-1", "round": 1}
+    )
 
     path = record_lane_reward_from_run_dir(
         "project-memory",
@@ -233,7 +243,9 @@ def test_record_lane_reward_from_run_dir_appends_failure_patterns(tmp_path) -> N
     assert rewards[0].blocked_reasons
 
     pack = load_project_context_pack("project-memory", control_root=tmp_path)
-    assert any(pattern.startswith("run.reason:lane blocked by policy") for pattern in pack.failure_patterns)
+    assert any(
+        pattern.startswith("run.reason:lane blocked by policy") for pattern in pack.failure_patterns
+    )
     assert any(pattern.startswith("validation:tests_failed") for pattern in pack.failure_patterns)
     assert any(pattern.startswith("run.status:blocked") for pattern in pack.failure_patterns)
 

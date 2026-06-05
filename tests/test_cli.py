@@ -113,7 +113,19 @@ def _seed_lane_for_cli(
 def _seed_project_repo(tmp_path: Path, repo_name: str = "project") -> Path:
     repo = tmp_path / repo_name
     repo.mkdir()
-    (repo / ".git").mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
     return repo
 
 
@@ -272,7 +284,16 @@ def test_task_create_list_show_cancel_and_block_use_temp_control_root(tmp_path: 
 
     filtered_list = CliRunner().invoke(
         main,
-        ["task", "list", "--project-id", "project-two", "--status", "blocked", "--status", "cancelled"],
+        [
+            "task",
+            "list",
+            "--project-id",
+            "project-two",
+            "--status",
+            "blocked",
+            "--status",
+            "cancelled",
+        ],
         env=env,
     )
     assert filtered_list.exit_code == 0
@@ -309,7 +330,9 @@ def test_scheduler_tick_launches_lane_with_temp_control_root(tmp_path: Path) -> 
     repo = _seed_project_repo(tmp_path, "project-three")
     env = {"HOCA_CONTROL_ROOT": str(control_root)}
 
-    add_project = CliRunner().invoke(main, ["project", "add", str(repo), "--project-id", "project-three"], env=env)
+    add_project = CliRunner().invoke(
+        main, ["project", "add", str(repo), "--project-id", "project-three"], env=env
+    )
     assert add_project.exit_code == 0
 
     add_task = CliRunner().invoke(

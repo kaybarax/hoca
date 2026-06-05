@@ -263,7 +263,11 @@ def default_openhands_adapter_spec(
     script_path: Path | None = None,
 ) -> HocaAgentAdapterSpec:
     script = str(
-        (script_path if script_path is not None else Path(__file__).resolve().parents[1] / "scripts" / "run-lane-agent.sh")
+        (
+            script_path
+            if script_path is not None
+            else Path(__file__).resolve().parents[1] / "scripts" / "run-lane-agent.sh"
+        )
     )
     return HocaAgentAdapterSpec(
         adapter_id=adapter_id,
@@ -289,7 +293,11 @@ def custom_command_adapter_spec(
     capabilities: list[str] | None = None,
     default_for_tasks: list[str] | None = None,
 ) -> HocaAgentAdapterSpec:
-    normalized = [item.strip() for item in (command_allowlist or required_commands_from_template(command_template)) if item.strip()]
+    normalized = [
+        item.strip()
+        for item in (command_allowlist or required_commands_from_template(command_template))
+        if item.strip()
+    ]
     return HocaAgentAdapterSpec(
         adapter_id=adapter_id,
         provider=provider,
@@ -405,7 +413,10 @@ class AgentAdapter:
 
         stdout_log = run_dir / "adapter-stdout.log"
         stderr_log = run_dir / "adapter-stderr.log"
-        with stdout_log.open("w", encoding="utf-8") as out_f, stderr_log.open("w", encoding="utf-8") as err_f:
+        with (
+            stdout_log.open("w", encoding="utf-8") as out_f,
+            stderr_log.open("w", encoding="utf-8") as err_f,
+        ):
             process = subprocess.Popen(
                 command,
                 cwd=str(worktree),
@@ -473,8 +484,8 @@ class AgentAdapter:
         session_dir: Path | None = None,
     ) -> AdapterRunArtifact:
         session.process.wait()
-        out_path = (run_dir / "adapter-stdout.log")
-        err_path = (run_dir / "adapter-stderr.log")
+        out_path = run_dir / "adapter-stdout.log"
+        err_path = run_dir / "adapter-stderr.log"
         status_json = run_dir / "status.json"
         artifact_json = run_dir / "adapter-artifact.json"
         metadata = dict(session.metadata)
@@ -487,8 +498,10 @@ class AgentAdapter:
                 artifact_data = {}
             if isinstance(artifact_data, dict):
                 artifact_metadata = {
-                    str(key): str(value) for key, value in artifact_data.items() if isinstance(key, str)
-                    }
+                    str(key): str(value)
+                    for key, value in artifact_data.items()
+                    if isinstance(key, str)
+                }
                 metadata.update(artifact_metadata)
 
         if status_json.is_file():
@@ -502,7 +515,11 @@ class AgentAdapter:
                     if isinstance(value, str):
                         metadata[key] = value
 
-        if session_dir is not None and session_dir.is_dir() and (session_dir / "lane.json").is_file():
+        if (
+            session_dir is not None
+            and session_dir.is_dir()
+            and (session_dir / "lane.json").is_file()
+        ):
             metadata["session_dir"] = str(session_dir)
 
         return AdapterRunArtifact(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -76,7 +75,9 @@ def build_kanban_markers(
     return {key: value for key, value in payload.items() if value}
 
 
-def map_task_to_kanban_payload(task: HocaFleetTask, *, board_name: str, workspace: str) -> dict[str, str]:
+def map_task_to_kanban_payload(
+    task: HocaFleetTask, *, board_name: str, workspace: str
+) -> dict[str, str]:
     return {
         "board": board_name,
         "title": f"HOCA: {task.title or task.task_id}",
@@ -105,7 +106,9 @@ def create_parent_card(
     if dry_run:
         return "dry-run"
 
-    payload = map_task_to_kanban_payload(task, board_name=board_name(project_path), workspace=workspace)
+    payload = map_task_to_kanban_payload(
+        task, board_name=board_name(project_path), workspace=workspace
+    )
     return_code, stdout, stderr = _run_hermes_command(
         command=[
             "hermes",
@@ -151,7 +154,9 @@ def sync_lane_to_kanban(
 
 def _fetch_json(url: str, *, timeout: float = 3.0) -> dict[str, Any] | None:
     try:
-        with urlopen(Request(url, headers={"Accept": "application/json"}), timeout=timeout) as response:
+        with urlopen(
+            Request(url, headers={"Accept": "application/json"}), timeout=timeout
+        ) as response:
             payload = response.read().decode("utf-8")
             return json.loads(payload)
     except (URLError, OSError, json.JSONDecodeError):
@@ -209,7 +214,9 @@ def read_worker_status(*, lane_id: str, project_path: Path) -> dict[str, Any] | 
 
     base = environ.get(HERMES_API_ENV)
     if base:
-        parsed = _fetch_json(f"{base.rstrip('/')}/workers?project={project_path.name}&lane={lane_id}")
+        parsed = _fetch_json(
+            f"{base.rstrip('/')}/workers?project={project_path.name}&lane={lane_id}"
+        )
         if parsed is not None:
             if isinstance(parsed, dict):
                 return parsed

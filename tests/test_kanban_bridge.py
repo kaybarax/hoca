@@ -19,7 +19,6 @@ from hoca.kanban_bridge import (
 
 
 def test_board_name_and_payload_mapping() -> None:
-    project_path = Path("/tmp/Todo List Repo")
     task = HocaFleetTask(
         task_id="task-1",
         project_id="project-1",
@@ -28,7 +27,9 @@ def test_board_name_and_payload_mapping() -> None:
         readiness="not_ready",
     )
 
-    payload = map_task_to_kanban_payload(task, board_name="hoca:todo-list-repo", workspace="runtime")
+    payload = map_task_to_kanban_payload(
+        task, board_name="hoca:todo-list-repo", workspace="runtime"
+    )
     assert payload["title"] == "HOCA: Add login flow"
     assert payload["board"] == "hoca:todo-list-repo"
     assert "task_id=task-1" in payload["body"]
@@ -111,14 +112,18 @@ def test_create_parent_card_invalid_json_returns_none(tmp_path, monkeypatch) -> 
 def test_disabled_mode_blocks_parent_card_creation(tmp_path, monkeypatch) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
-    task = HocaFleetTask(task_id="task-2", project_id="p2", title="No-op", status="queued", readiness="not_ready")
+    task = HocaFleetTask(
+        task_id="task-2", project_id="p2", title="No-op", status="queued", readiness="not_ready"
+    )
     monkeypatch.setenv("HOCA_KANBAN_DISABLED", "true")
 
     assert create_parent_card(task, project_path) is None
 
 
 def test_sync_laneto_kanban_requires_board(monkeypatch) -> None:
-    lane = HocaLane(lane_id="lane-1", task_id="task-1", project_id="p1", status="running", attempt_number=1)
+    lane = HocaLane(
+        lane_id="lane-1", task_id="task-1", project_id="p1", status="running", attempt_number=1
+    )
     assert sync_lane_to_kanban(lane, parent_card_id="") is False
 
     def unreachable_fetch(*_args: object, **_kwargs: object) -> None:

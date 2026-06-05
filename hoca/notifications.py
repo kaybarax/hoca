@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from hoca.fleet_contracts import HocaNotification
 from hoca.fleet_monitor import LaneMonitorSnapshot
@@ -49,13 +48,20 @@ def _dedupe_key(lane_id: str, action: str, state: str) -> str:
     return f"{lane_id}:{action}:{state}"
 
 
-def _action_for_snapshot(snapshot: LaneMonitorSnapshot, *, resource_block_reason: str | None = None) -> str | None:
+def _action_for_snapshot(
+    snapshot: LaneMonitorSnapshot, *, resource_block_reason: str | None = None
+) -> str | None:
     if resource_block_reason:
         return "resource_exhaustion"
     if snapshot.state == "ready_for_human":
         return "human_review_ready"
     if snapshot.state == "blocked":
-        if (snapshot.status_reason or "").lower() in {"monitor", "monitor_stop", "monitor_timeout", "secret_access"}:
+        if (snapshot.status_reason or "").lower() in {
+            "monitor",
+            "monitor_stop",
+            "monitor_timeout",
+            "secret_access",
+        }:
             return "safety_monitor_block"
         return "lane_blocked"
     if snapshot.state == "completed" and snapshot.status == "stalled":

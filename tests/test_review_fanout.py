@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from hoca.contracts import HocaReviewFinding, HocaReviewReport
-from hoca.review_fanout import aggregate_review_signals, collect_review_signals, normalize_review_output
+from hoca.review_fanout import (
+    aggregate_review_signals,
+    collect_review_signals,
+    normalize_review_output,
+)
 
 
 def test_normalize_structured_review_output_preserves_finding_fields() -> None:
@@ -34,7 +38,9 @@ def test_normalize_structured_review_output_preserves_finding_fields() -> None:
         pr_notes={"summary": ["Needs follow-up fixes."]},
     )
 
-    signals = normalize_review_output(report.to_json(), lane_id="lane-1", source="reviewer", review_round=2)
+    signals = normalize_review_output(
+        report.to_json(), lane_id="lane-1", source="reviewer", review_round=2
+    )
     assert len(signals) == 2
     by_id = {signal.finding_id: signal for signal in signals}
     assert by_id["F-1"].finding_severity == "high"
@@ -111,8 +117,12 @@ def test_collect_review_signals_deduplicates_duplicates_and_aggregates(tmp_path:
 
 
 def test_normalize_review_output_falls_back_to_raw_text() -> None:
-    good = normalize_review_output("Looks good: PASS", lane_id="lane-raw", source="manual", review_round=1)
-    blocked = normalize_review_output("need follow-up", lane_id="lane-raw", source="manual", review_round=1)
+    good = normalize_review_output(
+        "Looks good: PASS", lane_id="lane-raw", source="manual", review_round=1
+    )
+    blocked = normalize_review_output(
+        "need follow-up", lane_id="lane-raw", source="manual", review_round=1
+    )
 
     assert good and good[0].verdict == "pass"
     assert blocked and blocked[0].verdict == "needs_work"
@@ -124,14 +134,16 @@ def test_collect_review_signals_disables_fanout_adapters(monkeypatch, tmp_path: 
     (run_dir / "review-output.json").write_text('{"verdict":"pass"}', encoding="utf-8")
 
     monkeypatch.setenv("HOCA_REVIEW_FANOUT_ENABLED", "false")
-    monkeypatch.setenv("HOCA_REVIEW_ADAPTERS", "fake=echo '{\"verdict\":\"blocked\"}'")
+    monkeypatch.setenv("HOCA_REVIEW_ADAPTERS", 'fake=echo \'{"verdict":"blocked"}\'')
 
     signals = collect_review_signals(run_dir=run_dir, lane_id="lane-disabled")
     assert len(signals) == 1
     assert signals[0].verdict == "pass"
 
 
-def test_collect_review_signals_runs_multiple_fake_review_adapters(monkeypatch, tmp_path: Path) -> None:
+def test_collect_review_signals_runs_multiple_fake_review_adapters(
+    monkeypatch, tmp_path: Path
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "review-output.json").write_text('{"verdict":"pass"}', encoding="utf-8")

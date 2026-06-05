@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import shlex
 import shutil
@@ -113,11 +112,15 @@ def launch_tmux_session(
     window_id = None
     pane_id = None
 
-    session_result = _run_tmux(["list-sessions", "-F", "#{session_id}", "-t", safe_session], check=False)
+    session_result = _run_tmux(
+        ["list-sessions", "-F", "#{session_id}", "-t", safe_session], check=False
+    )
     if session_result.returncode == 0:
         session_id = _first_line(session_result.stdout)
 
-    window_result = _run_tmux(["list-windows", "-t", safe_session, "-F", "#{window_id}"], check=False)
+    window_result = _run_tmux(
+        ["list-windows", "-t", safe_session, "-F", "#{window_id}"], check=False
+    )
     if window_result.returncode == 0:
         window_id = _first_line(window_result.stdout)
 

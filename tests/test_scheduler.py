@@ -6,19 +6,23 @@ from pathlib import Path
 
 import pytest
 
-from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget
+from hoca.fleet_contracts import HocaFleetTask, HocaProject, HocaResourceBudget
 from hoca.fleet_registry import FleetRegistry
 from hoca.resource_governor import ResourceGovernor
 from hoca.scheduler import FleetScheduler, run_scheduler_loop, _resolve_lock_path
-from hoca.worktree_pool import generate_lane_branch
 
 
 def _init_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True, capture_output=True
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
-    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True
+    )
     (path / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
@@ -37,8 +41,12 @@ def _registry_with_project_and_tasks(tmp_path: Path) -> FleetRegistry:
             max_parallel_tasks=1,
         )
     )
-    task_a = HocaFleetTask(task_id="task-a", project_id="project-a", status="queued", readiness="not_ready", priority=1)
-    task_b = HocaFleetTask(task_id="task-b", project_id="project-a", status="queued", readiness="not_ready", priority=1)
+    task_a = HocaFleetTask(
+        task_id="task-a", project_id="project-a", status="queued", readiness="not_ready", priority=1
+    )
+    task_b = HocaFleetTask(
+        task_id="task-b", project_id="project-a", status="queued", readiness="not_ready", priority=1
+    )
     registry.create_task(task_a)
     registry.create_task(task_b)
     return registry
@@ -56,7 +64,9 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
     decisions = scheduler.tick()
 
     assert any(decision.decision_type == "launch" for decision in decisions)
@@ -78,17 +88,30 @@ def test_scheduler_no_work_is_noop(tmp_path: Path) -> None:
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
 
     for task_id in ("task-a", "task-b"):
-        registry.update_task(task_id, HocaFleetTask(task_id=task_id, project_id="project-a", status="completed", readiness="not_ready", priority=1))
+        registry.update_task(
+            task_id,
+            HocaFleetTask(
+                task_id=task_id,
+                project_id="project-a",
+                status="completed",
+                readiness="not_ready",
+                priority=1,
+            ),
+        )
 
     decisions = scheduler.tick()
     assert decisions == []
     assert "task-a" not in [item.task_id for item in registry.list_lanes()]
 
 
-def test_scheduler_non_overlapping_tasks_can_run_together_when_capacity_allows(tmp_path: Path) -> None:
+def test_scheduler_non_overlapping_tasks_can_run_together_when_capacity_allows(
+    tmp_path: Path,
+) -> None:
     registry = _registry_with_project_and_tasks(tmp_path)
     registry.update_project(
         "project-a",
@@ -131,7 +154,9 @@ def test_scheduler_non_overlapping_tasks_can_run_together_when_capacity_allows(t
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
     decisions = scheduler.tick()
     launch_decisions = [d for d in decisions if d.decision_type == "launch"]
     assert len(launch_decisions) == 2
@@ -149,7 +174,9 @@ def test_scheduler_run_interruption_keeps_state_intact(tmp_path: Path) -> None:
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
 
     original_tasks = list(registry.list_tasks())
     lock = _resolve_lock_path(tmp_path / "control")
@@ -207,7 +234,9 @@ def test_scheduler_respects_conflicts_and_is_deterministic(tmp_path: Path) -> No
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
     decisions = scheduler.tick()
     statuses = [d.decision_type for d in decisions]
     assert "launch" in statuses
@@ -233,7 +262,9 @@ def test_scheduler_process_loop_lock(tmp_path: Path) -> None:
         cpu_limit_percent=0,
     )
     governor = ResourceGovernor(budget=budget)
-    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    scheduler = FleetScheduler(
+        registry=registry, governor=governor, control_root=tmp_path / "control"
+    )
 
     lock = _resolve_lock_path(tmp_path / "control")
     lock.parent.mkdir(parents=True, exist_ok=True)

@@ -114,14 +114,20 @@ def _infer_ci_passed(validation: dict[str, Any], blocked_reasons: list[str]) -> 
     if not monitor_clean:
         _append_blocked_reason(blocked_reasons, prefix="validation", value="monitor_not_clean")
 
-    for blocker in validation.get("hard_blockers", ()) if isinstance(validation.get("hard_blockers"), list) else ():
+    for blocker in (
+        validation.get("hard_blockers", ())
+        if isinstance(validation.get("hard_blockers"), list)
+        else ()
+    ):
         if isinstance(blocker, str) and blocker.strip():
             _append_blocked_reason(blocked_reasons, prefix="validation", value=blocker)
 
     return not blocked_reasons and tests_passed and secret_scan_clean and monitor_clean
 
 
-def _infer_review_passed(review_report: dict[str, Any] | None, *, blocked_reasons: list[str]) -> bool:
+def _infer_review_passed(
+    review_report: dict[str, Any] | None, *, blocked_reasons: list[str]
+) -> bool:
     if review_report is None:
         return False
     verdict = str(review_report.get("verdict", REVIEW_VERDICT_UNKNOWN)).strip().lower()
@@ -161,7 +167,9 @@ def infer_lane_reward_from_run_dir(
             raw = review_review_path.read_text(encoding="utf-8")
             review_passed = "lgtm" in raw.lower()
             if not review_passed:
-                _append_blocked_reason(blocked_reasons, prefix="review", value="no_structured_report")
+                _append_blocked_reason(
+                    blocked_reasons, prefix="review", value="no_structured_report"
+                )
         else:
             review_passed = False
 
@@ -178,7 +186,8 @@ def infer_lane_reward_from_run_dir(
         lane_id=lane_id,
         readiness=readiness,
         ci_passed=ci_passed and status_state not in {"blocked", "failed", "needs_human_staging"},
-        review_passed=review_passed and status_state not in {"blocked", "failed", "needs_human_staging"},
+        review_passed=review_passed
+        and status_state not in {"blocked", "failed", "needs_human_staging"},
         human_merged=_infer_human_merged(status, final_state),
         blocked_reasons=tuple(blocked_reasons),
         prompt_patterns=_collect_prompt_patterns(run_dir),
@@ -311,7 +320,11 @@ def summarize_successful_prompt_patterns(
     max_items: int = 50,
 ) -> tuple[str, ...]:
     rewards = list_lane_rewards(project_id, control_root=control_root)
-    successes = [entry for entry in rewards if entry.readiness == "ready" and entry.ci_passed and entry.review_passed]
+    successes = [
+        entry
+        for entry in rewards
+        if entry.readiness == "ready" and entry.ci_passed and entry.review_passed
+    ]
     patterns: list[str] = []
     for entry in successes:
         patterns.extend(entry.prompt_patterns)
@@ -324,7 +337,9 @@ def write_reward_summary(project_id: str, *, control_root: Path | None = None) -
     summary = {
         "project_id": project_id,
         "reward_events": len(rewards),
-        "successful_prompts": summarize_successful_prompt_patterns(project_id, control_root=control_root),
+        "successful_prompts": summarize_successful_prompt_patterns(
+            project_id, control_root=control_root
+        ),
         "updated_at": now_iso(),
     }
     write_json_atomic(path, summary)

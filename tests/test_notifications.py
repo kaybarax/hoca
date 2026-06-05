@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from hoca.fleet_monitor import LaneMonitorSnapshot
-from hoca.notifications import NotificationContext, notifications_from_snapshot, notification_state_path
+from hoca.notifications import (
+    NotificationContext,
+    notifications_from_snapshot,
+    notification_state_path,
+)
 
 
 def test_notifications_for_ready_human_are_payloadd_and_deduped(tmp_path: Path) -> None:

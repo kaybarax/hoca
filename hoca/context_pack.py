@@ -35,7 +35,6 @@ def _path(project_id: str, filename: str, *, control_root: Path | None = None) -
 
 
 def _safe_text(value: str) -> str:
-    lowered = value.lower()
     scrubbed = value
     for token in SECRET_HINTS:
         pattern = re.compile(rf"({re.escape(token)})\s*[:=]\s*[^\s]+", re.IGNORECASE)
@@ -58,9 +57,7 @@ def _read_lines(payload_path: Path) -> tuple[str, ...]:
                     if value is not None and str(value).strip()
                 )
         return tuple(
-            _safe_text(str(line).strip())
-            for line in raw.splitlines()
-            if str(line).strip()
+            _safe_text(str(line).strip()) for line in raw.splitlines() if str(line).strip()
         )
     except OSError:
         return ()
@@ -174,17 +171,29 @@ def load_project_context_pack(
     return ProjectContext(
         project_id=project_id,
         summary=(
-            _path(project_id, "project-summary.txt", control_root=control_root).read_text(encoding="utf-8")
+            _path(project_id, "project-summary.txt", control_root=control_root).read_text(
+                encoding="utf-8"
+            )
             if _path(project_id, "project-summary.txt", control_root=control_root).is_file()
             else ""
         ),
         architecture_map=(
-            _path(project_id, "architecture-map.txt", control_root=control_root).read_text(encoding="utf-8")
+            _path(project_id, "architecture-map.txt", control_root=control_root).read_text(
+                encoding="utf-8"
+            )
             if _path(project_id, "architecture-map.txt", control_root=control_root).is_file()
             else ""
         ),
-        test_commands=_read_lines(_path(project_id, "test-command-memory.json", control_root=control_root)),
-        release_policies=_read_lines(_path(project_id, "release-policy.json", control_root=control_root)),
-        prompt_patterns=_read_lines(_path(project_id, "prompt-patterns.json", control_root=control_root)),
-        failure_patterns=_read_lines(_path(project_id, "failure-patterns.json", control_root=control_root)),
+        test_commands=_read_lines(
+            _path(project_id, "test-command-memory.json", control_root=control_root)
+        ),
+        release_policies=_read_lines(
+            _path(project_id, "release-policy.json", control_root=control_root)
+        ),
+        prompt_patterns=_read_lines(
+            _path(project_id, "prompt-patterns.json", control_root=control_root)
+        ),
+        failure_patterns=_read_lines(
+            _path(project_id, "failure-patterns.json", control_root=control_root)
+        ),
     )
