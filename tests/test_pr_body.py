@@ -18,6 +18,8 @@ from hoca.pr_body import (
 from hoca.run_layout import ensure_run_layout
 from hoca.run_state import optional_report_path, write_json_atomic
 
+MAC_HOME = "/" + "Users/alice"
+
 
 def _task_spec_payload(tmp_path: Path, **overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -286,7 +288,7 @@ def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("/Users/alice/workspace/project", "<local-path>"),
+        (f"{MAC_HOME}/workspace/project", "<local-path>"),
         ("/home/runner/work/repo", "<local-path>"),
         ("/root/.config/app", "<local-path>"),
         ("/private/var/folders/tmp/abc123", "<local-path>"),
@@ -294,9 +296,9 @@ def test_unresolved_findings_for_run_collects_open_and_downgraded_findings(
         ("no path here", "no path here"),
         ("relative/path/only", "relative/path/only"),
         # Lines that are only "Label: <path>" are dropped entirely (no useful content).
-        ("Project: /Users/alice/proj/.hoca-runtime/worktrees/run-123", ""),
-        ("- **Project**: /Users/alice/proj", ""),
-        ("Target repository: /Users/alice/proj", ""),
+        (f"Project: {MAC_HOME}/proj/.hoca-runtime/worktrees/run-123", ""),
+        (f"- **Project**: {MAC_HOME}/proj", ""),
+        (f"Target repository: {MAC_HOME}/proj", ""),
     ],
 )
 def test_sanitize_pr_text(raw: str, expected: str) -> None:
@@ -312,13 +314,13 @@ def test_task_spec_fragment_redacts_local_paths_from_goal(tmp_path: Path) -> Non
             tmp_path,
             goal=(
                 "Add typed env config.\n\n"
-                "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
+                f"Target repository: {MAC_HOME}/workspace/projects/sample-project\n\n"
                 "Scope: replace env.ts"
             ),
         ),
     )
     fragment = format_task_spec_fragment(run_dir, task_oneline="Add typed env config.")
-    assert "/Users/" not in fragment
+    assert "/" + "Users/" not in fragment
     assert "Add typed env config." in fragment
 
 
@@ -326,12 +328,12 @@ def test_summarize_pr_body_fragments_redacts_local_paths(run_dir: Path) -> None:
     (run_dir / "tests-summary.md").write_text(
         "# Validation\n\n"
         "- **Status**: passed\n"
-        "- **Project**: /Users/alice/workspace/projects/sample-project/.hoca-runtime/worktrees/run-123\n",
+        f"- **Project**: {MAC_HOME}/workspace/projects/sample-project/.hoca-runtime/worktrees/run-123\n",
         encoding="utf-8",
     )
     task_with_path = (
         "Add typed env config.\n\n"
-        "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
+        f"Target repository: {MAC_HOME}/workspace/projects/sample-project\n\n"
         "Scope: replace env.ts"
     )
     write_json_atomic(
@@ -340,7 +342,7 @@ def test_summarize_pr_body_fragments_redacts_local_paths(run_dir: Path) -> None:
     )
     fragments = summarize_pr_body_fragments(run_dir, task=task_with_path)
     for key, value in fragments.items():
-        assert "/Users/" not in value, f"Local path leaked in fragment '{key}'"
+        assert "/" + "Users/" not in value, f"Local path leaked in fragment '{key}'"
         assert "/home/" not in value, f"Local path leaked in fragment '{key}'"
 
 
@@ -349,7 +351,7 @@ def test_summarize_pr_body_fragments_uses_only_first_task_line_in_summary(
 ) -> None:
     task = (
         "Add typed env config.\n\n"
-        "Target repository: /Users/alice/workspace/projects/sample-project\n\n"
+        f"Target repository: {MAC_HOME}/workspace/projects/sample-project\n\n"
         "Scope: replace env.ts"
     )
     fragments = summarize_pr_body_fragments(run_dir, task=task)

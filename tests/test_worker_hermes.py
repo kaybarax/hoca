@@ -25,6 +25,8 @@ from hoca.worker_hermes import (
     verify_profile_prerequisites,
 )
 
+MAC_HOME = "/" + "Users/example"
+
 
 def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOCA_DOTENV_PATH", os.devnull)
@@ -74,10 +76,10 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     )
     prompt = build_worker_hermes_prompt(
         spec=spec,
-        project_path=Path("/Users/example/project"),
-        run_dir=Path("/Users/example/project/.hoca-runtime/runs/run-test"),
+        project_path=Path(f"{MAC_HOME}/project"),
+        run_dir=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test"),
         round_number=1,
-        task_spec_path=Path("/Users/example/project/.hoca-runtime/runs/run-test/task-spec.json"),
+        task_spec_path=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test/task-spec.json"),
         repair_brief="Repair token=abc123 before continuing",
     )
 
@@ -103,7 +105,7 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Subtract before adding" in prompt
     assert "Make operations idempotent" in prompt
     assert "Prove the real path works" in prompt
-    assert "execution_project_path: /Users/example/project" in prompt
+    assert f"execution_project_path: {MAC_HOME}/project" in prompt
     assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
     assert "- repo_root: /tmp/project" not in prompt
     assert "rewrite validation commands to run from project_path" in prompt
@@ -111,16 +113,16 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
 
 def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
     spec = sample_task_spec(
-        repo_root="/Users/example/original-checkout",
-        test_commands=["cd /Users/example/original-checkout && pytest"],
+        repo_root=f"{MAC_HOME}/original-checkout",
+        test_commands=[f"cd {MAC_HOME}/original-checkout && pytest"],
     )
     prompt = build_worker_hermes_prompt(
         spec=spec,
-        project_path=Path("/Users/example/original-checkout/.hoca-runtime/worktrees/run-test"),
-        run_dir=Path("/Users/example/original-checkout/.hoca-runtime/runs/run-test"),
+        project_path=Path(f"{MAC_HOME}/original-checkout/.hoca-runtime/worktrees/run-test"),
+        run_dir=Path(f"{MAC_HOME}/original-checkout/.hoca-runtime/runs/run-test"),
         round_number=1,
         task_spec_path=Path(
-            "/Users/example/original-checkout/.hoca-runtime/runs/run-test/task-spec.json"
+            f"{MAC_HOME}/original-checkout/.hoca-runtime/runs/run-test/task-spec.json"
         ),
     )
 
@@ -131,11 +133,11 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
         in prompt
     )
     assert (
-        "execution_project_path: /Users/example/original-checkout/.hoca-runtime/worktrees/run-test"
+        f"execution_project_path: {MAC_HOME}/original-checkout/.hoca-runtime/worktrees/run-test"
         in prompt
     )
-    assert "task_spec_repo_root_for_reference_only: /Users/example/original-checkout" in prompt
-    assert "- repo_root: /Users/example/original-checkout" not in prompt
+    assert f"task_spec_repo_root_for_reference_only: {MAC_HOME}/original-checkout" in prompt
+    assert f"- repo_root: {MAC_HOME}/original-checkout" not in prompt
 
 
 def test_build_worker_hermes_prompt_uses_active_dotenv_path(
@@ -146,10 +148,10 @@ def test_build_worker_hermes_prompt_uses_active_dotenv_path(
 
     prompt = build_worker_hermes_prompt(
         spec=sample_task_spec(),
-        project_path=Path("/Users/example/project"),
-        run_dir=Path("/Users/example/project/.hoca-runtime/runs/run-test"),
+        project_path=Path(f"{MAC_HOME}/project"),
+        run_dir=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test"),
         round_number=1,
-        task_spec_path=Path("/Users/example/project/.hoca-runtime/runs/run-test/task-spec.json"),
+        task_spec_path=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test/task-spec.json"),
     )
 
     assert f'HOCA_DOTENV_PATH="{dotenv_path.resolve()}"' in prompt

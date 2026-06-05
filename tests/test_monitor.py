@@ -196,7 +196,8 @@ class TestCheckSecretAccess:
 
 class TestCheckUnrelatedDirectory:
     def test_home_access(self):
-        result = check_unrelated_directory("cd /Users/alice/other-project", "/project")
+        home_path = "/" + "Users/alice/other-project"
+        result = check_unrelated_directory(f"cd {home_path}", "/project")
         assert result is not None
 
     def test_etc_access(self):

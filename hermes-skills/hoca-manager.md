@@ -118,7 +118,7 @@ board: hoca:<repo-slug>
 ```
 
 Derive `<repo-slug>` from the repository directory name (lowercase, hyphens for
-spaces). Example: `/path/to/todo-list-turborepo` → board `hoca:todo-list-turborepo`.
+spaces). Example: `/path/to/sample-project` -> board `hoca:sample-project`.
 
 Pin the board when creating tasks so workers cannot see unrelated boards. Record
 the board slug and parent task id in run artifacts when a run starts.
