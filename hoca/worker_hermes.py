@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -117,7 +116,7 @@ def build_worker_hermes_prompt(
     round_number: int,
     task_spec_path: Path,
     repair_brief: str | None = None,
-    ) -> str:
+) -> str:
     hoca_root = repo_root()
     hoca_python = sys.executable
     hoca_dotenv = Path(os.environ.get("HOCA_DOTENV_PATH", hoca_root / ".env")).expanduser()
@@ -152,7 +151,7 @@ def build_worker_hermes_prompt(
         "3. Run implementation only through:\n"
         f'   HOCA_LOCK_ROLE_MODEL=true HOCA_PYTHON="{hoca_python}" '
         f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
-        f'{hoca_root / "scripts" / "run-openhands-task.sh"} '
+        f"{hoca_root / 'scripts' / 'run-openhands-task.sh'} "
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
         "4. Inspect repository changes read-only (git status, git diff).\n"
         "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
@@ -161,7 +160,7 @@ def build_worker_hermes_prompt(
         f"{PSTACK_WORKER_PRINCIPLES}\n"
         "7. Write attempts/worker-attempt-<round>.json or run:\n"
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
-        f'--round {round_number} --status <completed|failed|blocked>\n\n'
+        f"--round {round_number} --status <completed|failed|blocked>\n\n"
         "Safety constraints:\n"
         "- Manager-owned Git lifecycle only: never run git add, git commit, git push, git merge, gh pr create, or gh pr merge.\n"
         "- Do not stage, commit, push, merge, or open pull requests.\n"
