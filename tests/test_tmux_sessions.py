@@ -48,7 +48,7 @@ case "$1" in
     ;;
   list-sessions)
     if [ -f "$STATE_FILE" ]; then
-      cat "$STATE_FILE"
+      echo "%1"
     fi
     ;;
   list-windows)

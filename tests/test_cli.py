@@ -72,7 +72,19 @@ def _seed_lane_for_cli(
     control_root = tmp_path / "control"
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / ".git").mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
 
     registry = FleetRegistry(control_root=control_root)
     registry.create_project(
@@ -107,6 +119,7 @@ def _seed_lane_for_cli(
             updated_at="2026-06-05T00:00:00Z",
         )
     )
+    run_dir.mkdir(parents=True, exist_ok=True)
     return control_root, run_dir
 
 

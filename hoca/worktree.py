@@ -44,8 +44,23 @@ def create_worktree(
     if wt.exists():
         raise FileExistsError(f"Worktree already exists: {wt}")
     wt.parent.mkdir(parents=True, exist_ok=True)
+    branch_exists = (
+        subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=str(project_path),
+            check=False,
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+    command = ["git", "worktree", "add"]
+    if branch_exists:
+        command.extend([str(wt), branch])
+    else:
+        command.extend(["-b", branch, str(wt)])
     subprocess.run(
-        ["git", "worktree", "add", str(wt), branch],
+        command,
         cwd=str(project_path),
         check=True,
         capture_output=True,

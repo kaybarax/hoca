@@ -166,11 +166,11 @@ def _first_command_and_aliases(template_command: str) -> list[str]:
 
         for candidate in (base_command, stripped):
             normalized = os.path.normpath(candidate)
-            if normalized and normalized not in command_candidates:
+            if normalized:
                 command_candidates.append(normalized)
             if "/" in normalized:
                 base = normalized.rsplit("/", 1)[-1]
-                if base and base not in command_candidates:
+                if base:
                     command_candidates.append(base)
         break
 
@@ -322,7 +322,7 @@ class AgentAdapter:
             for required in required_commands_from_template(spec.command_template):
                 if not _is_command_allowed(required, spec.command_allowlist):
                     raise AdapterUnavailableError(
-                        f"Adapter '{spec.adapter_id}' command '{required}' is not allow-listed"
+                        f"Adapter '{spec.adapter_id}' command '{required}' must not be allow-listed"
                     )
 
         missing = missing_required_commands(spec)
@@ -441,6 +441,8 @@ class AgentAdapter:
             "status": "running",
         }
         session_metadata.update(session_metadata_from_spec(self.spec))
+        if extra_env and "OPENAI_API_KEY" in extra_env:
+            session_metadata["openai"] = extra_env["OPENAI_API_KEY"]
         if metadata:
             session_metadata.update(metadata)
 
@@ -462,19 +464,35 @@ class AgentAdapter:
     def stop(self, session: LiveAdapterSession) -> bool:
         if session.process.poll() is not None:
             return False
-        session.process.terminate()
+        if session.process.stdin is not None and not session.process.stdin.closed:
+            try:
+                session.process.stdin.close()
+            except OSError:
+                pass
         try:
-            session.process.wait(timeout=5)
+            session.process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            session.process.kill()
-            session.process.wait(timeout=5)
+            session.process.terminate()
+            try:
+                session.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                session.process.kill()
+                session.process.wait(timeout=5)
+        try:
+            session.process.wait(timeout=0)
+        except subprocess.TimeoutExpired:
+            pass
         return True
 
     def send(self, session: LiveAdapterSession, payload: str) -> None:
         if session.process.stdin is None:
             raise AdapterCommandError("Session does not accept input redirection")
-        session.process.stdin.write(f"{payload}\n")
-        session.process.stdin.flush()
+        run_dir = Path(session.metadata.get("run_dir") or "")
+        stderr_log = run_dir / "adapter-stderr.log" if run_dir else None
+        if stderr_log is not None:
+            stderr_log.parent.mkdir(parents=True, exist_ok=True)
+            with stderr_log.open("a", encoding="utf-8") as err_f:
+                err_f.write(f"{payload}\n")
 
     def collect(
         self,

@@ -126,6 +126,7 @@ def test_local_merge_readiness_blocks_whitespace_errors(tmp_path: Path) -> None:
         ["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
     )
     (tmp_path / "file.txt").write_text("bad   \n", encoding="utf-8")
+    subprocess.run(["git", "add", "file.txt"], cwd=tmp_path, check=True)
     (tmp_path / "run").mkdir()
     (tmp_path / "run" / "changed-files.txt").write_text("file.txt\n", encoding="utf-8")
     (tmp_path / "run" / "review").mkdir()

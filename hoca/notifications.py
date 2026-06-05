@@ -56,12 +56,8 @@ def _action_for_snapshot(
     if snapshot.state == "ready_for_human":
         return "human_review_ready"
     if snapshot.state == "blocked":
-        if (snapshot.status_reason or "").lower() in {
-            "monitor",
-            "monitor_stop",
-            "monitor_timeout",
-            "secret_access",
-        }:
+        reason = (snapshot.status_reason or "").lower()
+        if any(token in reason for token in ("monitor", "timeout", "secret")):
             return "safety_monitor_block"
         return "lane_blocked"
     if snapshot.state == "completed" and snapshot.status == "stalled":

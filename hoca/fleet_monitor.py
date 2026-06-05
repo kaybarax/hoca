@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from hoca.run_state import read_optional_json
+from hoca.kanban_bridge import read_worker_status
 
 MONITOR_RUNNING_STATES = {"running", "review", "validation", "starting", "cleanup"}
 MONITOR_READY_STATES = {
@@ -95,8 +96,6 @@ def _read_active_hermes_worker_status(
 ) -> dict[str, Any] | None:
     if not project_path:
         return None
-    from hoca.kanban_bridge import read_worker_status
-
     resolved = _resolve_project_path(payload, project_path=project_path)
     if resolved is None:
         return None
@@ -245,6 +244,8 @@ def classify_lane_state(
     if status_text in MONITOR_FAILED_STATES:
         return "blocked"
     if status_text in MONITOR_READY_STATES:
+        if status_text == "ready_for_human":
+            return "ready_for_human"
         if reason:
             sanitized = str(reason).lower()
             if "monitor" in sanitized or "timeout" in sanitized:
@@ -339,7 +340,7 @@ def monitor_lane(
     if should_process:
         _save_state(run_dir, state=state, status=status, pr_check=pr_check)
 
-    if state in {"completed", "ready_for_human", "blocked"} and not terminal:
+    if state in {"completed", "ready_for_human", "blocked", "missing_artifacts"} and not terminal:
         if not should_process:
             state = f"{state}:stabilized"
 

@@ -59,8 +59,43 @@ def _parse_adapter_specs() -> tuple[tuple[str, str], ...]:
     if not raw.strip():
         return ()
 
+    def _split_specs(value: str) -> list[str]:
+        items: list[str] = []
+        chunk: list[str] = []
+        quote: str | None = None
+        escape = False
+        for char in value:
+            if escape:
+                chunk.append(char)
+                escape = False
+                continue
+            if char == "\\":
+                chunk.append(char)
+                escape = True
+                continue
+            if quote is not None:
+                chunk.append(char)
+                if char == quote:
+                    quote = None
+                continue
+            if char in {"'", '"'}:
+                quote = char
+                chunk.append(char)
+                continue
+            if char == ",":
+                item = "".join(chunk).strip()
+                if item:
+                    items.append(item)
+                chunk = []
+                continue
+            chunk.append(char)
+        item = "".join(chunk).strip()
+        if item:
+            items.append(item)
+        return items
+
     parsed: list[tuple[str, str]] = []
-    for item in raw.split(","):
+    for item in _split_specs(raw):
         spec = item.strip()
         if not spec:
             continue

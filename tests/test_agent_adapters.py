@@ -85,7 +85,8 @@ def test_adapter_start_collect_round_trip_with_fake_command(
     artifact = adapter.collect(session=session, run_dir=run_dir)
 
     assert artifact.return_code == 0
-    assert artifact.stdout.strip() == "agent-run"
+    assert artifact.stdout.splitlines()[0] == "agent-run"
+    assert "openai=done" in artifact.stdout
     assert "from-manager" in artifact.stderr
     assert artifact.command.startswith("hoca-fake-agent")
     assert artifact.metadata is not None

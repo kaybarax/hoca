@@ -32,7 +32,7 @@ class MergeRepairPlan:
 
 
 MERGE_REPAIR_BRIEF_PATH = "merge-repair-brief.json"
-MERGE_REPAIR_REPORT_PATH = "merge-conflict-report.txt"
+MERGE_REPAIR_REPORT_PATH = "merge_conflict_report.txt"
 MERGE_REPAIR_HIGH_RISK_HINTS = (
     "/migrations/",
     "/schema/",
@@ -279,7 +279,7 @@ def evaluate_local_merge_readiness(inputs: LocalReadinessInputs) -> HocaMergeRea
         status = "blocked"
 
     checks.append("diff_check")
-    return_code, details = _run_raw_command(repo_path, ["diff", "--check"])
+    return_code, details = _run_raw_command(repo_path, ["diff", "--check", "--cached"])
     if return_code != 0:
         issues.append(f"git diff --check reported issues: {details}")
         status = "blocked"
@@ -304,6 +304,7 @@ def evaluate_local_merge_readiness(inputs: LocalReadinessInputs) -> HocaMergeRea
             )
             checks.append("merge_repair")
             issues.append(output or "Unable to confirm merge base ancestry.")
+            issues.append("Base branch diverged from HEAD; rebase or branch update is required.")
             if repair_plan.reason:
                 issues.append(repair_plan.reason)
             if repair_plan.escalate_to_human:

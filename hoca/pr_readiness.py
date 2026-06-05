@@ -214,6 +214,7 @@ def evaluate_pr_merge_readiness(inputs: PrReadinessInputs) -> HocaMergeReadiness
             status = "not_ready"
         issues.append(view_reason or "PR is not merge-ready yet.")
     elif view_status == "draft_ready":
+        checks.append("draft_ready")
         if status == "ready":
             status = "draft_ready"
         issues.append(view_reason or "PR needs human review attention.")

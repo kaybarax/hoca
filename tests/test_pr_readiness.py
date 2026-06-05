@@ -45,7 +45,10 @@ def _make_readiness_status(run_dir: Path, pr_ref: str | None = None) -> None:
     if pr_ref is None:
         return
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "status.json").write_text(f'{{"pr_url": "{pr_ref}"}}\\n', encoding="utf-8")
+    (run_dir / "status.json").write_text(
+        json.dumps({"pr_url": pr_ref}) + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_pr_readiness_blocks_without_pr_reference(tmp_path: Path) -> None:
@@ -157,6 +160,7 @@ def test_pr_readiness_blocks_when_checks_fail(tmp_path: Path) -> None:
 
 def test_pr_readiness_draft_ready_when_review_changes_requested(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "changed-files.txt").write_text("app.py\n", encoding="utf-8")
     _make_readiness_status(run_dir, pr_ref="https://github.com/org/repo/pull/1")
     _fake_gh_binary(
@@ -190,6 +194,7 @@ def test_pr_readiness_draft_ready_when_review_changes_requested(tmp_path: Path) 
 
 def test_pr_readiness_blocks_ui_changes_without_screenshot_when_required(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "changed-files.txt").write_text("web/app.tsx\n", encoding="utf-8")
     _make_readiness_status(run_dir, pr_ref="https://github.com/org/repo/pull/1")
     _fake_gh_binary(
@@ -223,6 +228,7 @@ def test_pr_readiness_blocks_ui_changes_without_screenshot_when_required(tmp_pat
 
 def test_pr_readiness_with_screenshot_policy_passes_when_screenshot_exists(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "changed-files.txt").write_text("web/app.tsx\n", encoding="utf-8")
     (run_dir / "ui-screenshot.png").write_text("binary", encoding="utf-8")
     _make_readiness_status(run_dir, pr_ref="https://github.com/org/repo/pull/1")
