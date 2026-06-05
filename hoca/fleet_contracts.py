@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Self
 
 from hoca.security import is_secret_like_path
@@ -155,6 +155,7 @@ def _validate_non_secret_path(path: str, field: str) -> str:
     return path
 
 
+@dataclass(frozen=True, kw_only=True)
 class JsonContract:
     schema_version: int = 1
 
@@ -180,7 +181,7 @@ class HocaProject(JsonContract):
     default_branch: str = "main"
     max_parallel_tasks: int = 1
     runtime_archive_root: str = ""
-    agent_policy: dict[str, str] | None = None
+    agent_policy: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
     is_active: bool = True

@@ -8,14 +8,14 @@ import pytest
 from hoca.contracts import (
     HocaAttemptReport,
     HocaManagerDecision,
-    HocaNotification,
-    HocaResourceBudget,
     HocaReviewReport,
     HocaSandboxPolicy,
     HocaTaskSpec,
     HocaValidationReport,
 )
 from hoca.fleet_contracts import (
+    HocaNotification,
+    HocaResourceBudget,
     HocaAgentAdapterSpec,
     HocaAgentSession,
     HocaFleetTask,

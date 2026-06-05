@@ -162,7 +162,7 @@ class FleetRegistry:
         tasks = self._load_index(self.paths.tasks_json)
         task = tasks.get(lane.task_id)
         if task is not None:
-            lane_ids = list(task.get("lane_ids", []))
+            lane_ids = list(task.get("lane_ids") or [])
             if lane.lane_id not in lane_ids:
                 lane_ids.append(lane.lane_id)
                 task["lane_ids"] = lane_ids
