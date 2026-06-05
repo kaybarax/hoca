@@ -148,6 +148,40 @@ def test_cleanup_stale_metadata_is_removed(tmp_path: Path) -> None:
     assert pool.get_lease("lane-task-c-01") is None
 
 
+def test_cleanup_stale_worktrees_ignores_unmanaged_paths(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    branch = "feat/task-d"
+    subprocess.run(["git", "checkout", "-b", branch], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "main"], cwd=repo, check=True, capture_output=True)
+
+    pool = WorktreeLeasePool(control_root=tmp_path / "control", ttl_seconds=3600)
+    pool.create_lease(
+        lane_id="lane-task-d-01",
+        project_id="proj-d",
+        task_id="task-d",
+        branch=branch,
+        base_ref="main",
+        project_path=repo,
+        lease_id="lane-task-d-01",
+    )
+
+    unmanaged = repo / ".hoca-runtime" / "worktrees" / "manual-worktree"
+    unmanaged.mkdir(parents=True, exist_ok=True)
+
+    removed = pool.cleanup_stale_worktrees(
+        project_path=repo,
+        reference="2100-01-01T00:00:00Z",
+        remove_completed=False,
+        remove_abandoned=False,
+    )
+
+    assert removed == ["lane-task-d-01"]
+    assert unmanaged.exists()
+    assert pool.get_lease("lane-task-d-01") is None
+
+
 def test_prune_orphaned_worktrees(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
