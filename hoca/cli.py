@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+import time
 
 import click
 
 from hoca.doctor import run_doctor
+from hoca.fleet_registry import FleetRegistry
+from hoca.fleet_contracts import HocaLane
 from hoca.paths import repo_root
+from hoca.tmux_sessions import AdapterCommandError, _sanitize_session_name, send_to_session
 
 
 def run_script(script_name: str, args: list[str]) -> None:
@@ -31,6 +35,75 @@ def require_target_repo(project_path: Path) -> Path:
     if not (project_path / ".git").exists():
         raise click.ClickException(f"Target path is not a Git repository: {project_path}")
     return project_path
+
+
+def _secret_like_message(message: str) -> bool:
+    lowered = message.lower()
+    return any(token in lowered for token in ("api_key", "api-key", "secret", "token", "password", "private_key"))
+
+
+def _append_send_log(run_dir: Path, lane_id: str, message: str, *, dry_run: bool) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / "lane-send.log"
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    tag = "dry-run" if dry_run else "sent"
+    with log_path.open("a", encoding="utf-8") as log_file:
+        log_file.write(f"{timestamp} {lane_id} {tag}={message}\n")
+
+
+def _resolve_lane_for_send(lane_id: str, *, control_root: Path | None = None) -> tuple[HocaLane, Path]:
+    registry = FleetRegistry(control_root=control_root)
+    lane = registry.get_lane(lane_id)
+    if lane is None:
+        raise click.ClickException(f"Lane not found: {lane_id}")
+
+    if not lane.run_dir:
+        raise click.ClickException(f"Lane {lane_id} has no run directory")
+
+    project = registry.get_project(lane.project_id)
+    if project is None:
+        raise click.ClickException(f"Lane {lane_id} references missing project: {lane.project_id}")
+
+    raw_run_dir = Path(lane.run_dir)
+    if raw_run_dir.is_absolute():
+        return lane, raw_run_dir
+
+    project_path = Path(project.repo_path)
+    return lane, project_path / raw_run_dir
+
+
+def _can_send_to_lane(lane: HocaLane) -> bool:
+    return lane.status not in {"blocked", "failed", "cleaned"}
+
+
+def _block_secret_like(message: str) -> None:
+    if _secret_like_message(message):
+        raise click.ClickException("message appears to contain secret-like content")
+
+
+def _send_to_lane(
+    lane_id: str,
+    message: str,
+    *,
+    dry_run: bool,
+    control_root: Path | None = None,
+) -> Path:
+    lane, run_dir = _resolve_lane_for_send(lane_id, control_root=control_root)
+    if not _can_send_to_lane(lane):
+        raise click.ClickException(f"Cannot send to lane with status '{lane.status}': {lane_id}")
+
+    _block_secret_like(message)
+    _append_send_log(run_dir, lane_id, message, dry_run=dry_run)
+
+    if dry_run:
+        return run_dir
+
+    try:
+        send_to_session(_sanitize_session_name(lane_id), message)
+    except AdapterCommandError as error:
+        raise click.ClickException(f"Failed to send message for lane {lane_id}: {error}") from error
+
+    return run_dir
 
 
 @click.group()
@@ -172,6 +245,24 @@ def kanban_watch(project_path: Path) -> None:
     """[Experimental] Show the HOCA Kanban board status for a target repository."""
     project_path = require_target_repo(project_path)
     run_script("kanban-watch.sh", [str(project_path)])
+
+
+@main.group()
+def lane() -> None:
+    """Manage and communicate with HOCA lanes."""
+
+
+@lane.command("send")
+@click.argument("lane_id")
+@click.argument("message")
+@click.option("--dry-run", is_flag=True, default=False, help="Plan send without dispatching to tmux.")
+def lane_send(lane_id: str, message: str, dry_run: bool) -> None:
+    """Send a manager-approved redirection to a lane session."""
+    _send_to_lane(lane_id, message, dry_run=dry_run)
+    if dry_run:
+        click.echo(f"Dry run: not sent lane send to {lane_id}")
+    else:
+        click.echo(f"Message sent to lane: {lane_id}")
 
 
 if __name__ == "__main__":

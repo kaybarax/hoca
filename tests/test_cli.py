@@ -7,12 +7,16 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from hoca.cli import main
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
+from hoca.fleet_registry import FleetRegistry
 
 CLI_COMMANDS = {
     "doctor": "Check local HOCA dependencies",
     "init-project": "Install HOCA project-level templates",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
+    "lane": "Manage and communicate with HOCA lanes",
+    "kanban-init": "Experimental",
 }
 
 DIRECT_ENTRYPOINTS = [
@@ -40,6 +44,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "issue" in result.output
     assert "setup-profiles" in result.output
     assert "report" in result.output
+    assert "lane" in result.output
 
 
 def test_cli_commands_remain_registered() -> None:
@@ -48,6 +53,136 @@ def test_cli_commands_remain_registered() -> None:
 
         assert result.exit_code == 0
         assert help_text in result.output
+
+
+def _seed_lane_for_cli(
+    tmp_path: Path,
+    *,
+    lane_id: str,
+    lane_status: str = "running",
+) -> tuple[Path, Path]:
+    control_root = tmp_path / "control"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    registry = FleetRegistry(control_root=control_root)
+    registry.create_project(
+        HocaProject(
+            project_id="project-1",
+            repo_path=str(repo),
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    registry.create_task(
+        HocaFleetTask(
+            task_id="task-1",
+            project_id="project-1",
+            status="queued",
+            readiness="not_ready",
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    run_dir = repo / "lane" / lane_id
+    registry.create_lane(
+        HocaLane(
+            lane_id=lane_id,
+            task_id="task-1",
+            project_id="project-1",
+            status=lane_status,
+            branch="lane-task-1",
+            run_dir=f"lane/{lane_id}",
+            attempt_number=0,
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    return control_root, run_dir
+
+
+def test_lane_send_helps_command() -> None:
+    result = CliRunner().invoke(main, ["lane", "send", "--help"])
+
+    assert result.exit_code == 0
+    assert "Send a manager-approved redirection to a lane session." in result.output
+    assert "--dry-run" in result.output
+
+
+def test_lane_send_transmits_message_and_logs(tmp_path, monkeypatch) -> None:
+    control_root, run_dir = _seed_lane_for_cli(tmp_path, lane_id="lane-task-1-01")
+    calls: list[tuple[str, str]] = []
+
+    def fake_send_to_session(session_name: str, message: str) -> None:
+        calls.append((session_name, message))
+
+    monkeypatch.setattr("hoca.cli.send_to_session", fake_send_to_session)
+    monkeypatch.setenv("HOCA_CONTROL_ROOT", str(control_root))
+
+    result = CliRunner().invoke(main, ["lane", "send", "lane-task-1-01", "continue"])
+
+    assert result.exit_code == 0
+    assert calls == [("lane-task-1-01", "continue")]
+    assert "Message sent to lane: lane-task-1-01" in result.output
+    assert (run_dir / "lane-send.log").is_file()
+
+
+def test_lane_send_dry_run_does_not_dispatch(tmp_path, monkeypatch) -> None:
+    control_root, run_dir = _seed_lane_for_cli(tmp_path, lane_id="lane-task-2-01")
+    calls: list[tuple[str, str]] = []
+
+    def fake_send_to_session(session_name: str, message: str) -> None:
+        calls.append((session_name, message))
+
+    monkeypatch.setattr("hoca.cli.send_to_session", fake_send_to_session)
+    monkeypatch.setenv("HOCA_CONTROL_ROOT", str(control_root))
+
+    result = CliRunner().invoke(
+        main,
+        ["lane", "send", "lane-task-2-01", "hold on", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert calls == []
+    assert "Dry run: not sent lane send to lane-task-2-01" in result.output
+    assert "dry-run=hold on" in (run_dir / "lane-send.log").read_text(encoding="utf-8")
+
+
+def test_lane_send_blocks_secret_like_messages(tmp_path, monkeypatch) -> None:
+    control_root, _ = _seed_lane_for_cli(tmp_path, lane_id="lane-task-3-01")
+    calls: list[tuple[str, str]] = []
+
+    def fake_send_to_session(session_name: str, message: str) -> None:
+        calls.append((session_name, message))
+
+    monkeypatch.setattr("hoca.cli.send_to_session", fake_send_to_session)
+    monkeypatch.setenv("HOCA_CONTROL_ROOT", str(control_root))
+
+    result = CliRunner().invoke(main, ["lane", "send", "lane-task-3-01", "api_key=abc123"])
+    assert result.exit_code != 0
+    assert "secret-like content" in result.output
+    assert calls == []
+
+
+def test_lane_send_rejects_blocked_lane(tmp_path, monkeypatch) -> None:
+    control_root, _ = _seed_lane_for_cli(
+        tmp_path,
+        lane_id="lane-task-4-01",
+        lane_status="cleaned",
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fake_send_to_session(session_name: str, message: str) -> None:
+        calls.append((session_name, message))
+
+    monkeypatch.setattr("hoca.cli.send_to_session", fake_send_to_session)
+    monkeypatch.setenv("HOCA_CONTROL_ROOT", str(control_root))
+
+    result = CliRunner().invoke(main, ["lane", "send", "lane-task-4-01", "continue"])
+    assert result.exit_code != 0
+    assert calls == []
+    assert "Cannot send to lane with status 'cleaned'" in result.output
 
 
 def test_direct_entrypoints_remain_executable_and_parseable() -> None:
