@@ -94,6 +94,53 @@ def test_adapter_start_collect_round_trip_with_fake_command(tmp_path: Path, monk
     assert artifact.metadata["openai"] == "done"
 
 
+def test_adapter_start_filters_github_tokens_from_worker_phase(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    agent = fake_bin / "hoca-fake-agent"
+    _write_executable(
+        agent,
+        "#!/usr/bin/env bash\n"
+        "echo github=$GITHUB_TOKEN\n"
+        "echo gh=$GH_TOKEN\n"
+        "cat\n",
+    )
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+
+    spec = HocaAgentAdapterSpec(
+        adapter_id="fake",
+        provider="fake",
+        command_template="hoca-fake-agent --worktree={worktree_path} --task={task}",
+        command_allowlist=["hoca-fake-agent"],
+        max_concurrency=1,
+        capabilities=["coding"],
+    )
+
+    adapter = AgentAdapter(spec=spec)
+    run_dir = tmp_path / "run"
+    session = adapter.start(
+        session_id=fake_session_id(),
+        lane_id="lane-1",
+        project_path=tmp_path,
+        worktree_path=tmp_path,
+        task="Hello",
+        run_dir=run_dir,
+        extra_env={
+            "GITHUB_TOKEN": "keep-out",
+            "GH_TOKEN": "keep-out",
+            "OPENAI_API_KEY": "still-allowed",
+        },
+    )
+    adapter.send(session, "from-manager")
+    assert adapter.stop(session) is True
+    artifact = adapter.collect(session=session, run_dir=run_dir)
+
+    assert "github=keep-out" not in artifact.stdout
+    assert "gh=keep-out" not in artifact.stdout
+    assert "github=" in artifact.stdout
+    assert "gh=" in artifact.stdout
+
+
 def test_start_rejects_secret_like_extra_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
