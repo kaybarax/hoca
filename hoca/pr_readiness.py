@@ -156,6 +156,8 @@ def evaluate_pr_merge_readiness(inputs: PrReadinessInputs) -> HocaMergeReadiness
         return HocaMergeReadiness(
             lane_id=inputs.lane_id,
             readiness="not_ready",
+            ci_status="missing",
+            pr_url=None,
             checks=checks,
             reason="; ".join(issues),
             checked_at=now_iso(),
@@ -174,8 +176,11 @@ def evaluate_pr_merge_readiness(inputs: PrReadinessInputs) -> HocaMergeReadiness
     elif check_status == "unknown":
         status = "blocked"
         issues.append("Unable to classify PR checks.")
-    else:
+    elif check_status == "passed":
         status = "ready"
+    else:
+        status = "blocked"
+        issues.append("Unable to classify PR checks.")
 
     checks.append("pr_view")
     pr_view_payload = _run_gh_json(
@@ -185,27 +190,37 @@ def evaluate_pr_merge_readiness(inputs: PrReadinessInputs) -> HocaMergeReadiness
     if view_status == "ready":
         pass
     elif view_status == "not_ready":
-        status = "draft_ready" if status == "ready" else status
+        if status not in {"blocked"}:
+            status = "not_ready"
         issues.append(view_reason or "PR is not merge-ready yet.")
+    elif view_status == "draft_ready":
+        if status == "ready":
+            status = "draft_ready"
+        issues.append(view_reason or "PR needs human review attention.")
     else:
-        status = "blocked" if status != "blocked" else status
+        if status != "blocked":
+            status = "blocked"
         issues.append(view_reason or "PR metadata blocked readiness.")
 
-    if status == "ready" and _is_ui_related(changed_files, extensions=inputs.ui_file_extensions):
+    if inputs.require_ui_screenshot and _is_ui_related(
+        changed_files,
+        extensions=inputs.ui_file_extensions,
+    ):
         checks.append("screenshot")
         if not _has_screenshot_artifact(run_dir, hints=inputs.screenshot_path_patterns):
-            status = "blocked"
+            if status in {"ready", "draft_ready"}:
+                status = "blocked"
             issues.append("UI changes require a screenshot artifact before merge.")
-    elif status in {"not_ready", "draft_ready", "blocked"}:
-        checks.append("screenshot")
 
     if status == "ready":
         issues = []
     return HocaMergeReadiness(
         lane_id=inputs.lane_id,
         readiness=status,
+        ci_status=check_status,
+        pr_url=pr_ref,
         checks=checks,
         reason="; ".join(issues) if issues else None,
         checked_at=now_iso(),
-        human_review_required=status in {"not_ready", "draft_ready", "blocked"},
+        human_review_required=status != "ready",
     )

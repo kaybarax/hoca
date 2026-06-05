@@ -58,6 +58,8 @@ def test_pr_readiness_blocks_without_pr_reference(tmp_path: Path) -> None:
     )
     assert result.readiness == "not_ready"
     assert "No PR URL/number" in (result.reason or "")
+    assert result.ci_status == "missing"
+    assert result.pr_url is None
 
 
 def test_pr_readiness_passes_when_checks_and_view_are_ready(tmp_path: Path) -> None:
@@ -88,6 +90,9 @@ def test_pr_readiness_passes_when_checks_and_view_are_ready(tmp_path: Path) -> N
         os.environ["PATH"] = old_path
 
     assert result.readiness == "ready"
+    assert result.ci_status == "passed"
+    assert result.pr_url == "https://github.com/org/repo/pull/1"
+    assert result.human_review_required is False
 
 
 def test_pr_readiness_stays_not_ready_when_checks_pending(tmp_path: Path) -> None:
@@ -112,6 +117,7 @@ def test_pr_readiness_stays_not_ready_when_checks_pending(tmp_path: Path) -> Non
 
     assert result.readiness == "not_ready"
     assert "pending" in (result.reason or "").lower()
+    assert result.ci_status == "pending"
 
 
 def test_pr_readiness_blocks_when_checks_fail(tmp_path: Path) -> None:
@@ -136,6 +142,7 @@ def test_pr_readiness_blocks_when_checks_fail(tmp_path: Path) -> None:
 
     assert result.readiness == "blocked"
     assert "failed" in (result.reason or "").lower()
+    assert result.ci_status == "failed"
 
 
 def test_pr_readiness_draft_ready_when_review_changes_requested(tmp_path: Path) -> None:
@@ -168,6 +175,7 @@ def test_pr_readiness_draft_ready_when_review_changes_requested(tmp_path: Path) 
     assert result.readiness == "draft_ready"
     assert "draft_ready" in result.checks
     assert "review" in (result.reason or "").lower()
+    assert result.ci_status == "passed"
 
 
 def test_pr_readiness_blocks_ui_changes_without_screenshot_when_required(tmp_path: Path) -> None:
@@ -200,6 +208,7 @@ def test_pr_readiness_blocks_ui_changes_without_screenshot_when_required(tmp_pat
 
     assert result.readiness == "blocked"
     assert "screenshot" in (result.reason or "").lower()
+    assert result.ci_status == "passed"
 
 
 def test_pr_readiness_with_screenshot_policy_passes_when_screenshot_exists(tmp_path: Path) -> None:
