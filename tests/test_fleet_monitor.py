@@ -125,3 +125,23 @@ def test_pr_check_returns_unknown_when_github_check_command_fails(monkeypatch: p
     monkeypatch.setattr(fleet_monitor.subprocess, "run", fake_run)
     snapshot = monitor_lane("lane-6", run_dir, terminal_alive=True)
     assert snapshot.pr_check == "unknown"
+
+
+def test_monitor_lane_includes_active_hermes_worker_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "running", "project_path": str(tmp_path)}),
+        encoding="utf-8",
+    )
+
+    payload = {"lane_id": "lane-7", "state": "running"}
+
+    def fake_read_worker_status(*, lane_id: str, project_path: Path) -> dict[str, object]:
+        assert lane_id == "lane-7"
+        assert project_path == tmp_path.resolve()
+        return payload
+
+    monkeypatch.setattr(fleet_monitor, "read_worker_status", fake_read_worker_status)
+    snapshot = monitor_lane("lane-7", run_dir, terminal_alive=True, project_path=tmp_path)
+    assert snapshot.hermes_worker == payload

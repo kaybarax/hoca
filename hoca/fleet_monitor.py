@@ -44,6 +44,7 @@ class LaneMonitorSnapshot:
     terminal_alive: bool
     should_process: bool
     run_dir: str
+    hermes_worker: dict[str, Any] | None = None
     git_changed_files: int | None = None
     git_merge_base_ok: bool | None = None
     pr_check: str | None = None
@@ -68,6 +69,38 @@ def _status_payload(run_dir: Path) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+def _resolve_project_path(payload: dict[str, Any], project_path: Path | None = None) -> Path | None:
+    if project_path is not None:
+        resolved = project_path.expanduser().resolve()
+        if resolved.is_dir():
+            return resolved
+
+    for key in ("project_path", "repo_path", "repo_root", "worktree_path"):
+        raw = payload.get(key)
+        if not isinstance(raw, str):
+            continue
+        candidate = Path(raw).expanduser().resolve()
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _read_active_hermes_worker_status(
+    lane_id: str,
+    *,
+    project_path: Path | None,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not project_path:
+        return None
+    from hoca.kanban_bridge import read_worker_status
+
+    resolved = _resolve_project_path(payload, project_path=project_path)
+    if resolved is None:
+        return None
+    return read_worker_status(lane_id=lane_id, project_path=resolved)
 
 
 def _snapshot_keys_for_artifacts(run_dir: Path) -> dict[str, bool]:
@@ -230,6 +263,7 @@ def monitor_lane(
     *,
     terminal_alive: bool | None = None,
     pr_url_override: str | None = None,
+    project_path: Path | None = None,
 ) -> LaneMonitorSnapshot:
     run_dir = run_dir.expanduser().resolve()
     payload = _status_payload(run_dir)
@@ -261,6 +295,12 @@ def monitor_lane(
 
     state = classify_lane_state(payload, terminal_alive=terminal, pr_check=pr_check)
 
+    hermes_worker = _read_active_hermes_worker_status(
+        lane_id,
+        payload=payload,
+        project_path=project_path,
+    )
+
     last = _load_last_state(run_dir)
     should_process = last.get("state") != state or not last
     if should_process:
@@ -279,6 +319,7 @@ def monitor_lane(
         has_validation_artifacts=keys["has_validation_report"],
         has_review_artifacts=keys["has_review_artifacts"],
         terminal_alive=terminal,
+        hermes_worker=hermes_worker,
         should_process=should_process,
         run_dir=str(run_dir),
         git_changed_files=changed_files_count,
