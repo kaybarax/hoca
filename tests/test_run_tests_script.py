@@ -151,8 +151,8 @@ def test_run_tests_prefers_task_spec_commands_over_root_scripts(tmp_path: Path) 
         fake_bin / "pnpm",
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "if [[ \"${1:-}\" == \"install\" ]]; then echo install; exit 0; fi\n"
-        "echo pnpm \"$@\"\n",
+        'if [[ "${1:-}" == "install" ]]; then echo install; exit 0; fi\n'
+        'echo pnpm "$@"\n',
     )
 
     result = run_tests(project, run_dir, fake_bin)
@@ -179,10 +179,10 @@ def test_run_tests_rewrites_task_spec_repo_root_to_project_path(tmp_path: Path) 
         '{"repo_root": "/original/repo", "test_commands": ["cd /original/repo && pnpm --filter @todo/api-gateway test"]}\n',
         encoding="utf-8",
     )
-    write_executable(fake_bin / "npm", "#!/usr/bin/env bash\necho npm \"$@\"\n")
+    write_executable(fake_bin / "npm", '#!/usr/bin/env bash\necho npm "$@"\n')
     write_executable(
         fake_bin / "pnpm",
-        "#!/usr/bin/env bash\nprintf 'cwd=%s args=%s\\n' \"$PWD\" \"$*\"\n",
+        '#!/usr/bin/env bash\nprintf \'cwd=%s args=%s\\n\' "$PWD" "$*"\n',
     )
 
     result = run_tests(project, run_dir, fake_bin)

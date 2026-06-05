@@ -188,10 +188,7 @@ def _image_checks(
         return lines
 
     if completed.returncode != 0:
-        message = (
-            f"Sandbox image not available: {image} "
-            f"(run: scripts/sandbox-manager.sh build)."
-        )
+        message = f"Sandbox image not available: {image} (run: scripts/sandbox-manager.sh build)."
         lines.append(("fail" if require_image else "warn", message))
         return lines
 

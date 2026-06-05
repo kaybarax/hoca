@@ -145,9 +145,7 @@ class TestValidationHardBlockers:
             ("completed", None),
         ],
     )
-    def test_monitor_stop_reason_mapping(
-        self, stop_reason: str, blocker_id: str | None
-    ) -> None:
+    def test_monitor_stop_reason_mapping(self, stop_reason: str, blocker_id: str | None) -> None:
         assert validation_blocker_from_monitor_stop_reason(stop_reason) == blocker_id
 
 
@@ -162,9 +160,7 @@ class TestFindingHardBlockers:
             ("medium", "security", False),
         ],
     )
-    def test_is_finding_hard_blocker(
-        self, severity: str, category: str, expected: bool
-    ) -> None:
+    def test_is_finding_hard_blocker(self, severity: str, category: str, expected: bool) -> None:
         finding = _finding("F1", severity=severity, category=category)
         assert is_finding_hard_blocker(finding) is expected
 
@@ -198,9 +194,7 @@ class TestHardBlockerArbitrationIntegration:
         "blocker_id",
         sorted(ABSOLUTE_VALIDATION_BLOCKERS),
     )
-    def test_absolute_validation_blocker_blocks_immediately(
-        self, blocker_id: str
-    ) -> None:
+    def test_absolute_validation_blocker_blocks_immediately(self, blocker_id: str) -> None:
         validation = self._validation_for_blocker(blocker_id)
         decision = arbitrate(
             review=_review(round_number=1, verdict="LGTM"),
@@ -213,9 +207,7 @@ class TestHardBlockerArbitrationIntegration:
         "blocker_id",
         sorted(REPAIRABLE_VALIDATION_BLOCKERS),
     )
-    def test_repairable_validation_blocker_blocks_at_round_cap(
-        self, blocker_id: str
-    ) -> None:
+    def test_repairable_validation_blocker_blocks_at_round_cap(self, blocker_id: str) -> None:
         if blocker_id == "test_failure":
             validation = ValidationStatus(tests_passed=False)
         else:

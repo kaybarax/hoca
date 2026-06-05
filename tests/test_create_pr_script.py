@@ -37,8 +37,12 @@ def init_pr_repo(path: Path) -> None:
     remote = path.parent / "origin.git"
     subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
     subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=path, check=True)
-    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=path, check=True, stdout=subprocess.PIPE)
-    subprocess.run(["git", "checkout", "-b", "feat/widget"], cwd=path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "push", "-u", "origin", "main"], cwd=path, check=True, stdout=subprocess.PIPE
+    )
+    subprocess.run(
+        ["git", "checkout", "-b", "feat/widget"], cwd=path, check=True, stdout=subprocess.PIPE
+    )
     (path / "src" / "widget.ts").write_text("export const widget = 'updated';\n", encoding="utf-8")
     subprocess.run(["git", "add", "--", "src/widget.ts"], cwd=path, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "update widget"], cwd=path, check=True)
@@ -68,8 +72,13 @@ def write_fixture_run_artifacts(run_dir: Path, repo: Path) -> None:
             "sandbox": {"enabled": True, "network_mode": "offline"},
         },
     )
-    write_json_atomic(run_dir / "sandbox-policy.json", {"schema_version": 1, "enabled": True, "network_mode": "offline"})
-    (run_dir / "tests-summary.md").write_text("# Validation\n\n- pnpm test: passed\n", encoding="utf-8")
+    write_json_atomic(
+        run_dir / "sandbox-policy.json",
+        {"schema_version": 1, "enabled": True, "network_mode": "offline"},
+    )
+    (run_dir / "tests-summary.md").write_text(
+        "# Validation\n\n- pnpm test: passed\n", encoding="utf-8"
+    )
     (run_dir / "changed-files.txt").write_text("src/widget.ts\n.env\n", encoding="utf-8")
     (run_dir / "risk-notes.txt").write_text("Low risk fixture change.\n", encoding="utf-8")
     write_json_atomic(
@@ -117,7 +126,7 @@ def test_create_pr_generates_body_from_fixture_artifacts(tmp_path: Path) -> None
         'if [[ "${1:-}" == "auth" && "${2:-}" == "status" ]]; then exit 0; fi\n'
         'if [[ "${1:-}" == "pr" && "${2:-}" == "create" ]]; then\n'
         '  body_file=""\n'
-        '  while [[ $# -gt 0 ]]; do\n'
+        "  while [[ $# -gt 0 ]]; do\n"
         '    if [[ "$1" == "--body-file" ]]; then body_file="$2"; shift 2; else shift; fi\n'
         "  done\n"
         '  cat "$body_file" > "${GH_CAPTURE_BODY:?}"\n'

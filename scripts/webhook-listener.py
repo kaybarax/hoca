@@ -20,6 +20,7 @@ DOTENV = {key: value for key, value in dotenv_values().items() if value is not N
 def config_value(name: str, default: str = "") -> str:
     return os.environ.get(name, DOTENV.get(name, default))
 
+
 app = Flask(__name__)
 
 WEBHOOK_SECRET = config_value("HOCA_WEBHOOK_SECRET")

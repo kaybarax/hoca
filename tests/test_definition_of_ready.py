@@ -137,15 +137,12 @@ class TestEvaluateDefinitionOfReady:
             "Update prod infra",
         ],
     )
-    def test_underspecified_production_infra_escalates(
-        self, tmp_path: Path, task: str
-    ) -> None:
+    def test_underspecified_production_infra_escalates(self, tmp_path: Path, task: str) -> None:
         result = evaluate_definition_of_ready(repo_path=tmp_path, task=task)
 
         assert result.outcome == DorOutcome.NEEDS_CLARIFICATION
         assert any(
-            check.id == "underspecified_production_infrastructure"
-            for check in result.checks
+            check.id == "underspecified_production_infrastructure" for check in result.checks
         )
 
     def test_high_risk_specific_task_warns_but_remains_ready(self, tmp_path: Path) -> None:
@@ -156,7 +153,9 @@ class TestEvaluateDefinitionOfReady:
 
         assert result.outcome == DorOutcome.READY
         assert result.risk_level == "high"
-        assert any(check.id == "high_risk_area" and check.disposition == "warn" for check in result.checks)
+        assert any(
+            check.id == "high_risk_area" and check.disposition == "warn" for check in result.checks
+        )
 
     def test_result_to_dict_and_artifact(self, tmp_path: Path) -> None:
         result = evaluate_definition_of_ready(

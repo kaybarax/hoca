@@ -29,8 +29,7 @@ def init_repo(path: Path) -> None:
         "# Demo\n\nChange src/app.py for the widget.\n", encoding="utf-8"
     )
     (path / "AGENTS.md").write_text(
-        "API_KEY=super-secret-should-not-appear\n"
-        "Focus changes on src/.\n",
+        "API_KEY=super-secret-should-not-appear\nFocus changes on src/.\n",
         encoding="utf-8",
     )
     (path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
@@ -217,4 +216,7 @@ def test_gather_repository_metadata(tmp_path: Path) -> None:
     init_repo(tmp_path)
     metadata = gather_repository_metadata(tmp_path)
     assert metadata["git_inside_work_tree"] is True
-    assert "README.md" in metadata["project_markers"] or "pyproject.toml" in metadata["project_markers"]
+    assert (
+        "README.md" in metadata["project_markers"]
+        or "pyproject.toml" in metadata["project_markers"]
+    )

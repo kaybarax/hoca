@@ -70,9 +70,7 @@ def test_init_run_layout_writes_task_spec_and_sandbox_policy(tmp_path: Path) -> 
     assert spec.goal == "Update README"
     assert spec.max_total_rounds == 3
 
-    sandbox = HocaSandboxPolicy.from_json(
-        sandbox_policy_path(run_dir).read_text(encoding="utf-8")
-    )
+    sandbox = HocaSandboxPolicy.from_json(sandbox_policy_path(run_dir).read_text(encoding="utf-8"))
     assert sandbox.enabled is True
     assert sandbox.network_mode == "offline"
 

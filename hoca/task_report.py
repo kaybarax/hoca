@@ -222,9 +222,7 @@ def _format_worker_attempts_section(run_dir: Path) -> str | None:
         if report.changed_files:
             lines.append(f"- Changed files: {', '.join(report.changed_files[:12])}")
         if report.blocked_reason:
-            lines.append(
-                f"- Blocked reason: {_redact_secret_like_values(report.blocked_reason)}"
-            )
+            lines.append(f"- Blocked reason: {_redact_secret_like_values(report.blocked_reason)}")
         if report.known_risks:
             lines.append("- Known risks:")
             lines.extend(f"  - {item}" for item in report.known_risks[:5])
@@ -289,9 +287,7 @@ def _format_manager_decisions_section(run_dir: Path) -> str | None:
         if decision.rejected_findings:
             lines.append(f"- Rejected findings: {', '.join(decision.rejected_findings)}")
         if decision.downgraded_to_pr_notes:
-            lines.append(
-                f"- Downgraded to PR notes: {', '.join(decision.downgraded_to_pr_notes)}"
-            )
+            lines.append(f"- Downgraded to PR notes: {', '.join(decision.downgraded_to_pr_notes)}")
         if decision.next_worker_brief:
             lines.append("- Next worker brief:")
             for line in decision.next_worker_brief.strip().splitlines()[:6]:
@@ -313,9 +309,7 @@ def _format_final_state_section(run_dir: Path) -> str | None:
         lines.append(f"- Reason: {_redact_secret_like_values(state.reason)}")
     if state.blocked_reason:
         lines.append(f"- Blocked reason: {_redact_secret_like_values(state.blocked_reason)}")
-    lines.append(
-        f"- Human attention required: {'yes' if state.human_attention_required else 'no'}"
-    )
+    lines.append(f"- Human attention required: {'yes' if state.human_attention_required else 'no'}")
     if state.pr_url:
         lines.append(f"- PR URL: {state.pr_url}")
     if state.unresolved_findings:
@@ -562,7 +556,9 @@ def build_task_report_markdown(project_path: Path, run_dir: Path) -> str:
     sections.extend(["", "### Notes"])
     risk_notes = _read_lines(run_dir / "risk-notes.txt")
     if risk_notes:
-        sections.append(_bullet_list([_redact_secret_like_values(item) for item in risk_notes[:80]]))
+        sections.append(
+            _bullet_list([_redact_secret_like_values(item) for item in risk_notes[:80]])
+        )
     else:
         sections.append("- No risk notes recorded.")
 

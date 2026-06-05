@@ -34,9 +34,7 @@ _PATH_LIKE_PATTERN = re.compile(
 _SECRET_LINE_PATTERN = re.compile(
     r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"
 )
-_VALIDATION_COMMANDS_HEADER_PATTERN = re.compile(
-    r"(?i)^\s*(?:validation|test)\s+commands\s*:\s*$"
-)
+_VALIDATION_COMMANDS_HEADER_PATTERN = re.compile(r"(?i)^\s*(?:validation|test)\s+commands\s*:\s*$")
 
 
 def _run_git(repo_root: Path, *args: str) -> str | None:
@@ -344,9 +342,7 @@ def generate_task_spec(
     resolved_run_id = run_id or run_dir.name
     current_branch = str(metadata.get("current_branch") or "")
     resolved_base_branch = base_branch or current_branch or "HEAD"
-    resolved_task_branch = task_branch or derive_task_branch(
-        raw_request, issue_id, current_branch
-    )
+    resolved_task_branch = task_branch or derive_task_branch(raw_request, issue_id, current_branch)
 
     instruction_summaries = gather_instruction_summaries(resolved_repo_root)
     test_commands = extract_explicit_test_commands(raw_request) or infer_test_commands(

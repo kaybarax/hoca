@@ -102,12 +102,14 @@ _HIGH_RISK_DEPENDENCY_FILES: frozenset[str] = frozenset(
     ]
 )
 
-_LOW_RISK_EXTENSIONS: frozenset[str] = frozenset({
-    ".md",
-    ".txt",
-    ".rst",
-    ".adoc",
-})
+_LOW_RISK_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".md",
+        ".txt",
+        ".rst",
+        ".adoc",
+    }
+)
 
 _LOW_RISK_FILENAMES: frozenset[str] = frozenset(
     f.lower()
@@ -237,7 +239,9 @@ def _is_example_path(path: str) -> bool:
 
 
 def _is_source_path(path: str) -> bool:
-    return not _is_doc_only_path(path) and not _is_test_only_path(path) and not _is_example_path(path)
+    return (
+        not _is_doc_only_path(path) and not _is_test_only_path(path) and not _is_example_path(path)
+    )
 
 
 def _path_risk_categories(path: str) -> tuple[RiskCategory, ...]:

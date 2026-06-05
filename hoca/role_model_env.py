@@ -163,19 +163,17 @@ def export_shell(role: RoleName, *, config: HocaConfig | None = None) -> str:
         return ""
     selection = resolve_role_llm(role, cfg)
     lines = [
-        f'export LLM_MODEL={_shell_quote(selection.llm_model)}',
-        f'export LLM_BASE_URL={_shell_quote(selection.base_url)}',
-        f'export LLM_API_KEY={_shell_quote(selection.api_key)}',
-        f'export HOCA_SELECTED_MODEL_SLOT={_shell_quote(selection.slot_name)}',
+        f"export LLM_MODEL={_shell_quote(selection.llm_model)}",
+        f"export LLM_BASE_URL={_shell_quote(selection.base_url)}",
+        f"export LLM_API_KEY={_shell_quote(selection.api_key)}",
+        f"export HOCA_SELECTED_MODEL_SLOT={_shell_quote(selection.slot_name)}",
     ]
-    for key, value in _provider_api_key_env_vars(
-        selection.llm_model, selection.api_key
-    ).items():
+    for key, value in _provider_api_key_env_vars(selection.llm_model, selection.api_key).items():
         lines.append(f"export {key}={_shell_quote(value)}")
     if selection.llm_model.startswith("ollama/"):
         ollama_name = selection.llm_model.removeprefix("ollama/")
-        lines.append(f'export OLLAMA_MODEL={_shell_quote(ollama_name)}')
-        lines.append(f'export HOCA_REQUESTED_MODEL={_shell_quote(ollama_name)}')
+        lines.append(f"export OLLAMA_MODEL={_shell_quote(ollama_name)}")
+        lines.append(f"export HOCA_REQUESTED_MODEL={_shell_quote(ollama_name)}")
     return "\n".join(lines) + "\n"
 
 

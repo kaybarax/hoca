@@ -75,9 +75,7 @@ class TestHardBlockerDetection:
             ("medium", "security", False),
         ],
     )
-    def test_is_finding_hard_blocker(
-        self, severity: str, category: str, expected: bool
-    ) -> None:
+    def test_is_finding_hard_blocker(self, severity: str, category: str, expected: bool) -> None:
         finding = _finding("F1", severity=severity, category=category)
         assert is_finding_hard_blocker(finding) is expected
 
@@ -107,21 +105,11 @@ class TestFindingClassification:
 
     def test_high_correctness_can_be_marked_impossible(self) -> None:
         finding = _finding("F1", severity="high", category="correctness")
-        assert (
-            finding_requires_repair(
-                finding, explicitly_impossible=frozenset({"F1"})
-            )
-            is False
-        )
-        assert (
-            classify_finding(finding, explicitly_impossible=frozenset({"F1"}))
-            == "reject"
-        )
+        assert finding_requires_repair(finding, explicitly_impossible=frozenset({"F1"})) is False
+        assert classify_finding(finding, explicitly_impossible=frozenset({"F1"})) == "reject"
 
     def test_low_style_can_downgrade(self) -> None:
-        finding = _finding(
-            "F1", severity="low", category="style", required_fix=None
-        )
+        finding = _finding("F1", severity="low", category="style", required_fix=None)
         assert can_downgrade_finding(finding) is True
         assert classify_finding(finding) == "downgrade"
 
@@ -221,7 +209,9 @@ class TestArbitrate:
         assert "Fix the CORS preflight header behavior." in decision.next_worker_brief
         assert "Do not address rejected findings: F-rejected." in decision.next_worker_brief
         assert "Leave downgraded findings for PR follow-up: F-debt." in decision.next_worker_brief
-        assert "Keep changes minimal and do not restart unrelated work." in decision.next_worker_brief
+        assert (
+            "Keep changes minimal and do not restart unrelated work." in decision.next_worker_brief
+        )
         assert "Rewrite unrelated routing code." not in decision.next_worker_brief
 
     def test_fix_required_round_2_goes_to_repair(self) -> None:

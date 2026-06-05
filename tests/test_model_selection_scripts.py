@@ -57,7 +57,6 @@ def make_fake_openhands(fake_bin: Path, *, env_capture: Path | None = None) -> N
     openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
 
 
-
 def init_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)

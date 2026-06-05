@@ -104,7 +104,9 @@ def run_dir(tmp_path: Path) -> Path:
     path = tmp_path / "run-pr-body"
     ensure_run_layout(path)
     write_json_atomic(path / "task-spec.json", _task_spec_payload(tmp_path))
-    (path / "tests-summary.md").write_text("# Validation\n\n- pnpm test: passed\n", encoding="utf-8")
+    (path / "tests-summary.md").write_text(
+        "# Validation\n\n- pnpm test: passed\n", encoding="utf-8"
+    )
     (path / "changed-files.txt").write_text("src/widget.ts\n", encoding="utf-8")
     (path / "risk-notes.txt").write_text("Low rollout risk.\n", encoding="utf-8")
     write_json_atomic(

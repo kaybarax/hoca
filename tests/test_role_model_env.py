@@ -248,13 +248,11 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
 
 
 def test_load_config_empty_pool_ignores_direct_llm_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text(
-        "LLM_MODEL=openai/gpt-oss-20b\n"
-        "LLM_BASE_URL=http://localhost:1234/v1\n"
-    )
+    env_file.write_text("LLM_MODEL=openai/gpt-oss-20b\nLLM_BASE_URL=http://localhost:1234/v1\n")
     for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
             monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)

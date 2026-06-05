@@ -272,9 +272,7 @@ def _invoke_hermes_reviewer(
 
     stdout_path.write_text(completed.stdout, encoding="utf-8")
     stderr_path.write_text(completed.stderr, encoding="utf-8")
-    return CommandResult(
-        tuple(command), completed.returncode, completed.stdout, completed.stderr
-    )
+    return CommandResult(tuple(command), completed.returncode, completed.stdout, completed.stderr)
 
 
 def _write_blocked_report(
@@ -341,10 +339,7 @@ def _normalize_profile_review_report(path: Path) -> None:
                 pr_notes[key] = [normalized]
                 changed = True
             elif isinstance(value, list):
-                normalized_items = [
-                    _single_line_contract_text(item)
-                    for item in value
-                ]
+                normalized_items = [_single_line_contract_text(item) for item in value]
                 if normalized_items != value:
                     pr_notes[key] = normalized_items
                     changed = True

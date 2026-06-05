@@ -323,9 +323,7 @@ def resolve_after_arbitration(
     repair_attempt = current_round
     brief = manager_decision.next_worker_brief
     if not brief:
-        raise ValueError(
-            "repair_required manager decision is missing next_worker_brief"
-        )
+        raise ValueError("repair_required manager decision is missing next_worker_brief")
     repair_path = write_repair_brief_file(
         run_dir,
         repair_attempt=repair_attempt,

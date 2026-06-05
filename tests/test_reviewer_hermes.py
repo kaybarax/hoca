@@ -90,7 +90,9 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
         'mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'
         'printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked.txt"\n'
         'cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"reviewer",'
         '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],"known_followups":[]}}\n'
         "EOF\n"
         "exit 0\n",
@@ -125,7 +127,10 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     invoked = (run_dir / "logs" / "reviewer-hermes-invoked.txt").read_text(encoding="utf-8")
     assert "required_review_report_path:" in invoked
     assert (run_dir / "logs" / "reviewer-hermes-stdout.txt").is_file()
-    assert HocaReviewReport.from_json(result.review_report_path.read_text(encoding="utf-8")).verdict == "LGTM"
+    assert (
+        HocaReviewReport.from_json(result.review_report_path.read_text(encoding="utf-8")).verdict
+        == "LGTM"
+    )
 
 
 def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
@@ -232,10 +237,7 @@ def test_run_reviewer_hermes_missing_profile_report_is_blocked(
     (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
     hermes = fake_bin / "hermes"
     hermes.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "echo 'LGTM'\n"
-        "exit 0\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\necho 'LGTM'\nexit 0\n",
         encoding="utf-8",
     )
     hermes.chmod(hermes.stat().st_mode | 0o100)

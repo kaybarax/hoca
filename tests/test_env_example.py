@@ -27,7 +27,9 @@ def test_env_example_documents_hermes_upgrade_variables() -> None:
 def test_env_example_explains_safety_and_role_credential_forwarding() -> None:
     content = (ROOT / ".env.example").read_text(encoding="utf-8")
 
-    assert "Set to false only for explicit host-local execution (higher risk; see README)." in content
+    assert (
+        "Set to false only for explicit host-local execution (higher risk; see README)." in content
+    )
     assert "full: unrestricted bridge egress; explicit opt-in only" in content
     assert "Only the selected role model is forwarded" in content
     assert "Raw role model credentials" in content

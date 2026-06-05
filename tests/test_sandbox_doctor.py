@@ -45,7 +45,7 @@ def test_sandbox_doctor_fails_on_invalid_network_mode() -> None:
 def test_script_static_checks_flag_docker_socket_mount(tmp_path: Path) -> None:
     script = tmp_path / "run-openhands-sandboxed.sh"
     script.write_text(
-        '\n'.join(
+        "\n".join(
             [
                 "#!/usr/bin/env bash",
                 'docker run -v /var/run/docker.sock:/var/run/docker.sock "$@"',
@@ -60,7 +60,9 @@ def test_script_static_checks_flag_docker_socket_mount(tmp_path: Path) -> None:
 def test_script_static_checks_passes_hoca_sandbox_scripts() -> None:
     lines = _script_static_checks(REPO_ROOT / "scripts")
     messages = _messages(lines)
-    assert all("GITHUB_TOKEN" not in message or "does not forward" in message for message in messages)
+    assert all(
+        "GITHUB_TOKEN" not in message or "does not forward" in message for message in messages
+    )
     assert any("does not mount Docker socket" in message for message in messages)
 
 
@@ -74,7 +76,7 @@ def test_resource_limit_lines_require_memory_and_pids() -> None:
 def test_resource_limit_lines_warn_on_empty_limits(tmp_path: Path) -> None:
     script = tmp_path / "run-openhands-sandboxed.sh"
     script.write_text(
-        '\n'.join(
+        "\n".join(
             [
                 "#!/usr/bin/env bash",
                 'docker run --memory="${HOCA_SANDBOX_MEMORY}" --pids-limit="${HOCA_SANDBOX_PIDS}"',
@@ -111,7 +113,10 @@ def test_sandbox_doctor_image_user_non_root(
             args=args, returncode=1, stdout="", stderr="missing"
         )
 
-    monkeypatch.setattr("hoca.sandbox_doctor.shutil.which", lambda cmd: "/usr/bin/docker" if cmd == "docker" else None)
+    monkeypatch.setattr(
+        "hoca.sandbox_doctor.shutil.which",
+        lambda cmd: "/usr/bin/docker" if cmd == "docker" else None,
+    )
     monkeypatch.setattr("hoca.sandbox_doctor.subprocess.run", fake_run)
 
     lines = sandbox_doctor_lines(HocaConfig(use_sandbox=True), root=REPO_ROOT)
@@ -134,7 +139,10 @@ def test_sandbox_doctor_image_root_user_fails(
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
-    monkeypatch.setattr("hoca.sandbox_doctor.shutil.which", lambda cmd: "/usr/bin/docker" if cmd == "docker" else None)
+    monkeypatch.setattr(
+        "hoca.sandbox_doctor.shutil.which",
+        lambda cmd: "/usr/bin/docker" if cmd == "docker" else None,
+    )
     monkeypatch.setattr("hoca.sandbox_doctor.subprocess.run", fake_run)
 
     lines = sandbox_doctor_lines(HocaConfig(use_sandbox=True), root=REPO_ROOT)

@@ -39,7 +39,7 @@ def make_fake_profile_hermes(fake_bin: Path) -> None:
         "set -euo pipefail\n"
         'printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" > "$HERMES_CAPTURE_ENV"\n'
         'printf "HOCA_SKIP_ROLE_MODEL_RESOLUTION=%s\\n" "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" >> "$HERMES_CAPTURE_ENV"\n'
-        'mkdir -p reviews logs\n'
+        "mkdir -p reviews logs\n"
         "cat > reviews/review-report-1.json <<'JSON'\n"
         "{\n"
         '  "schema_version": 1,\n'

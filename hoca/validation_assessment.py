@@ -40,6 +40,7 @@ _TASK_TOKEN_STOPWORDS = frozenset(
     }
 )
 
+
 @dataclass(frozen=True)
 class ValidationRiskAssessment:
     scope_risk: bool

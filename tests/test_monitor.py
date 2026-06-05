@@ -105,16 +105,23 @@ class TestManagerOnlyGitLifecyclePolicy:
         assert check_manager_only_git_lifecycle_command("git commit -m 'msg'", "worker") is not None
 
     def test_worker_cannot_push_even_with_upstream(self):
-        assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "worker") is not None
+        assert (
+            check_manager_only_git_lifecycle_command("git push -u origin HEAD", "worker")
+            is not None
+        )
 
     def test_reviewer_cannot_create_prs(self):
-        assert check_manager_only_git_lifecycle_command("gh pr create --fill", "reviewer") is not None
+        assert (
+            check_manager_only_git_lifecycle_command("gh pr create --fill", "reviewer") is not None
+        )
 
     def test_reviewer_cannot_merge_prs(self):
         assert check_manager_only_git_lifecycle_command("gh pr merge 42", "reviewer") is not None
 
     def test_manager_can_use_git_lifecycle(self):
-        assert check_manager_only_git_lifecycle_command("git push -u origin HEAD", "manager") is None
+        assert (
+            check_manager_only_git_lifecycle_command("git push -u origin HEAD", "manager") is None
+        )
 
     def test_unrelated_command_is_allowed_for_worker(self):
         assert check_manager_only_git_lifecycle_command("npm test", "worker") is None
@@ -482,6 +489,7 @@ class TestEnvExampleNotBlocked:
 class TestMonitorProcessStream:
     def test_clean_stream(self, tmp_path: Path):
         import io
+
         stream = io.StringIO("line1\nline2\nline3\n")
         result = monitor_process_stream(
             stream,
@@ -495,6 +503,7 @@ class TestMonitorProcessStream:
 
     def test_dangerous_command_in_stream(self, tmp_path: Path):
         import io
+
         stream = io.StringIO("doing work\nrm -rf /\ndone\n")
         result = monitor_process_stream(
             stream,
@@ -508,6 +517,7 @@ class TestMonitorProcessStream:
 
     def test_safe_rm_rf_in_stream(self, tmp_path: Path):
         import io
+
         stream = io.StringIO("cleaning\nrm -rf dist\nbuilding\n")
         result = monitor_process_stream(
             stream,
@@ -521,6 +531,7 @@ class TestMonitorProcessStream:
 
     def test_dangerous_text_in_observation_stream_is_ignored(self, tmp_path: Path):
         import io
+
         observation = json.dumps(
             {
                 "kind": "ObservationEvent",
@@ -541,6 +552,7 @@ class TestMonitorProcessStream:
 
     def test_dangerous_text_in_action_stream_still_stops(self, tmp_path: Path):
         import io
+
         action = json.dumps(
             {
                 "kind": "ActionEvent",
@@ -561,6 +573,7 @@ class TestMonitorProcessStream:
 
     def test_reviewer_pr_create_in_stream_stops(self, tmp_path: Path):
         import io
+
         stream = io.StringIO("reviewing\ngh pr create --fill\n")
         result = monitor_process_stream(
             stream,

@@ -12,9 +12,7 @@ from typing import Literal
 
 PhaseRole = Literal["worker", "reviewer", "manager-pr"]
 
-_SECRET_PATTERN = re.compile(
-    r"(?i)(token|secret|password|api_key|private_key|credential)"
-)
+_SECRET_PATTERN = re.compile(r"(?i)(token|secret|password|api_key|private_key|credential)")
 
 WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -125,11 +123,7 @@ def filter_env(
     if extra_allow:
         allowed = allowed | extra_allow
     prefixes = _PHASE_PREFIXES.get(phase, ())
-    return {
-        key: value
-        for key, value in env.items()
-        if _key_allowed(key, allowed, prefixes)
-    }
+    return {key: value for key, value in env.items() if _key_allowed(key, allowed, prefixes)}
 
 
 def filter_env_for_role(

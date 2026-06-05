@@ -13,9 +13,7 @@ from hoca.contracts import FindingCategory, FindingSeverity, HocaReviewFinding
 
 DOWNGRADEABLE_SEVERITIES: frozenset[str] = frozenset(("low", "nit"))
 NON_DOWNGRADEABLE_CATEGORIES: frozenset[str] = frozenset(("security",))
-CORRECTNESS_NON_DOWNGRADEABLE_SEVERITIES: frozenset[str] = frozenset(
-    ("critical", "high", "medium")
-)
+CORRECTNESS_NON_DOWNGRADEABLE_SEVERITIES: frozenset[str] = frozenset(("critical", "high", "medium"))
 
 
 @dataclass(frozen=True)
@@ -31,9 +29,7 @@ DOWNGRADE_RULES: tuple[DowngradeRule, ...] = (
     DowngradeRule(
         id="low_maintainability_tech_debt",
         summary="Low-severity maintainability findings may become PR tech debt.",
-        detection=(
-            "Applies when severity is low and category is maintainability."
-        ),
+        detection=("Applies when severity is low and category is maintainability."),
     ),
     DowngradeRule(
         id="nit_style_tech_debt",
@@ -60,23 +56,19 @@ DOWNGRADE_RULES: tuple[DowngradeRule, ...] = (
         id="correctness_above_low_never_downgraded",
         summary="Correctness findings above low severity must be repaired or rejected.",
         detection=(
-            "Applies when category is correctness and severity is critical, high, "
-            "or medium."
+            "Applies when category is correctness and severity is critical, high, or medium."
         ),
     ),
     DowngradeRule(
         id="manager_reasoning_required",
         summary="Every downgrade is recorded in manager decision reasoning.",
         detection=(
-            "arbitration.arbitrate appends downgrade_reasoning() for each downgraded "
-            "finding id."
+            "arbitration.arbitrate appends downgrade_reasoning() for each downgraded finding id."
         ),
     ),
 )
 
-DOWNGRADE_RULE_BY_ID: dict[str, DowngradeRule] = {
-    rule.id: rule for rule in DOWNGRADE_RULES
-}
+DOWNGRADE_RULE_BY_ID: dict[str, DowngradeRule] = {rule.id: rule for rule in DOWNGRADE_RULES}
 
 
 def documented_downgrade_rule_ids() -> list[str]:
@@ -125,10 +117,7 @@ def merge_downgraded_findings_into_pr_notes(
     for finding_id in downgraded_finding_ids:
         finding = findings_by_id.get(finding_id)
         if finding is None:
-            note = (
-                f"{finding_id}: reviewer finding deferred to PR follow-up "
-                "(manager downgrade)"
-            )
+            note = f"{finding_id}: reviewer finding deferred to PR follow-up (manager downgrade)"
         else:
             note = format_downgraded_finding_note(finding)
         if note not in seen:

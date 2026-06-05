@@ -126,9 +126,7 @@ class TestRemoveWorktree:
     def test_escape_path_raises(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import hoca.worktree as wt_mod
 
-        monkeypatch.setattr(
-            wt_mod, "worktree_path", lambda pp, rid: pp / ".." / "escape"
-        )
+        monkeypatch.setattr(wt_mod, "worktree_path", lambda pp, rid: pp / ".." / "escape")
         with pytest.raises(ValueError, match="escapes runtime directory"):
             remove_worktree(git_repo, "evil")
 

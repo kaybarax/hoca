@@ -154,11 +154,11 @@ def test_setup_script_refreshes_stale_placeholder_config(tmp_path: Path) -> None
         "terminal:\n"
         "  backend: docker\n"
         "  docker_volumes:\n"
-        f"    - \"{REPO_ROOT}:/workspace/hoca:ro\"\n"
-        "    - \"/tmp/<target-repo>:/workspace/project\"\n"
+        f'    - "{REPO_ROOT}:/workspace/hoca:ro"\n'
+        '    - "/tmp/<target-repo>:/workspace/project"\n'
         "skills:\n"
         "  external_dirs:\n"
-        f"    - \"{REPO_ROOT / 'hermes-skills'}\"\n",
+        f'    - "{REPO_ROOT / "hermes-skills"}"\n',
         encoding="utf-8",
     )
 
@@ -220,9 +220,7 @@ def test_setup_script_refreshes_hoca_template_when_workspace_root_changes(
     assert first.returncode == 0, first.stderr + first.stdout
     assert second.returncode == 0, second.stderr + second.stdout
     assert "refresh HOCA template-rendered paths" in second.stdout
-    config = (
-        hermes_home / "profiles" / "hoca-worker" / "config.yaml"
-    ).read_text(encoding="utf-8")
+    config = (hermes_home / "profiles" / "hoca-worker" / "config.yaml").read_text(encoding="utf-8")
     assert str(first_root) not in config
     assert "backend: local" in config
     assert f'workspace_root: "{second_root}"' in config
@@ -253,12 +251,10 @@ def test_setup_script_is_idempotent_with_temp_hermes_home(tmp_path: Path) -> Non
         assert str(workspace_root) in config.read_text(encoding="utf-8")
 
     first_soul_hashes = {
-        name: _sha256(hermes_home / "profiles" / name / "SOUL.md")
-        for name in PROFILE_NAMES
+        name: _sha256(hermes_home / "profiles" / name / "SOUL.md") for name in PROFILE_NAMES
     }
     first_config_hashes = {
-        name: _sha256(hermes_home / "profiles" / name / "config.yaml")
-        for name in PROFILE_NAMES
+        name: _sha256(hermes_home / "profiles" / name / "config.yaml") for name in PROFILE_NAMES
     }
 
     second = run_setup(

@@ -71,7 +71,9 @@ def test_reviewer_prefers_offline_even_when_task_spec_is_broader(tmp_path: Path)
     assert resolve_network_mode(role="reviewer", run_dir=run_dir) == "offline"
 
 
-def test_full_requires_explicit_opt_in_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_full_requires_explicit_opt_in_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("HOCA_NETWORK_MODE", "full")
     assert resolve_network_mode(role="worker", run_dir=tmp_path, env_mode="full") == "full"
 

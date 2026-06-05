@@ -57,16 +57,12 @@ def test_profile_soul_documents_role_identity(profile_name: str) -> None:
     content = (PROFILES_DIR / profile_name / "SOUL.md").read_text(encoding="utf-8")
     assert profile_name in content, f"{profile_name}/SOUL.md should name the profile"
     for section in SOUL_REQUIRED_SECTIONS:
-        assert section in content, (
-            f"{profile_name}/SOUL.md is missing section {section!r}"
-        )
+        assert section in content, f"{profile_name}/SOUL.md is missing section {section!r}"
 
 
 @pytest.mark.parametrize("profile_name", PROFILE_NAMES)
 def test_profile_config_declares_hoca_role(profile_name: str) -> None:
-    content = (PROFILES_DIR / profile_name / "config.example.yaml").read_text(
-        encoding="utf-8"
-    )
+    content = (PROFILES_DIR / profile_name / "config.example.yaml").read_text(encoding="utf-8")
     body = _strip_yaml_comments(content).lower()
     expected_role = profile_name.removeprefix("hoca-")
     assert re.search(rf"^\s*role:\s*{re.escape(expected_role)}\s*$", body, re.MULTILINE), (
@@ -77,49 +73,42 @@ def test_profile_config_declares_hoca_role(profile_name: str) -> None:
 @pytest.mark.parametrize("profile_name", PROFILE_NAMES)
 def test_profile_templates_avoid_secret_like_content(profile_name: str) -> None:
     for filename in ("SOUL.md", "config.example.yaml", "README.md"):
-        content = (PROFILES_DIR / profile_name / filename).read_text(
-            encoding="utf-8"
-        ).lower()
+        content = (PROFILES_DIR / profile_name / filename).read_text(encoding="utf-8").lower()
         for fragment in FORBIDDEN_SECRET_FRAGMENTS:
             assert fragment not in content, (
-                f"{profile_name}/{filename} must not include secret-like content: "
-                f"{fragment!r}"
+                f"{profile_name}/{filename} must not include secret-like content: {fragment!r}"
             )
 
 
 def test_worker_profile_omits_pr_creator() -> None:
     content = (
-        PROFILES_DIR / "hoca-worker" / "config.example.yaml"
-    ).read_text(encoding="utf-8").lower()
+        (PROFILES_DIR / "hoca-worker" / "config.example.yaml").read_text(encoding="utf-8").lower()
+    )
     assert "pr_creator" not in content
 
 
 def test_reviewer_profile_omits_openhands_runner() -> None:
     content = (
-        PROFILES_DIR / "hoca-reviewer" / "config.example.yaml"
-    ).read_text(encoding="utf-8").lower()
+        (PROFILES_DIR / "hoca-reviewer" / "config.example.yaml").read_text(encoding="utf-8").lower()
+    )
     assert "openhands_runner" not in content
 
 
 def test_worker_and_reviewer_use_host_terminal_for_sandbox_runner() -> None:
     for profile_name in ("hoca-worker", "hoca-reviewer"):
-        content = (
-            PROFILES_DIR / profile_name / "config.example.yaml"
-        ).read_text(encoding="utf-8")
+        content = (PROFILES_DIR / profile_name / "config.example.yaml").read_text(encoding="utf-8")
         assert "backend: local" in content
         assert "docker_image:" not in content
-        assert "workspace_root: \"~/<path-to-target-repos>\"" in content
+        assert 'workspace_root: "~/<path-to-target-repos>"' in content
         assert "<target-repo>" not in content
 
 
 def test_manager_profile_includes_orchestration_scripts() -> None:
     content = (
-        PROFILES_DIR / "hoca-manager" / "config.example.yaml"
-    ).read_text(encoding="utf-8").lower()
+        (PROFILES_DIR / "hoca-manager" / "config.example.yaml").read_text(encoding="utf-8").lower()
+    )
     for script_key in ("pr_creator", "task_runner", "code_reviewer"):
-        assert script_key in content, (
-            f"hoca-manager config should reference {script_key}"
-        )
+        assert script_key in content, f"hoca-manager config should reference {script_key}"
 
 
 MANAGER_SOUL_REQUIRED_SECTIONS = (
@@ -146,9 +135,7 @@ def test_manager_soul_documents_manager_role_contract() -> None:
     for section in MANAGER_SOUL_REQUIRED_SECTIONS:
         assert section in content, f"hoca-manager/SOUL.md is missing section {section!r}"
     for phrase in MANAGER_SOUL_REQUIRED_PHRASES:
-        assert phrase in lowered, (
-            f"hoca-manager/SOUL.md should mention {phrase!r}"
-        )
+        assert phrase in lowered, f"hoca-manager/SOUL.md should mention {phrase!r}"
     assert "git lifecycle" in lowered
     assert "hoca-worker" in content
     assert "hoca-reviewer" in content
@@ -180,9 +167,7 @@ def test_worker_soul_documents_worker_role_contract() -> None:
     for section in WORKER_SOUL_REQUIRED_SECTIONS:
         assert section in content, f"hoca-worker/SOUL.md is missing section {section!r}"
     for phrase in WORKER_SOUL_REQUIRED_PHRASES:
-        assert phrase in lowered, (
-            f"hoca-worker/SOUL.md should mention {phrase!r}"
-        )
+        assert phrase in lowered, f"hoca-worker/SOUL.md should mention {phrase!r}"
     assert "pull request" in lowered or "pr " in lowered
     assert "hoca-manager" in content
 
@@ -218,13 +203,9 @@ def test_reviewer_soul_documents_reviewer_role_contract() -> None:
     content = (PROFILES_DIR / "hoca-reviewer" / "SOUL.md").read_text(encoding="utf-8")
     lowered = content.lower()
     for section in REVIEWER_SOUL_REQUIRED_SECTIONS:
-        assert section in content, (
-            f"hoca-reviewer/SOUL.md is missing section {section!r}"
-        )
+        assert section in content, f"hoca-reviewer/SOUL.md is missing section {section!r}"
     for phrase in REVIEWER_SOUL_REQUIRED_PHRASES:
-        assert phrase in lowered, (
-            f"hoca-reviewer/SOUL.md should mention {phrase!r}"
-        )
+        assert phrase in lowered, f"hoca-reviewer/SOUL.md should mention {phrase!r}"
     assert "hoca-worker" in content
     assert "hoca-manager" in content
     assert "quality signals" in lowered or "signal provider" in lowered

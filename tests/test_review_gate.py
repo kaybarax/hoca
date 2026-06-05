@@ -57,11 +57,7 @@ def test_review_gate_downgrades_lgtm_when_changed_python_has_syntax_error(
     project_path = tmp_path / "project"
     project_path.mkdir()
     (project_path / "calc.py").write_text(
-        "def add(a, b):\n"
-        "    return a + b\n"
-        "\n"
-        "def subtract(a, b):\n"
-        "    return a -\n",
+        "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    return a -\n",
         encoding="utf-8",
     )
     run_dir = tmp_path / "run-1"
@@ -340,10 +336,13 @@ def test_materialize_structured_report_from_text_writes_valid_report(tmp_path: P
         encoding="utf-8",
     )
 
-    assert materialize_structured_report_from_text(
-        review_text,
-        output_path,
-        run_id="run-1",
-        round_number=1,
-    ) is True
+    assert (
+        materialize_structured_report_from_text(
+            review_text,
+            output_path,
+            run_id="run-1",
+            round_number=1,
+        )
+        is True
+    )
     assert HocaReviewReport.from_json(output_path.read_text(encoding="utf-8")).verdict == "LGTM"

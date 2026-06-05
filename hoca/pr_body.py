@@ -49,10 +49,7 @@ def _sanitize_pr_text(text: str) -> str:
     """Replace absolute local filesystem paths with a safe placeholder,
     then drop lines that contained only a path (e.g. '- **Project**: <path>')."""
     text = _LOCAL_PATH_RE.sub("<local-path>", text)
-    clean = [
-        line for line in text.split("\n")
-        if not _LOCAL_PATH_ONLY_LINE_RE.match(line.strip())
-    ]
+    clean = [line for line in text.split("\n") if not _LOCAL_PATH_ONLY_LINE_RE.match(line.strip())]
     return "\n".join(clean)
 
 
@@ -150,15 +147,10 @@ def _fixed_finding_lines(run_dir: Path) -> list[str]:
 
     latest_report = _load_review_report(run_dir, _latest_review_round(run_dir))
     open_ids = (
-        {finding.id for finding in latest_report.findings}
-        if latest_report is not None
-        else set()
+        {finding.id for finding in latest_report.findings} if latest_report is not None else set()
     )
     fixed_ids = sorted(repaired - open_ids)
-    return [
-        _format_finding_line(finding_id, findings_by_id)
-        for finding_id in fixed_ids
-    ]
+    return [_format_finding_line(finding_id, findings_by_id) for finding_id in fixed_ids]
 
 
 def _draft_pr_flag(run_dir: Path) -> dict[str, object] | None:
@@ -226,7 +218,11 @@ def unresolved_findings_for_run(run_dir: Path) -> list[HocaReviewFinding]:
             if isinstance(finding_id, str):
                 unresolved_ids.add(finding_id)
 
-    return [findings_by_id[finding_id] for finding_id in sorted(unresolved_ids) if finding_id in findings_by_id]
+    return [
+        findings_by_id[finding_id]
+        for finding_id in sorted(unresolved_ids)
+        if finding_id in findings_by_id
+    ]
 
 
 def format_task_spec_fragment(run_dir: Path, *, task_oneline: str) -> str:
@@ -240,10 +236,7 @@ def format_task_spec_fragment(run_dir: Path, *, task_oneline: str) -> str:
     try:
         spec = HocaTaskSpec.from_json(spec_path.read_text(encoding="utf-8"))
     except ValueError:
-        return (
-            f"**Goal**: {task_oneline}\n\n"
-            "_Task spec present but could not be parsed safely._"
-        )
+        return f"**Goal**: {task_oneline}\n\n_Task spec present but could not be parsed safely._"
 
     goal_first_line = spec.goal.split("\n\n")[0].split("\n")[0].strip()
     goal_display = _sanitize_pr_text(goal_first_line)
@@ -309,7 +302,12 @@ def format_hoca_review_notes_fragment(run_dir: Path) -> str:
     lines.append("")
     lines.append("**Accepted findings fixed**:")
     fixed_lines = _fixed_finding_lines(run_dir)
-    lines.append(_bullet_list(fixed_lines, empty="_None recorded — no prior repair rounds or all accepted items remain open._"))
+    lines.append(
+        _bullet_list(
+            fixed_lines,
+            empty="_None recorded — no prior repair rounds or all accepted items remain open._",
+        )
+    )
 
     rejected_ids = _aggregate_manager_lists(run_dir, "rejected_findings")
     downgraded_ids = _aggregate_manager_lists(run_dir, "downgraded_to_pr_notes")
@@ -318,8 +316,7 @@ def format_hoca_review_notes_fragment(run_dir: Path) -> str:
         residual_ids = [
             finding_id
             for finding_id in manager_decision.accepted_findings
-            if finding_id in findings_by_id
-            and findings_by_id[finding_id].severity == "medium"
+            if finding_id in findings_by_id and findings_by_id[finding_id].severity == "medium"
         ]
 
     lines.append("")
@@ -401,14 +398,11 @@ def format_run_context_fragment(run_dir: Path) -> str:
 
     lines = [
         f"- **Sandbox mode**: {sandbox_mode}",
-        f"- **Human review required before merge**: "
-        f"{'yes' if human_required else 'no'}",
+        f"- **Human review required before merge**: {'yes' if human_required else 'no'}",
         f"- **HOCA review rounds completed**: {review_round}",
     ]
     if is_draft_pr_run(run_dir):
-        lines.append(
-            "- **Publication mode**: draft PR (residual findings documented above)"
-        )
+        lines.append("- **Publication mode**: draft PR (residual findings documented above)")
     if auto_merge:
         lines.append("- **Auto-merge**: queued or completed by HOCA policy")
     else:

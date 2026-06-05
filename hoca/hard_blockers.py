@@ -68,9 +68,7 @@ ALL_FINDING_HARD_BLOCKER_IDS: frozenset[str] = frozenset(
     )
 )
 
-ALL_HARD_BLOCKER_IDS: frozenset[str] = (
-    ALL_VALIDATION_BLOCKER_IDS | ALL_FINDING_HARD_BLOCKER_IDS
-)
+ALL_HARD_BLOCKER_IDS: frozenset[str] = ALL_VALIDATION_BLOCKER_IDS | ALL_FINDING_HARD_BLOCKER_IDS
 
 # Monitor stop reasons mapped to validation hard-blocker IDs.
 MONITOR_STOP_REASON_TO_BLOCKER: dict[str, str] = {
@@ -153,8 +151,7 @@ HARD_BLOCKER_RULES: tuple[HardBlockerRule, ...] = (
         disposition="finding",
         summary="Severe correctness defect that must not ship.",
         detection=(
-            "Set for critical-severity findings or correctness findings "
-            "with critical severity."
+            "Set for critical-severity findings or correctness findings with critical severity."
         ),
     ),
     HardBlockerRule(
@@ -162,9 +159,7 @@ HARD_BLOCKER_RULES: tuple[HardBlockerRule, ...] = (
         source="finding",
         disposition="finding",
         summary="Security regression at critical or high severity.",
-        detection=(
-            "Set for security findings with critical or high severity."
-        ),
+        detection=("Set for security findings with critical or high severity."),
     ),
     HardBlockerRule(
         id="dirty_unrelated_work",
@@ -210,9 +205,7 @@ HARD_BLOCKER_RULES: tuple[HardBlockerRule, ...] = (
     ),
 )
 
-HARD_BLOCKER_RULE_BY_ID: dict[str, HardBlockerRule] = {
-    rule.id: rule for rule in HARD_BLOCKER_RULES
-}
+HARD_BLOCKER_RULE_BY_ID: dict[str, HardBlockerRule] = {rule.id: rule for rule in HARD_BLOCKER_RULES}
 
 
 @dataclass(frozen=True)
@@ -234,10 +227,7 @@ def is_severe_correctness_finding(finding: HocaReviewFinding) -> bool:
 
 
 def is_security_regression_finding(finding: HocaReviewFinding) -> bool:
-    return (
-        finding.category == "security"
-        and finding.severity in SECURITY_CRITICAL_SEVERITIES
-    )
+    return finding.category == "security" and finding.severity in SECURITY_CRITICAL_SEVERITIES
 
 
 def is_finding_hard_blocker(finding: HocaReviewFinding) -> bool:
@@ -272,9 +262,7 @@ def validation_blocker_from_monitor_stop_reason(stop_reason: str | None) -> str 
 def collect_validation_hard_blockers(validation: ValidationStatus) -> list[str]:
     blockers = list(validation.hard_blockers)
 
-    monitor_blocker = validation_blocker_from_monitor_stop_reason(
-        validation.monitor_stop_reason
-    )
+    monitor_blocker = validation_blocker_from_monitor_stop_reason(validation.monitor_stop_reason)
     if monitor_blocker and monitor_blocker not in blockers:
         blockers.append(monitor_blocker)
 

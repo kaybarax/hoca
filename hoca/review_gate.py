@@ -13,6 +13,7 @@ from hoca.review_report_parser import (
     try_extract_structured_report,
 )
 
+
 class ReviewGateError(ValueError):
     """Raised when a structured review report is present but invalid."""
 
@@ -41,9 +42,7 @@ def _read_changed_files(run_dir: Path) -> list[str]:
         if not path.is_file():
             continue
         return [
-            line.strip()
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
+            line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
         ]
     return []
 
@@ -144,11 +143,7 @@ def code_review_pr_fragment(result: ReviewGateResult) -> str:
         return f"**Status**: Review gate approved (LGTM).\n\n{footer}"
     if result.report.verdict == "blocked":
         return f"**Status**: Review blocked.\n\n{footer}"
-    return (
-        "**Status**: Review requires fixes "
-        "(human review recommended).\n\n"
-        f"{footer}"
-    )
+    return f"**Status**: Review requires fixes (human review recommended).\n\n{footer}"
 
 
 def code_review_error_fragment() -> str:
@@ -269,16 +264,12 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = Path(args.run_dir)
     round_number = args.round_number
     review_text_path = (
-        Path(args.review_text)
-        if args.review_text
-        else run_dir / "openhands-review.txt"
+        Path(args.review_text) if args.review_text else run_dir / "openhands-review.txt"
     )
 
     if args.materialize_from_text:
         output_path = (
-            Path(args.output)
-            if args.output
-            else default_report_path(run_dir, round_number)
+            Path(args.output) if args.output else default_report_path(run_dir, round_number)
         )
         if materialize_structured_report_from_text(
             Path(args.materialize_from_text),

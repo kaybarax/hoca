@@ -54,9 +54,9 @@ def test_sandbox_wrapper_keeps_container_hardened() -> None:
 
     assert "--security-opt=no-new-privileges" in script
     assert "--cap-drop=ALL" in script
-    assert "--user \"$SANDBOX_USER\"" in script
-    assert "--memory=\"${HOCA_SANDBOX_MEMORY:-8g}\"" in script
-    assert "--pids-limit=\"${HOCA_SANDBOX_PIDS:-512}\"" in script
+    assert '--user "$SANDBOX_USER"' in script
+    assert '--memory="${HOCA_SANDBOX_MEMORY:-8g}"' in script
+    assert '--pids-limit="${HOCA_SANDBOX_PIDS:-512}"' in script
 
 
 def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:

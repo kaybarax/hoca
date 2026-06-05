@@ -10,19 +10,24 @@ RiskLevel = Literal["low", "medium", "high"]
 VALID_RISK_LEVELS: frozenset[str] = frozenset(("low", "medium", "high"))
 VALID_ATTEMPT_STATUSES: frozenset[str] = frozenset(("completed", "failed", "blocked"))
 VALID_ATTEMPT_ROLES: frozenset[str] = frozenset(("worker",))
-REQUIRED_ATTEMPT_ARTIFACT_PATHS: frozenset[str] = frozenset(
-    ("openhands_output", "monitor_result")
-)
+REQUIRED_ATTEMPT_ARTIFACT_PATHS: frozenset[str] = frozenset(("openhands_output", "monitor_result"))
 AttemptStatus = Literal["completed", "failed", "blocked"]
 ReviewVerdict = Literal["LGTM", "fix_required", "blocked"]
 VALID_REVIEW_VERDICTS: frozenset[str] = frozenset(("LGTM", "fix_required", "blocked"))
 VALID_REVIEW_ROLES: frozenset[str] = frozenset(("reviewer",))
 FindingSeverity = Literal["critical", "high", "medium", "low", "nit"]
-VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
-    ("critical", "high", "medium", "low", "nit")
-)
+VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(("critical", "high", "medium", "low", "nit"))
 VALID_FINDING_CATEGORIES: frozenset[str] = frozenset(
-    ("correctness", "security", "test", "scope", "maintainability", "style", "tooling", "environment")
+    (
+        "correctness",
+        "security",
+        "test",
+        "scope",
+        "maintainability",
+        "style",
+        "tooling",
+        "environment",
+    )
 )
 SECURITY_CRITICAL_SEVERITIES: frozenset[str] = frozenset(("critical", "high"))
 FindingCategory = Literal[
@@ -92,8 +97,7 @@ def _coerce_string_list(value: Any, field: str) -> list[str]:
 
 def _artifact_path_map(data: dict[str, Any], field: str) -> dict[str, str]:
     paths = {
-        key: _single_line_string(value, field)
-        for key, value in _string_map(data, field).items()
+        key: _single_line_string(value, field) for key, value in _string_map(data, field).items()
     }
     missing = sorted(REQUIRED_ATTEMPT_ARTIFACT_PATHS - paths.keys())
     if missing:
@@ -371,9 +375,7 @@ class HocaAttemptReport(JsonContract):
             raise ValueError("round must be greater than or equal to 1")
         role = _single_line_string(_required(data, "role"), "role")
         if role not in VALID_ATTEMPT_ROLES:
-            raise ValueError(
-                f"role must be one of {sorted(VALID_ATTEMPT_ROLES)}, got: {role!r}"
-            )
+            raise ValueError(f"role must be one of {sorted(VALID_ATTEMPT_ROLES)}, got: {role!r}")
         status = _single_line_string(_required(data, "status"), "status")
         if status not in VALID_ATTEMPT_STATUSES:
             raise ValueError(
@@ -483,9 +485,7 @@ class HocaReviewReport(JsonContract):
             raise ValueError("round must be greater than or equal to 1")
         role = str(_required(data, "role"))
         if role not in VALID_REVIEW_ROLES:
-            raise ValueError(
-                f"role must be one of {sorted(VALID_REVIEW_ROLES)}, got: {role!r}"
-            )
+            raise ValueError(f"role must be one of {sorted(VALID_REVIEW_ROLES)}, got: {role!r}")
         verdict = _required(data, "verdict")
         if verdict not in VALID_REVIEW_VERDICTS:
             raise ValueError(
@@ -500,9 +500,7 @@ class HocaReviewReport(JsonContract):
             round=round_number,
             role=role,
             verdict=verdict,
-            findings=[
-                HocaReviewFinding.from_dict(item) for item in _object_list(data, "findings")
-            ],
+            findings=[HocaReviewFinding.from_dict(item) for item in _object_list(data, "findings")],
             pr_notes={
                 str(key): _coerce_string_list(value, f"pr_notes.{key}")
                 for key, value in pr_notes.items()
@@ -617,9 +615,7 @@ class HocaManagerDecision(JsonContract):
             None if data["next_worker_brief"] is None else str(data["next_worker_brief"])
         )
         if decision == "repair_required" and not next_worker_brief:
-            raise ValueError(
-                "next_worker_brief is required when decision is 'repair_required'"
-            )
+            raise ValueError("next_worker_brief is required when decision is 'repair_required'")
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             run_id=str(_required(data, "run_id")),
@@ -698,9 +694,7 @@ class HocaRunFinalState(JsonContract):
             human_attention_required=bool(_required(data, "human_attention_required")),
             unresolved_findings=unresolved_findings,
             completed_at=None if data["completed_at"] is None else str(data["completed_at"]),
-            blocked_reason=None
-            if data["blocked_reason"] is None
-            else str(data["blocked_reason"]),
+            blocked_reason=None if data["blocked_reason"] is None else str(data["blocked_reason"]),
         )
 
     @classmethod

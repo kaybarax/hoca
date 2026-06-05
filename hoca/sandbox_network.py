@@ -18,9 +18,7 @@ VALID_NETWORK_MODES: frozenset[str] = frozenset(
 DEFAULT_NETWORK_MODE: NetworkMode = "offline"
 
 # Modes that use the default Docker bridge (egress not allowlisted).
-_BRIDGE_NETWORK_MODES: frozenset[str] = frozenset(
-    ("package-install", "github-only", "full")
-)
+_BRIDGE_NETWORK_MODES: frozenset[str] = frozenset(("package-install", "github-only", "full"))
 
 NETWORK_MODE_LIMITATIONS: dict[str, str] = {
     "offline": (

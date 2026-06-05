@@ -39,29 +39,54 @@ GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS: list[re.Pattern[str]] = [
 
 MANAGER_ONLY_GIT_LIFECYCLE_ROLES = frozenset({"worker", "reviewer", "openhands"})
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-_COMMAND_LINE_PREFIX = re.compile(
-    r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+"
-)
+_COMMAND_LINE_PREFIX = re.compile(r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+")
 
 # Relative paths that rm -rf is allowed to target within the project.
-_SAFE_RM_TARGETS = frozenset({
-    "dist", "dist/", "./dist", "./dist/",
-    "build", "build/", "./build", "./build/",
-    "node_modules", "node_modules/", "./node_modules", "./node_modules/",
-    ".next", ".next/", "./.next", "./.next/",
-    ".turbo", ".turbo/", "./.turbo", "./.turbo/",
-    "coverage", "coverage/", "./coverage", "./coverage/",
-    ".cache", ".cache/", "./.cache", "./.cache/",
-    "out", "out/", "./out", "./out/",
-    "tmp", "tmp/", "./tmp", "./tmp/",
-})
+_SAFE_RM_TARGETS = frozenset(
+    {
+        "dist",
+        "dist/",
+        "./dist",
+        "./dist/",
+        "build",
+        "build/",
+        "./build",
+        "./build/",
+        "node_modules",
+        "node_modules/",
+        "./node_modules",
+        "./node_modules/",
+        ".next",
+        ".next/",
+        "./.next",
+        "./.next/",
+        ".turbo",
+        ".turbo/",
+        "./.turbo",
+        "./.turbo/",
+        "coverage",
+        "coverage/",
+        "./coverage",
+        "./coverage/",
+        ".cache",
+        ".cache/",
+        "./.cache",
+        "./.cache/",
+        "out",
+        "out/",
+        "./out",
+        "./out/",
+        "tmp",
+        "tmp/",
+        "./tmp",
+        "./tmp/",
+    }
+)
 
 _RM_RF_PATTERN = re.compile(
     r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\s+(.*)"
 )
-_RM_RF_BARE = re.compile(
-    r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\b"
-)
+_RM_RF_BARE = re.compile(r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]|-rf|-Rf)\b")
 
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_STALL_SECONDS = 300
@@ -216,8 +241,7 @@ def check_unrelated_directory(
     for ref in abs_refs:
         ref_resolved = os.path.realpath(ref)
         if not any(
-            ref_resolved == root or ref_resolved.startswith(root + "/")
-            for root in allowed_roots
+            ref_resolved == root or ref_resolved.startswith(root + "/") for root in allowed_roots
         ):
             if any(ref_resolved == t or ref_resolved.startswith(t + "/") for t in tmp_prefixes):
                 continue
@@ -327,7 +351,11 @@ def monitor_process_stream(
             if idle > stall_seconds:
                 with lock:
                     watchdog_reason.append("stall")
-                    _record(events, "stall", f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)")
+                    _record(
+                        events,
+                        "stall",
+                        f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)",
+                    )
                 _cancel.set()
                 return
 
@@ -468,7 +496,11 @@ def monitor_process(
             if idle > stall_seconds:
                 with lock:
                     watchdog_reason.append("stall")
-                    _record(events, "stall", f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)")
+                    _record(
+                        events,
+                        "stall",
+                        f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)",
+                    )
                 _kill_process(process)
                 return
 

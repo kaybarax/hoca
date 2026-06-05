@@ -66,7 +66,9 @@ def create_run_id(prefix: str = "run") -> str:
 
 
 def runtime_archive_root() -> Path:
-    return Path(os.environ.get("HOCA_RUNTIME_ARCHIVE_ROOT", Path.home() / ".hoca" / "runtime-archives"))
+    return Path(
+        os.environ.get("HOCA_RUNTIME_ARCHIVE_ROOT", Path.home() / ".hoca" / "runtime-archives")
+    )
 
 
 def resolve_run_dir(project_path: Path, run_id: str) -> Path | None:
@@ -249,16 +251,12 @@ def summarize_run_for_pr_body(
             changes_parts.append("")
         changes_parts.extend(["```text", commit_log, "```"])
     fragments["changes"] = (
-        "\n".join(changes_parts)
-        if changes_parts
-        else "_No change list recorded in run artifacts._"
+        "\n".join(changes_parts) if changes_parts else "_No change list recorded in run artifacts._"
     )
 
     validation_text = _read_text_artifact(run_dir / "tests-summary.md")
     if not validation_text:
-        validation_round = current_round(
-            run_dir, prefix="validation-report-", subdir="validation"
-        )
+        validation_round = current_round(run_dir, prefix="validation-report-", subdir="validation")
         if validation_round:
             report = read_optional_report(
                 run_dir, "validation_report", round_number=validation_round
@@ -293,9 +291,7 @@ def summarize_run_for_pr_body(
     if review_gate_error:
         fragments["code-review"] = code_review_error_fragment()
     elif review_result is None:
-        fragments["code-review"] = (
-            "_No `openhands-review.txt` found in the run directory._"
-        )
+        fragments["code-review"] = "_No `openhands-review.txt` found in the run directory._"
     else:
         fragments["code-review"] = code_review_pr_fragment(review_result)
 
@@ -315,9 +311,9 @@ def list_round_artifact_paths(run_dir: Path, subdir: str, prefix: str) -> list[s
         str(path)
         for path in sorted(
             artifact_dir.iterdir(),
-            key=lambda item: int(pattern.match(item.name).group(1))
-            if pattern.match(item.name)
-            else 0,
+            key=lambda item: (
+                int(pattern.match(item.name).group(1)) if pattern.match(item.name) else 0
+            ),
         )
         if path.is_file() and pattern.match(path.name)
     ]

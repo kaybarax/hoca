@@ -29,9 +29,7 @@ MANAGER_ONLY_GIT_PATTERNS = (
     r"git commit -am",
 )
 
-WORKER_REVIEWER_FORBIDDEN_PATTERNS = MANAGER_ONLY_GIT_PATTERNS + (
-    r"scripts/run-hoca-task\.sh",
-)
+WORKER_REVIEWER_FORBIDDEN_PATTERNS = MANAGER_ONLY_GIT_PATTERNS + (r"scripts/run-hoca-task\.sh",)
 
 
 @pytest.mark.parametrize("filename", ALL_SKILL_FILES)
@@ -134,7 +132,9 @@ def test_manager_skill_documents_optional_kanban_orchestration() -> None:
     assert "kanban_create" in content
     assert "kanban_link" in content
     lowered = content.lower()
-    assert "do not require kanban" in lowered or "without creating or updating kanban tasks" in lowered
+    assert (
+        "do not require kanban" in lowered or "without creating or updating kanban tasks" in lowered
+    )
 
 
 def test_manager_skill_defines_kanban_task_contract() -> None:
@@ -489,7 +489,7 @@ def test_sandbox_scripts_run_as_non_root() -> None:
         script = REPO_ROOT / "scripts" / script_name
         content = script.read_text(encoding="utf-8")
         assert "--user root" not in content, f"{script_name} must not run as root"
-        assert 'sandbox_resolve_user' in content, f"{script_name} must resolve a non-root user"
+        assert "sandbox_resolve_user" in content, f"{script_name} must resolve a non-root user"
         assert "--user" in content, f"{script_name} must pass --user to docker run"
 
 

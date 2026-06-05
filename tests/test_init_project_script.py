@@ -62,16 +62,10 @@ def test_init_project_is_idempotent(tmp_path: Path) -> None:
         "templates/PR_TEMPLATE.md",
         ".gitignore",
     ]
-    first_contents = {
-        name: (project_path / name).read_text()
-        for name in tracked_files
-    }
+    first_contents = {name: (project_path / name).read_text() for name in tracked_files}
 
     second_result = run_init_project(repo_root, project_path)
     assert second_result.returncode == 0, second_result.stderr
 
-    second_contents = {
-        name: (project_path / name).read_text()
-        for name in tracked_files
-    }
+    second_contents = {name: (project_path / name).read_text() for name in tracked_files}
     assert second_contents == first_contents

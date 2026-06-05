@@ -503,7 +503,9 @@ class TestRiskCategories:
         assert "Auto-merge disabled" not in notes
 
     def test_write_risk_artifacts_preserves_existing_notes(self, tmp_path):
-        (tmp_path / "risk-notes.txt").write_text("Reviewer follow-up: monitor rollout.\n", encoding="utf-8")
+        (tmp_path / "risk-notes.txt").write_text(
+            "Reviewer follow-up: monitor rollout.\n", encoding="utf-8"
+        )
         write_risk_artifacts(
             tmp_path,
             changed_paths=["src/auth/middleware.py"],

@@ -173,10 +173,7 @@ class TestModelPoolConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
-        env_file.write_text(
-            "OLLAMA_MODEL=qwen-32b-pro\n"
-            "OLLAMA_BASE_URL=http://10.0.0.1:11434\n"
-        )
+        env_file.write_text("OLLAMA_MODEL=qwen-32b-pro\nOLLAMA_BASE_URL=http://10.0.0.1:11434\n")
         for key in ["OLLAMA_MODEL", "OLLAMA_BASE_URL"]:
             monkeypatch.delenv(key, raising=False)
         _clear_role_model_env(monkeypatch)
@@ -228,8 +225,7 @@ class TestModelPoolConfig:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_WORKER_MODEL_NAME=local-coder\n"
-            "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
+            "HOCA_WORKER_MODEL_NAME=local-coder\nHOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro\n"
         )
         _clear_role_model_env(monkeypatch)
 
@@ -327,6 +323,7 @@ class TestModelPoolConfig:
         assert "extra-slot" not in {slot.name for slot in cfg.model_pool.slots}
         assert "env-extra" not in {slot.name for slot in cfg.model_pool.slots}
 
+
 class TestSafeRepr:
     def test_secrets_are_masked(self) -> None:
         cfg = HocaConfig(
@@ -385,9 +382,7 @@ class TestCurrentEnvVars:
             monkeypatch.delenv(key, raising=False)
         _clear_role_model_env(monkeypatch)
 
-    def test_hoca_max_total_rounds(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_hoca_max_total_rounds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("HOCA_MAX_TOTAL_ROUNDS=5\n")
         self._clear_current_env(monkeypatch)
@@ -408,9 +403,7 @@ class TestCurrentEnvVars:
         assert not hasattr(cfg, "llm_model")
         assert cfg.ollama_model == "qwen-14b-pro"
 
-    def test_ollama_host_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ollama_host_alias(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("OLLAMA_HOST=http://10.0.0.5:11434\n")
         self._clear_current_env(monkeypatch)
@@ -423,17 +416,14 @@ class TestCurrentEnvVars:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "OLLAMA_HOST=http://host-value:11434\n"
-            "OLLAMA_BASE_URL=http://base-url-value:11434\n"
+            "OLLAMA_HOST=http://host-value:11434\nOLLAMA_BASE_URL=http://base-url-value:11434\n"
         )
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.ollama_base_url == "http://base-url-value:11434"
         assert cfg.ollama_host == "http://host-value:11434"
 
-    def test_ollama_api_base_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ollama_api_base_alias(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("OLLAMA_API_BASE=http://10.0.0.7:11434\n")
         self._clear_current_env(monkeypatch)
@@ -458,14 +448,10 @@ class TestCurrentEnvVars:
         cfg = load_config(dotenv_path=env_file)
         assert cfg.require_review is False
 
-    def test_notification_env_vars(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_notification_env_vars(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "HOCA_NOTIFY_TELEGRAM=true\n"
-            "TELEGRAM_BOT_TOKEN=bot123\n"
-            "TELEGRAM_CHAT_ID=chat456\n"
+            "HOCA_NOTIFY_TELEGRAM=true\nTELEGRAM_BOT_TOKEN=bot123\nTELEGRAM_CHAT_ID=chat456\n"
         )
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
@@ -473,9 +459,7 @@ class TestCurrentEnvVars:
         assert cfg.telegram_bot_token == "bot123"
         assert cfg.telegram_chat_id == "chat456"
 
-    def test_webhook_env_vars(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_webhook_env_vars(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
             "HOCA_WEBHOOK_SECRET=sec123\n"

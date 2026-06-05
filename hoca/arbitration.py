@@ -90,13 +90,10 @@ def generate_repair_brief(
         lines.append(f"- {finding_id}{location}: {fix}")
 
     if rejected_findings:
-        lines.append(
-            f"Do not address rejected findings: {', '.join(rejected_findings)}."
-        )
+        lines.append(f"Do not address rejected findings: {', '.join(rejected_findings)}.")
     if downgraded_findings:
         lines.append(
-            "Leave downgraded findings for PR follow-up: "
-            f"{', '.join(downgraded_findings)}."
+            f"Leave downgraded findings for PR follow-up: {', '.join(downgraded_findings)}."
         )
     lines.append("Keep changes minimal and do not restart unrelated work.")
     return "\n".join(lines) + "\n"
@@ -138,8 +135,7 @@ def _decision_from_material_findings(
     material_accepted = [
         finding_id
         for finding_id in accepted_findings
-        if finding_id in findings_by_id
-        and not can_downgrade_finding(findings_by_id[finding_id])
+        if finding_id in findings_by_id and not can_downgrade_finding(findings_by_id[finding_id])
     ]
     hard_blockers = [
         finding_id
@@ -158,9 +154,7 @@ def _decision_from_material_findings(
     ]
 
     if final_round and hard_blockers:
-        reasoning.append(
-            "Round cap reached with hard-blocker findings; run is blocked."
-        )
+        reasoning.append("Round cap reached with hard-blocker findings; run is blocked.")
         return _blocked_decision(
             review=review,
             accepted_findings=accepted_findings,
@@ -282,9 +276,7 @@ def arbitrate(
         )
 
     for finding in sorted_findings:
-        disposition = classify_finding(
-            finding, explicitly_impossible=explicitly_impossible
-        )
+        disposition = classify_finding(finding, explicitly_impossible=explicitly_impossible)
         if disposition == "repair":
             accepted_findings.append(finding.id)
             reasoning.append(

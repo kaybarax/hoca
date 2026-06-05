@@ -283,7 +283,9 @@ def test_run_forwards_dev_branch_flag(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
 
-    result = CliRunner().invoke(main, ["run", str(project_path), "A task", "--dev-branch", "develop"])
+    result = CliRunner().invoke(
+        main, ["run", str(project_path), "A task", "--dev-branch", "develop"]
+    )
 
     assert result.exit_code == 0
     assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--dev-branch", "develop"])]

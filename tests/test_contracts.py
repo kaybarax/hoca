@@ -483,16 +483,12 @@ def test_manager_decision_draft_pr_with_blockers() -> None:
 
 def test_manager_decision_rejects_invalid_decision() -> None:
     with pytest.raises(ValueError, match="decision must be one of"):
-        HocaManagerDecision.from_dict(
-            _manager_decision(decision="auto_merge")
-        )
+        HocaManagerDecision.from_dict(_manager_decision(decision="auto_merge"))
 
 
 def test_manager_decision_rejects_invalid_round() -> None:
     with pytest.raises(ValueError, match="round must be greater than or equal to 1"):
-        HocaManagerDecision.from_dict(
-            _manager_decision(round=0)
-        )
+        HocaManagerDecision.from_dict(_manager_decision(round=0))
 
 
 def test_manager_decision_repair_required_needs_worker_brief() -> None:
@@ -593,9 +589,7 @@ def test_review_report_expresses_non_blocking_findings() -> None:
         _review_report(
             verdict="LGTM",
             findings=[
-                _finding(
-                    id="F1", severity="low", category="maintainability", required_fix=None
-                ),
+                _finding(id="F1", severity="low", category="maintainability", required_fix=None),
             ],
         )
     )
@@ -668,8 +662,13 @@ def test_review_report_blocked_verdict() -> None:
         _review_report(
             verdict="blocked",
             findings=[
-                _finding(id="F1", severity="critical", category="security",
-                         summary="Credential leak", required_fix="Remove leaked secret"),
+                _finding(
+                    id="F1",
+                    severity="critical",
+                    category="security",
+                    summary="Credential leak",
+                    required_fix="Remove leaked secret",
+                ),
             ],
         )
     )
@@ -681,87 +680,63 @@ def test_review_report_blocked_verdict() -> None:
 
 def test_review_finding_rejects_security_nit() -> None:
     with pytest.raises(ValueError, match="Security findings must have severity"):
-        HocaReviewFinding.from_dict(
-            _finding(severity="nit", category="security")
-        )
+        HocaReviewFinding.from_dict(_finding(severity="nit", category="security"))
 
 
 def test_review_finding_rejects_security_low() -> None:
     with pytest.raises(ValueError, match="Security findings must have severity"):
-        HocaReviewFinding.from_dict(
-            _finding(severity="low", category="security")
-        )
+        HocaReviewFinding.from_dict(_finding(severity="low", category="security"))
 
 
 def test_review_finding_allows_security_medium() -> None:
-    finding = HocaReviewFinding.from_dict(
-        _finding(severity="medium", category="security")
-    )
+    finding = HocaReviewFinding.from_dict(_finding(severity="medium", category="security"))
     assert finding.severity == "medium"
     assert finding.category == "security"
 
 
 def test_review_finding_rejects_correctness_nit() -> None:
     with pytest.raises(ValueError, match="Correctness findings cannot have severity"):
-        HocaReviewFinding.from_dict(
-            _finding(severity="nit", category="correctness")
-        )
+        HocaReviewFinding.from_dict(_finding(severity="nit", category="correctness"))
 
 
 def test_review_finding_allows_correctness_low() -> None:
-    finding = HocaReviewFinding.from_dict(
-        _finding(severity="low", category="correctness")
-    )
+    finding = HocaReviewFinding.from_dict(_finding(severity="low", category="correctness"))
     assert finding.severity == "low"
 
 
 def test_review_finding_rejects_invalid_severity() -> None:
     with pytest.raises(ValueError, match="severity must be one of"):
-        HocaReviewFinding.from_dict(
-            _finding(severity="extreme")
-        )
+        HocaReviewFinding.from_dict(_finding(severity="extreme"))
 
 
 def test_review_finding_rejects_invalid_category() -> None:
     with pytest.raises(ValueError, match="category must be one of"):
-        HocaReviewFinding.from_dict(
-            _finding(category="performance")
-        )
+        HocaReviewFinding.from_dict(_finding(category="performance"))
 
 
 def test_review_finding_supports_tooling_category() -> None:
-    finding = HocaReviewFinding.from_dict(
-        _finding(category="tooling", severity="low")
-    )
+    finding = HocaReviewFinding.from_dict(_finding(category="tooling", severity="low"))
     assert finding.category == "tooling"
 
 
 def test_review_finding_supports_environment_category() -> None:
-    finding = HocaReviewFinding.from_dict(
-        _finding(category="environment", severity="medium")
-    )
+    finding = HocaReviewFinding.from_dict(_finding(category="environment", severity="medium"))
     assert finding.category == "environment"
 
 
 def test_review_report_rejects_invalid_verdict() -> None:
     with pytest.raises(ValueError, match="verdict must be one of"):
-        HocaReviewReport.from_dict(
-            _review_report(verdict="approved")
-        )
+        HocaReviewReport.from_dict(_review_report(verdict="approved"))
 
 
 def test_review_report_rejects_non_reviewer_role() -> None:
     with pytest.raises(ValueError, match="role must be one of"):
-        HocaReviewReport.from_dict(
-            _review_report(role="worker")
-        )
+        HocaReviewReport.from_dict(_review_report(role="worker"))
 
 
 def test_review_report_rejects_invalid_round() -> None:
     with pytest.raises(ValueError, match="round must be greater than or equal to 1"):
-        HocaReviewReport.from_dict(
-            _review_report(round=0)
-        )
+        HocaReviewReport.from_dict(_review_report(round=0))
 
 
 def test_review_report_mixed_severity_findings() -> None:
@@ -769,12 +744,14 @@ def test_review_report_mixed_severity_findings() -> None:
         _review_report(
             verdict="fix_required",
             findings=[
-                _finding(id="F1", severity="critical", category="security",
-                         required_fix="Remove credential"),
-                _finding(id="F2", severity="medium", category="test",
-                         required_fix="Add test"),
-                _finding(id="F3", severity="nit", category="style",
-                         required_fix=None),
+                _finding(
+                    id="F1",
+                    severity="critical",
+                    category="security",
+                    required_fix="Remove credential",
+                ),
+                _finding(id="F2", severity="medium", category="test", required_fix="Add test"),
+                _finding(id="F3", severity="nit", category="style", required_fix=None),
             ],
         )
     )

@@ -58,7 +58,9 @@ def init_project(project_path: Path) -> None:
 
 
 @main.command("setup-profiles")
-@click.option("--dry-run", is_flag=True, default=False, help="Print planned actions without changing files.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Print planned actions without changing files."
+)
 def setup_profiles(dry_run: bool) -> None:
     """Install or update HOCA Hermes role profiles from repo templates."""
     args = ["--dry-run"] if dry_run else []
@@ -121,7 +123,9 @@ def issue(
 @main.command()
 @click.argument("project_path", type=click.Path(path_type=Path))
 @click.argument("run_id")
-@click.option("--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts.")
+@click.option(
+    "--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts."
+)
 def report(project_path: Path, run_id: str, regenerate: bool) -> None:
     """Show or regenerate the task report for a past HOCA run."""
     from hoca.run_state import resolve_run_dir
@@ -131,7 +135,9 @@ def report(project_path: Path, run_id: str, regenerate: bool) -> None:
     run_dir = resolve_run_dir(project_path, run_id)
 
     if run_dir is None:
-        raise click.ClickException(f"Run directory not found for {run_id} (checked .hoca-runtime and runtime archive)")
+        raise click.ClickException(
+            f"Run directory not found for {run_id} (checked .hoca-runtime and runtime archive)"
+        )
 
     report_path = run_dir / "task-report.md"
 

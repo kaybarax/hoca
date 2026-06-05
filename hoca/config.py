@@ -131,7 +131,9 @@ class ModelPoolConfig:
         try:
             return slots[selected_name]
         except KeyError as exc:
-            raise ValueError(f"Configured model name is not in the active model pool: {selected_name}") from exc
+            raise ValueError(
+                f"Configured model name is not in the active model pool: {selected_name}"
+            ) from exc
 
     def safe_repr(self) -> dict[str, object]:
         return {

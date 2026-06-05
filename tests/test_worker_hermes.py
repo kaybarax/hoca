@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from hoca.contracts import HocaAttemptReport, HocaRoleModelSelection, HocaSandboxPolicy, HocaTaskSpec
+from hoca.contracts import (
+    HocaAttemptReport,
+    HocaRoleModelSelection,
+    HocaSandboxPolicy,
+    HocaTaskSpec,
+)
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
@@ -111,9 +116,7 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
     )
     prompt = build_worker_hermes_prompt(
         spec=spec,
-        project_path=Path(
-            "/Users/example/original-checkout/.hoca-runtime/worktrees/run-test"
-        ),
+        project_path=Path("/Users/example/original-checkout/.hoca-runtime/worktrees/run-test"),
         run_dir=Path("/Users/example/original-checkout/.hoca-runtime/runs/run-test"),
         round_number=1,
         task_spec_path=Path(
@@ -250,7 +253,7 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
         "fi\n"
         '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
         "shift\n"
-        'while [[ $# -gt 0 ]]; do\n'
+        "while [[ $# -gt 0 ]]; do\n"
         '  case "$1" in\n'
         "    --query|-q)\n"
         '      PROMPT="${2:-}"\n'
@@ -275,7 +278,9 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
         "{\n"
         '  "schema_version": 1,\n'
         '  "run_id": "run-test",\n'
-        '  "round": '"${HERMES_TEST_ROUND}"',\n'
+        '  "round": '
+        "${HERMES_TEST_ROUND}"
+        ",\n"
         '  "role": "worker",\n'
         '  "status": "completed",\n'
         '  "changed_files": [],\n'
@@ -480,10 +485,7 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
 
     assert status == "blocked"
     assert report.status == "blocked"
-    assert (
-        report.blocked_reason
-        == "Hermes worker did not write a structured attempt report."
-    )
+    assert report.blocked_reason == "Hermes worker did not write a structured attempt report."
 
 
 def test_missing_profile_attempt_report_uses_hermes_log_failure_detail(
@@ -549,7 +551,10 @@ def test_record_worker_attempt_git_fallback_for_changed_files(tmp_path: Path) ->
     ensure_run_layout(run_dir)
 
     path = record_worker_attempt(
-        run_dir, round_number=1, status="completed", project_path=project,
+        run_dir,
+        round_number=1,
+        status="completed",
+        project_path=project,
     )
     report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
 

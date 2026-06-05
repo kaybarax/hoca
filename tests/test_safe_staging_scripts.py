@@ -301,9 +301,9 @@ def test_safe_stage_expands_untracked_intended_directories(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     assert staged_files(tmp_path) == ["gateway/__tests__/env.test.ts"]
-    assert (
-        run_dir / "intended-files.normalized.txt"
-    ).read_text(encoding="utf-8") == "gateway/__tests__/env.test.ts\n"
+    assert (run_dir / "intended-files.normalized.txt").read_text(
+        encoding="utf-8"
+    ) == "gateway/__tests__/env.test.ts\n"
 
 
 def test_safe_stage_ignores_untracked_hoca_runtime_artifacts(tmp_path: Path) -> None:

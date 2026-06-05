@@ -243,9 +243,7 @@ class TestRoundBehavior:
         assert decision.next_round == 3
         assert decision.repair_brief_path is not None
 
-    def test_low_priority_finding_after_round_3_proceeds_to_pr_notes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_low_priority_finding_after_round_3_proceeds_to_pr_notes(self, tmp_path: Path) -> None:
         run_dir = _setup_run(
             tmp_path,
             round_number=3,
@@ -411,9 +409,7 @@ class TestRoundLoopCli:
         ensure_run_layout(run_dir)
         (run_dir / "tests-exit-code.txt").write_text("1\n", encoding="utf-8")
 
-        exit_code = main(
-            ["after-validation", str(run_dir), "--round", "1", "--max-rounds", "3"]
-        )
+        exit_code = main(["after-validation", str(run_dir), "--round", "1", "--max-rounds", "3"])
 
         assert exit_code == 2
 

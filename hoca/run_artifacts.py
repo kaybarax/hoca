@@ -532,9 +532,7 @@ def record_final_state(run_dir: Path) -> Path:
         human_attention_required=human_attention_required_for_run(run_dir),
         unresolved_findings=unresolved_findings_for_run(run_dir),
         completed_at=status_data.get("ended_at") or status_data.get("started_at"),
-        blocked_reason=(failure_detail or reason_text)
-        if status in ("blocked", "failed")
-        else None,
+        blocked_reason=(failure_detail or reason_text) if status in ("blocked", "failed") else None,
     )
     path = write_final_state(run_dir, state.to_dict())
     sync_status_fields(run_dir)
@@ -627,7 +625,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "record-decision":
             path = record_manager_decision(run_dir, round_number=args.round)
             if path is None:
-                print("No structured review report found; skipped manager decision.", file=sys.stderr)
+                print(
+                    "No structured review report found; skipped manager decision.", file=sys.stderr
+                )
                 return 1
             print(path)
         elif args.command == "record-final":

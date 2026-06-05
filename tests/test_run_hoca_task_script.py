@@ -195,13 +195,13 @@ def make_fake_preflight_bin(
         '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
         "shift\n"
         'PROMPT=""\n'
-        'while [[ $# -gt 0 ]]; do\n'
+        "while [[ $# -gt 0 ]]; do\n"
         '  case "$1" in\n'
         '    --query|-q) PROMPT="${2:-}"; shift 2;;\n'
         '    --model) [[ "${2:-}" == */* ]] || { echo "missing model override" >&2; exit 2; }; shift 2;;\n'
-        '    *) shift;;\n'
-        '  esac\n'
-        'done\n'
+        "    *) shift;;\n"
+        "  esac\n"
+        "done\n"
         'RUN_DIR="$PWD"\n'
         'PROJECT="$(printf "%s" "$PROMPT" | sed -n "s/^- project_path: //p" | head -n 1)"\n'
         '[ -n "$PROJECT" ] || PROJECT="${HERMES_TEST_PROJECT:-}"\n'
@@ -216,22 +216,30 @@ def make_fake_preflight_bin(
         '  findings=\'[{"id":"F1","severity":"medium","category":"correctness","file":null,"summary":"Review requested changes","required_fix":"Address reviewer feedback"}]\'\n'
         '  if [[ "$review_output" == *"LGTM"* ]]; then verdict="LGTM"; findings="[]"; fi\n'
         '  cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
-        '"verdict":"'"${verdict}"'","findings":'"${findings}"',"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"reviewer",'
+        '"verdict":"'
+        "${verdict}"
+        '","findings":'
+        "${findings}"
+        ',"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
         "EOF\n"
         '  printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked-round-${ROUND}.txt"\n'
-        '  exit 0\n'
-        'fi\n'
+        "  exit 0\n"
+        "fi\n"
         'cd "$PROJECT"\n'
         'export OPENHANDS_COUNT_FILE="${OPENHANDS_COUNT_FILE:-$PROJECT/openhands-count}"\n'
         f'worker_output="$("{fake_bin / "openhands-body.sh"}")"\n'
         'printf "%s\\n" "$worker_output"\n'
         'if [[ "$worker_output" == *"ConversationErrorEvent"* ]]; then\n'
         '  echo "OpenHands reported a conversation error event."\n'
-        '  exit 1\n'
-        'fi\n'
+        "  exit 1\n"
+        "fi\n"
         'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"worker",'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"worker",'
         '"status":"completed","changed_files":[],"summary":["Hermes worker completed"],'
         '"commands_run":["run-openhands-task.sh"],"tests_run":[],"known_risks":[],'
         '"blocked_reason":null,"artifact_paths":{}}\n'
@@ -394,7 +402,7 @@ def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
         'if [[ "${1:-}" == "-p" ]]; then PROFILE="${2:-}"; shift 2; fi\n'
         '[[ "${1:-}" == "chat" ]] || { echo "missing chat subcommand" >&2; exit 2; }\n'
         "shift\n"
-        'while [[ $# -gt 0 ]]; do\n'
+        "while [[ $# -gt 0 ]]; do\n"
         '  case "$1" in\n'
         "    --query|-q)\n"
         '      PROMPT="${2:-}"\n'
@@ -415,12 +423,14 @@ def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
         '  [ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         '  mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'
         '  cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"reviewer",'
         '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
         "EOF\n"
         '  printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked-round-${ROUND}.txt"\n'
-        '  exit 0\n'
-        'fi\n'
+        "  exit 0\n"
+        "fi\n"
         'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
         '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
@@ -429,7 +439,9 @@ def setup_fake_hermes_worker(fake_bin: Path, hermes_home: Path) -> None:
         "{\n"
         '  "schema_version": 1,\n'
         '  "run_id": "run-test",\n'
-        '  "round": '"${ROUND}"',\n'
+        '  "round": '
+        "${ROUND}"
+        ",\n"
         '  "role": "worker",\n'
         '  "status": "completed",\n'
         '  "changed_files": ["README.md"],\n'
@@ -507,19 +519,23 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
         '  [ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         '  mkdir -p "$RUN_DIR/reviews" "$RUN_DIR/logs"\n'
         '  cat > "$RUN_DIR/reviews/review-report-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"reviewer",'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"reviewer",'
         '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Hermes reviewer completed"],"known_followups":[]}}\n'
         "EOF\n"
         '  printf "%s\\n" "$PROMPT" > "$RUN_DIR/logs/reviewer-hermes-invoked-round-${ROUND}.txt"\n'
-        '  exit 0\n'
-        'fi\n'
+        "  exit 0\n"
+        "fi\n"
         'ROUND="$(printf "%s" "$PROMPT" | sed -n "s/^- round: \\([0-9][0-9]*\\)$/\\1/p" | head -n 1)"\n'
         '[ -n "$ROUND" ] || ROUND="${HERMES_TEST_ROUND:-1}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
         'if [[ "$ROUND" == "2" ]]; then printf "fixed\\n" > "$PROJECT/README.md"; '
         'else printf "broken\\n" > "$PROJECT/README.md"; fi\n'
         'cat > "$RUN_DIR/attempts/worker-attempt-${ROUND}.json" <<EOF\n'
-        '{"schema_version":1,"run_id":"run-test","round":'"${ROUND}"',"role":"worker",'
+        '{"schema_version":1,"run_id":"run-test","round":'
+        "${ROUND}"
+        ',"role":"worker",'
         '"status":"completed","changed_files":["README.md"],"summary":["Hermes worker completed"],'
         '"commands_run":["run-openhands-task.sh"],"tests_run":[],"known_risks":[],'
         '"blocked_reason":null,"artifact_paths":{}}\n'
@@ -680,9 +696,9 @@ def test_run_hoca_task_uses_unique_branch_when_task_branch_exists(
     assert branch.startswith("feat/update-readme-")
     assert branch != "feat/update-readme"
     assert f"Creating branch: {branch} from main" in result.stdout
-    assert f'"task_branch": "{branch}"' in (
-        latest_run_dir(tmp_path) / "task-spec.json"
-    ).read_text(encoding="utf-8")
+    assert f'"task_branch": "{branch}"' in (latest_run_dir(tmp_path) / "task-spec.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_run_hoca_task_uses_project_config_dev_branch(
@@ -724,7 +740,9 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
     remote = tmp_path / "origin.git"
     subprocess.run(["git", "init", "--bare", str(remote)], check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
-    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "push", "-u", "origin", "main"], cwd=repo, check=True, stdout=subprocess.PIPE
+    )
     subprocess.run(["git", "remote", "set-head", "origin", "main"], cwd=repo, check=True)
 
     (repo / "local-only.txt").write_text("local main only\n", encoding="utf-8")
@@ -737,7 +755,9 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
     )
 
     remote_work = tmp_path / "remote-work"
-    subprocess.run(["git", "clone", str(remote), str(remote_work)], check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "clone", str(remote), str(remote_work)], check=True, stdout=subprocess.PIPE
+    )
     subprocess.run(["git", "checkout", "main"], cwd=remote_work, check=True, stdout=subprocess.PIPE)
     subprocess.run(
         ["git", "config", "user.email", "hoca@example.test"], cwd=remote_work, check=True
@@ -751,7 +771,9 @@ def test_run_hoca_task_bases_task_branch_on_latest_origin_dev_branch(
         check=True,
         stdout=subprocess.PIPE,
     )
-    subprocess.run(["git", "push", "origin", "main"], cwd=remote_work, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "push", "origin", "main"], cwd=remote_work, check=True, stdout=subprocess.PIPE
+    )
 
     subprocess.run(["git", "checkout", "-b", "feat/previous-task"], cwd=repo, check=True)
     fake_bin = make_fake_preflight_bin(fake_tools_root(repo))
@@ -810,9 +832,9 @@ def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) ->
     assert "OpenHands failed with exit code" in result.stderr
     assert "Worker failure: boom" in result.stderr
     assert '"reason": "openhands_failed"' in latest_status(tmp_path)
-    assert "Worker failure: boom" in (
-        latest_run_dir(tmp_path) / "failure-detail.txt"
-    ).read_text(encoding="utf-8")
+    assert "Worker failure: boom" in (latest_run_dir(tmp_path) / "failure-detail.txt").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_run_hoca_task_cleans_target_runtime_and_archives_evidence_by_default(
@@ -834,9 +856,7 @@ def test_run_hoca_task_cleans_target_runtime_and_archives_evidence_by_default(
     assert archived.is_dir()
     assert archived.is_relative_to(archive_root(tmp_path))
     assert (archived / "task-report.md").is_file()
-    assert '"reason": "openhands_failed"' in (archived / "status.json").read_text(
-        encoding="utf-8"
-    )
+    assert '"reason": "openhands_failed"' in (archived / "status.json").read_text(encoding="utf-8")
 
 
 def test_run_hoca_task_marks_openhands_conversation_error_as_failure(

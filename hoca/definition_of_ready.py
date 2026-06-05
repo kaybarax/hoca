@@ -72,7 +72,9 @@ _DANGEROUS_REQUEST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bdocker\s+system\s+prune\b"),
     re.compile(r"\bbrew\s+uninstall\b"),
     re.compile(r"\b(delete|drop|wipe|purge)\s+(all|every|entire)\b", re.I),
-    re.compile(r"\b(expose|commit|print|log)\s+(the\s+)?(secrets?|credentials?|api\s*keys?)\b", re.I),
+    re.compile(
+        r"\b(expose|commit|print|log)\s+(the\s+)?(secrets?|credentials?|api\s*keys?)\b", re.I
+    ),
     re.compile(
         r"\b(?:edit|modify|change|write|create|add|update|commit)\b.*(?:^|[\s`'\"/])\.env(?!\.example)\b",
         re.I,
@@ -236,8 +238,7 @@ def evaluate_definition_of_ready(
 
     if normalized_task:
         is_vague = (
-            len(normalized_task) < 16
-            and not _has_concrete_target(normalized_task)
+            len(normalized_task) < 16 and not _has_concrete_target(normalized_task)
         ) or _matches_any(normalized_task, _VAGUE_TASK_PATTERNS)
         if is_vague:
             checks.append(

@@ -82,7 +82,9 @@ class TestRecordValidationReport:
             encoding="utf-8",
         )
         (run_dir / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
-        (run_dir / "tests-summary.md").write_text("# Tests\n\n- **Status**: passed\n", encoding="utf-8")
+        (run_dir / "tests-summary.md").write_text(
+            "# Tests\n\n- **Status**: passed\n", encoding="utf-8"
+        )
         (run_dir / "secret-detected.txt").write_text("src/other/unrelated.py\n", encoding="utf-8")
         write_json_atomic(
             run_dir / "monitor-result.json",
@@ -180,9 +182,10 @@ class TestValidationStatusIntegration:
 
         assert "scope_risk" in validation.hard_blockers
         assert decision.decision == "repair_required"
-        assert "scope_risk" in decision.next_worker_brief or "validation" in (
-            decision.next_worker_brief or ""
-        ).lower()
+        assert (
+            "scope_risk" in decision.next_worker_brief
+            or "validation" in (decision.next_worker_brief or "").lower()
+        )
 
 
 class TestSummarizeValidationReport:
