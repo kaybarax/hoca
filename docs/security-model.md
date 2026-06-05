@@ -26,6 +26,26 @@ owns policy decisions, staging, commit, push, and PR publication. Worker and
 reviewer phases should be treated as high-power automation and kept inside the
 smallest practical filesystem, network, and credential scope.
 
+## Fleet-Level Controls
+
+HOCA v1 adds a control plane that coordinates many registered projects. That
+adds useful throughput, but it also introduces new trust boundaries:
+
+- The project registry should be treated as an allowlist, not a discovery
+  mechanism. Only explicitly registered repositories are in scope for the
+  scheduler.
+- Worktree leases are coordination hints, not a proof of exclusivity. Stale or
+  orphaned leases should be cleaned up before new lanes are launched.
+- Adapter credentials are phase-specific. The manager may select an adapter and
+  pass only the selected runtime credentials to a lane; worker and reviewer
+  lanes should not inherit manager-only GitHub or registry credentials.
+- Resource governor caps are a safety boundary. Project, task, and lane caps
+  should be set conservatively so one project cannot starve the rest of the
+  fleet.
+- Scheduler and fleet cleanup commands should be treated as operational tools
+  that can stop, inspect, and clean up the control plane when something looks
+  unsafe.
+
 ## Credential Handling
 
 Credentials are split by phase.
@@ -149,6 +169,9 @@ HOCA uses code-level gates in addition to prompts.
 - MCP or plugin integrations must be allowlisted and rooted to the target
   worktree. A broadly rooted filesystem or GitHub tool can bypass the intended
   boundary.
+- Hermes profiles are role definitions, not sandboxes. The trust boundary is
+  still the scripted HOCA runner, worktree sandbox, environment allowlists, and
+  Git lifecycle checks.
 
 ## Emergency Stop And Cleanup
 
@@ -171,6 +194,8 @@ Stop a suspicious run before preserving output.
    PR bodies, terminal output, or agent-readable files.
 8. If a PR was created from a bad run, close it and delete the remote branch
    unless it contains intentional human work.
+9. Prune stale scheduler locks, cleaned lanes, and abandoned worktree leases
+   before launching new fleet work.
 
 Never use broad destructive cleanup commands against the user's active checkout.
 Prefer targeted cleanup of the specific run directory, container, worktree, and

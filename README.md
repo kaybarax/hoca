@@ -243,6 +243,32 @@ Both `run` and `issue` accept optional flags:
 - `--notify-telegram` — send Telegram notifications on completion
 - `--dev-branch BRANCH` — manager override for the target repo development branch
 
+### Fleet Orchestration
+
+HOCA v1 adds a fleet control plane above the single-repository run path. The
+new commands let you register multiple projects, queue tasks, and ask the
+scheduler to launch lanes when capacity is available:
+
+```bash
+bin/hoca project add /path/to/repo --name app-one
+bin/hoca project add /path/to/another-repo --name app-two
+bin/hoca task create app-one "Fix the login redirect"
+bin/hoca task create app-two "Update webhook tests"
+bin/hoca scheduler tick
+bin/hoca fleet status
+```
+
+The default posture stays conservative. Each project keeps its own registry
+entry, task queue, and `max_parallel_tasks` cap, so a new project starts with a
+single lane unless you deliberately raise the limit. You can still run the
+original single-repository workflow directly with `bin/hoca run` whenever you
+want a one-off task instead of the fleet layer.
+
+The supporting docs explain the control plane and the adapter contract:
+
+- [Fleet orchestration guide](docs/fleet-orchestration.md)
+- [Agent adapter guide](docs/agent-adapters.md)
+
 ## Default Behavior
 
 HOCA is intentionally conservative by default.
