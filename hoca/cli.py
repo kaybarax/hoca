@@ -9,9 +9,11 @@ import time
 import click
 
 from hoca.doctor import run_doctor
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget, HocaSchedulerDecision
 from hoca.fleet_registry import FleetRegistry
-from hoca.fleet_contracts import HocaLane
 from hoca.paths import repo_root
+from hoca.resource_governor import ResourceGovernor
+from hoca.scheduler import FleetScheduler, run_scheduler_loop
 from hoca.tmux_sessions import AdapterCommandError, _sanitize_session_name, send_to_session
 
 
@@ -449,6 +451,20 @@ def _update_task_status(task_id: str, *, status: str, readiness: str | None = No
     return next_task
 
 
+def _update_lane_status(lane_id: str, *, status: str) -> HocaLane:
+    registry = _registry()
+    lane = registry.get_lane(lane_id)
+    if lane is None:
+        raise click.ClickException(f"Lane not found: {lane_id}")
+
+    next_lane = replace(lane, status=status, updated_at=_utc_now())
+    try:
+        registry.update_lane(lane_id, next_lane)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    return next_lane
+
+
 @task.command("cancel")
 @click.argument("task_id")
 def task_cancel(task_id: str) -> None:
@@ -473,6 +489,109 @@ def setup_profiles(dry_run: bool) -> None:
     """Install or update HOCA Hermes role profiles from repo templates."""
     args = ["--dry-run"] if dry_run else []
     run_script("setup-hermes-profiles.sh", args)
+
+
+def _default_resource_budget() -> HocaResourceBudget:
+    timestamp = _utc_now()
+    return HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=999,
+        max_parallel_tasks=999,
+        max_parallel_lanes=999,
+        max_agents=999,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+        created_at=timestamp,
+        updated_at=timestamp,
+        metadata={},
+    )
+
+
+def _default_scheduler() -> FleetScheduler:
+    return FleetScheduler(registry=_registry(), governor=ResourceGovernor(budget=_default_resource_budget()))
+
+
+def _decision_summary(decision: HocaSchedulerDecision) -> str:
+    parts = [decision.decision_type, decision.project_id]
+    if decision.task_id:
+        parts.append(decision.task_id)
+    if decision.lane_id:
+        parts.append(decision.lane_id)
+    parts.append(decision.reason)
+    return "\t".join(parts)
+
+
+def _fleet_state_summary() -> list[str]:
+    registry = _registry()
+    projects = registry.list_projects()
+    tasks = registry.list_tasks()
+    lanes = registry.list_lanes()
+    queued_tasks = [task for task in tasks if task.status == "queued"]
+    running_lanes = [lane for lane in lanes if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}]
+    blocked_lanes = [lane for lane in lanes if lane.status == "blocked"]
+    ready_prs = [lane for lane in lanes if lane.status in {"pr_created", "ready_for_human"}]
+    return [
+        f"Projects: {len(projects)}",
+        f"Queued Tasks: {len(queued_tasks)}",
+        f"Running Lanes: {len(running_lanes)}",
+        f"Blocked Lanes: {len(blocked_lanes)}",
+        f"Ready PRs: {len(ready_prs)}",
+    ]
+
+
+@main.group()
+def scheduler() -> None:
+    """Manage the HOCA scheduler."""
+
+
+@scheduler.command("tick")
+def scheduler_tick() -> None:
+    """Run one scheduler tick."""
+    decisions = _default_scheduler().tick()
+    if not decisions:
+        click.echo("No scheduler decisions.")
+        return
+    for decision in decisions:
+        click.echo(_decision_summary(decision))
+
+
+@scheduler.command("start")
+@click.option(
+    "--interval",
+    default=0.0,
+    type=float,
+    show_default=True,
+    help="Seconds to sleep between ticks.",
+)
+@click.option(
+    "--iterations",
+    default=1,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Number of scheduler iterations to run.",
+)
+def scheduler_start(interval: float, iterations: int) -> None:
+    """Start the scheduler loop."""
+    scheduler_runner = _default_scheduler()
+    iterations_run = run_scheduler_loop(
+        scheduler=scheduler_runner,
+        interval_seconds=interval,
+        max_iterations=iterations,
+        read_only_on_conflict=True,
+    )
+    for iteration, decisions in iterations_run:
+        if iteration >= 0:
+            click.echo(f"Iteration {iteration}:")
+            for decision in decisions:
+                click.echo(_decision_summary(decision))
+    click.echo(f"Scheduler loop finished after {len([iteration for iteration, _ in iterations_run if iteration >= 0])} iteration(s).")
+
+
+@scheduler.command("status")
+def scheduler_status() -> None:
+    """Show a scheduler summary."""
+    for line in _fleet_state_summary():
+        click.echo(line)
 
 
 @main.command()
@@ -585,6 +704,122 @@ def kanban_watch(project_path: Path) -> None:
 @main.group()
 def lane() -> None:
     """Manage and communicate with HOCA lanes."""
+
+
+@lane.command("list")
+@click.option("--project-id", default=None, help="Filter lanes by project identifier.")
+@click.option("--task-id", default=None, help="Filter lanes by task identifier.")
+@click.option(
+    "--status",
+    "statuses",
+    multiple=True,
+    type=click.Choice(
+        [
+            "allocated",
+            "starting",
+            "running",
+            "validating",
+            "reviewing",
+            "repairing",
+            "pr_created",
+            "ready_for_human",
+            "blocked",
+            "failed",
+            "cleaned",
+        ]
+    ),
+    help="Filter lanes by status. May be supplied multiple times.",
+)
+def lane_list(project_id: str | None, task_id: str | None, statuses: tuple[str, ...]) -> None:
+    """List HOCA lanes."""
+    lanes = sorted(
+        _registry().list_lanes(task_id=task_id, project_id=project_id),
+        key=lambda lane: lane.lane_id,
+    )
+    if statuses:
+        lanes = [lane for lane in lanes if lane.status in statuses]
+
+    if not lanes:
+        click.echo("No lanes found.")
+        return
+
+    click.echo("LANE_ID\tTASK_ID\tPROJECT_ID\tSTATUS\tBRANCH\tRUN_DIR")
+    for lane in lanes:
+        click.echo(
+            "\t".join(
+                (
+                    lane.lane_id,
+                    lane.task_id,
+                    lane.project_id,
+                    lane.status,
+                    lane.branch,
+                    lane.run_dir or "",
+                )
+            )
+        )
+
+
+@lane.command("show")
+@click.argument("lane_id")
+def lane_show(lane_id: str) -> None:
+    """Show a HOCA lane."""
+    registry = _registry()
+    lane = registry.get_lane(lane_id)
+    if lane is None:
+        raise click.ClickException(f"Lane not found: {lane_id}")
+
+    resolved_run_dir = lane.run_dir
+    if lane.run_dir:
+        raw_run_dir = Path(lane.run_dir)
+        if raw_run_dir.is_absolute():
+            resolved_run_dir = str(raw_run_dir)
+        else:
+            project = registry.get_project(lane.project_id)
+            if project is not None:
+                resolved_run_dir = str(Path(project.repo_path) / raw_run_dir)
+
+    click.echo(f"Lane ID: {lane.lane_id}")
+    click.echo(f"Task ID: {lane.task_id}")
+    click.echo(f"Project ID: {lane.project_id}")
+    click.echo(f"Status: {lane.status}")
+    click.echo(f"Branch: {lane.branch}")
+    click.echo(f"Adapter: {lane.adapter_id or 'default'}")
+    click.echo(f"Run Dir: {resolved_run_dir or '(unset)'}")
+    if lane.worktree_path:
+        click.echo(f"Worktree: {lane.worktree_path}")
+    if lane.session_id:
+        click.echo(f"Session ID: {lane.session_id}")
+    if lane.run_ref:
+        click.echo(f"Run Ref: {lane.run_ref}")
+    click.echo(f"Attempt: {lane.attempt_number}")
+    click.echo(f"Created At: {lane.created_at}")
+    click.echo(f"Updated At: {lane.updated_at}")
+
+
+@lane.command("logs")
+@click.argument("lane_id")
+def lane_logs(lane_id: str) -> None:
+    """Print known log paths for a HOCA lane."""
+    _, run_dir = _resolve_lane_for_send(lane_id)
+    click.echo(f"Run Dir: {run_dir}")
+    if not run_dir.exists():
+        raise click.ClickException(f"Lane run directory not found: {run_dir}")
+
+    files = sorted(path for path in run_dir.rglob("*") if path.is_file())
+    if not files:
+        click.echo("No log files found.")
+        return
+
+    for path in files:
+        click.echo(str(path))
+
+
+@lane.command("stop")
+@click.argument("lane_id")
+def lane_stop(lane_id: str) -> None:
+    """Mark a HOCA lane as cleaned."""
+    _update_lane_status(lane_id, status="cleaned")
+    click.echo(f"Lane stopped: {lane_id}")
 
 
 @lane.command("send")

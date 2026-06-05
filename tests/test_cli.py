@@ -15,6 +15,7 @@ CLI_COMMANDS = {
     "init-project": "Install HOCA project-level templates",
     "project": "Manage registered HOCA projects",
     "task": "Manage HOCA tasks",
+    "scheduler": "Manage the HOCA scheduler",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
     "lane": "Manage and communicate with HOCA lanes",
@@ -44,6 +45,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "init-project" in result.output
     assert "project" in result.output
     assert "task" in result.output
+    assert "scheduler" in result.output
     assert "run" in result.output
     assert "issue" in result.output
     assert "setup-profiles" in result.output
@@ -288,6 +290,84 @@ def test_task_create_rejects_unknown_project_id(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "Project not found: missing-project" in result.output
+
+
+def test_scheduler_help_displays_group_help() -> None:
+    result = CliRunner().invoke(main, ["scheduler", "--help"])
+
+    assert result.exit_code == 0
+    assert "Manage the HOCA scheduler." in result.output
+    assert "tick" in result.output
+    assert "start" in result.output
+    assert "status" in result.output
+
+
+def test_scheduler_tick_launches_lane_with_temp_control_root(tmp_path: Path) -> None:
+    control_root = tmp_path / "control"
+    repo = _seed_project_repo(tmp_path, "project-three")
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    add_project = CliRunner().invoke(main, ["project", "add", str(repo), "--project-id", "project-three"], env=env)
+    assert add_project.exit_code == 0
+
+    add_task = CliRunner().invoke(
+        main,
+        [
+            "task",
+            "create",
+            "project-three",
+            "Launch me",
+            "--task-id",
+            "task-launch",
+        ],
+        env=env,
+    )
+    assert add_task.exit_code == 0
+
+    tick_result = CliRunner().invoke(main, ["scheduler", "tick"], env=env)
+    assert tick_result.exit_code == 0
+    assert "launch" in tick_result.output
+    assert "task-launch" in tick_result.output
+
+    registry = FleetRegistry(control_root=control_root)
+    task = registry.get_task("task-launch")
+    assert task is not None
+    assert task.status == "running"
+    lanes = registry.list_lanes(task_id="task-launch")
+    assert len(lanes) == 1
+    assert lanes[0].project_id == "project-three"
+
+
+def test_lane_list_show_logs_and_stop_use_temp_control_root(tmp_path: Path) -> None:
+    control_root, run_dir = _seed_lane_for_cli(tmp_path, lane_id="lane-task-5-01")
+    (run_dir / "worker.log").write_text("worker log\n", encoding="utf-8")
+    (run_dir / "nested").mkdir()
+    (run_dir / "nested" / "adapter.log").write_text("adapter log\n", encoding="utf-8")
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    list_result = CliRunner().invoke(main, ["lane", "list", "--project-id", "project-1"], env=env)
+    assert list_result.exit_code == 0
+    assert "LANE_ID" in list_result.output
+    assert "lane-task-5-01" in list_result.output
+
+    show_result = CliRunner().invoke(main, ["lane", "show", "lane-task-5-01"], env=env)
+    assert show_result.exit_code == 0
+    assert "Lane ID: lane-task-5-01" in show_result.output
+    assert "Run Dir:" in show_result.output
+
+    logs_result = CliRunner().invoke(main, ["lane", "logs", "lane-task-5-01"], env=env)
+    assert logs_result.exit_code == 0
+    assert str(run_dir / "worker.log") in logs_result.output
+    assert str(run_dir / "nested" / "adapter.log") in logs_result.output
+
+    stop_result = CliRunner().invoke(main, ["lane", "stop", "lane-task-5-01"], env=env)
+    assert stop_result.exit_code == 0
+    assert "Lane stopped: lane-task-5-01" in stop_result.output
+
+    registry = FleetRegistry(control_root=control_root)
+    lane = registry.get_lane("lane-task-5-01")
+    assert lane is not None
+    assert lane.status == "cleaned"
 
 
 def test_lane_send_helps_command() -> None:
