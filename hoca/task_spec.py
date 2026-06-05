@@ -28,6 +28,7 @@ INSTRUCTION_FILE_CANDIDATES: tuple[str, ...] = (
 
 MAX_FILE_EXCERPT_CHARS = 4000
 MAX_TOTAL_INSTRUCTION_CHARS = 12000
+RELEVANT_EXCERPT_CONTEXT_LINES = 2
 _PATH_LIKE_PATTERN = re.compile(
     r"(?:^|[\s'\"`])([\w./-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|rb|md|yaml|yml|json|toml))(?:$|[\s'\"`,:;])"
 )
@@ -95,18 +96,85 @@ def _redact_sensitive_lines(text: str) -> str:
     return "\n".join(lines)
 
 
-def _safe_instruction_excerpt(path: Path) -> str | None:
+def _normalized_expected_areas(expected_areas: tuple[str, ...]) -> list[str]:
+    normalized = []
+    for area in expected_areas:
+        value = area.strip().lstrip("./").replace("\\", "/").lower()
+        if value:
+            normalized.append(value.rstrip("/"))
+    return normalized
+
+
+def _line_spans_for_expected_areas(
+    lines: list[str], normalized_areas: list[str]
+) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        lowered = line.lower()
+        if any(area in lowered for area in normalized_areas):
+            start = max(0, index - RELEVANT_EXCERPT_CONTEXT_LINES)
+            end = min(len(lines), index + RELEVANT_EXCERPT_CONTEXT_LINES + 1)
+            spans.append((start, end))
+    return spans
+
+
+def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    if not spans:
+        return []
+    spans.sort()
+    merged: list[tuple[int, int]] = [spans[0]]
+    for start, end in spans[1:]:
+        prior_start, prior_end = merged[-1]
+        if start <= prior_end:
+            merged[-1] = (prior_start, max(prior_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _safe_instruction_excerpt(
+    path: Path,
+    *,
+    expected_areas: tuple[str, ...] = (),
+) -> str | None:
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
     redacted = _redact_sensitive_lines(raw)
+    if expected_areas:
+        normalized_areas = _normalized_expected_areas(expected_areas)
+        if not normalized_areas:
+            if len(redacted) > MAX_FILE_EXCERPT_CHARS:
+                redacted = redacted[:MAX_FILE_EXCERPT_CHARS] + "\n...[truncated]"
+            return redacted
+
+        lines = [item.rstrip() for item in redacted.splitlines()]
+        line_spans = _merge_spans(_line_spans_for_expected_areas(lines, normalized_areas))
+
+        if not line_spans:
+            path_text = str(path).replace("\\", "/").lower()
+            if not any(area in path_text for area in normalized_areas):
+                return None
+            line_spans = [(0, len(lines))]
+
+        excerpt_lines: list[str] = []
+        for start, end in line_spans:
+            excerpt_lines.extend(lines[start:end])
+        redacted = "\n".join(excerpt_lines)
+        if not redacted.strip():
+            return None
     if len(redacted) > MAX_FILE_EXCERPT_CHARS:
         redacted = redacted[:MAX_FILE_EXCERPT_CHARS] + "\n...[truncated]"
     return redacted
 
 
 def gather_instruction_summaries(repo_root: Path) -> list[dict[str, str]]:
+def gather_instruction_summaries(
+    repo_root: Path,
+    *,
+    expected_areas: tuple[str, ...] = (),
+) -> list[dict[str, str]]:
     repo_root = repo_root.resolve()
     summaries: list[dict[str, str]] = []
     total_chars = 0
@@ -117,7 +185,7 @@ def gather_instruction_summaries(repo_root: Path) -> list[dict[str, str]]:
             continue
         if is_secret_like_path(relative):
             continue
-        excerpt = _safe_instruction_excerpt(path)
+        excerpt = _safe_instruction_excerpt(path, expected_areas=expected_areas)
         if not excerpt or not excerpt.strip():
             continue
         remaining = MAX_TOTAL_INSTRUCTION_CHARS - total_chars
@@ -344,11 +412,15 @@ def generate_task_spec(
     resolved_base_branch = base_branch or current_branch or "HEAD"
     resolved_task_branch = task_branch or derive_task_branch(raw_request, issue_id, current_branch)
 
-    instruction_summaries = gather_instruction_summaries(resolved_repo_root)
+    instruction_summaries = gather_instruction_summaries(resolved_repo_root, expected_areas=())
     test_commands = extract_explicit_test_commands(raw_request) or infer_test_commands(
         resolved_repo_root
     )
     expected_areas = infer_expected_areas(raw_request, resolved_repo_root)
+    if expected_areas:
+        instruction_summaries = gather_instruction_summaries(
+            resolved_repo_root, expected_areas=tuple(expected_areas)
+        )
 
     cfg = load_config()
     from hoca.sandbox_network import normalize_network_mode

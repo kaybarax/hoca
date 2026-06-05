@@ -59,6 +59,16 @@ def test_gather_instruction_summaries_redacts_secrets(tmp_path: Path) -> None:
     assert "[redacted: possible secret]" in agents["excerpt"]
 
 
+def test_gather_instruction_summaries_with_expected_areas_returns_relevant_excerpts(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    summaries = gather_instruction_summaries(tmp_path, expected_areas=("src/app.py",))
+    paths = [item["path"] for item in summaries]
+    assert "README.md" in paths
+    assert "AGENTS.md" not in paths
+    readme_excerpt = next(item["excerpt"] for item in summaries if item["path"] == "README.md")
+    assert "src/app.py" in readme_excerpt
+
+
 def test_infer_test_commands_for_python_repo(tmp_path: Path) -> None:
     init_repo(tmp_path)
     assert "pytest" in infer_test_commands(tmp_path)
