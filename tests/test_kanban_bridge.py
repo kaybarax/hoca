@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,28 @@ def test_create_parent_card_parses_hermes_response(tmp_path, monkeypatch) -> Non
     assert calls and calls[0][0] == "hermes"
 
 
+def test_create_parent_card_invalid_json_returns_none(tmp_path, monkeypatch) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    task = HocaFleetTask(
+        task_id="task-4",
+        project_id="project-4",
+        title="Noisy parsing",
+        status="queued",
+        readiness="not_ready",
+    )
+
+    def fake_run_hermes_command(command: list[str]) -> tuple[int, str, str]:
+        assert "create" in command
+        return 0, "not-json", "bad response"
+
+    monkeypatch.delenv("HOCA_KANBAN_DISABLED", raising=False)
+    monkeypatch.setattr(kanban_bridge, "_run_hermes_command", fake_run_hermes_command)
+
+    assert create_parent_card(task, project_path) is None
+
+
 def test_disabled_mode_blocks_parent_card_creation(tmp_path, monkeypatch) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
@@ -122,3 +145,29 @@ def test_read_endpoints_use_bridge_payload(monkeypatch, tmp_path) -> None:
     run_detail = read_run_detail(run_id="run-1", project_path=tmp_path)
     assert worker == {"workers": ["lane-1"]}
     assert run_detail == {"state": "complete"}
+
+
+def test_read_endpoints_fallback_to_cli_when_api_is_unavailable(monkeypatch, tmp_path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_fetch(url: str, timeout: float = 3.0):
+        return None
+
+    def fake_run(command: list[str]) -> tuple[int, str, str]:
+        calls.append(command)
+        payload = [
+            {"lane_id": "lane-7", "id": "lane-7", "state": "running"},
+            {"id": "run-9", "state": "complete"},
+        ]
+        return 0, json.dumps(payload), ""
+
+    monkeypatch.setenv("HOCA_HERMES_API", "https://example.test/api")
+    monkeypatch.setattr(kanban_bridge, "_fetch_json", fake_fetch)
+    monkeypatch.setattr(kanban_bridge, "_run_hermes_command", fake_run)
+
+    worker = read_worker_status(lane_id="lane-7", project_path=tmp_path)
+    run_detail = read_run_detail(run_id="run-9", project_path=tmp_path)
+
+    assert worker == {"lane_id": "lane-7", "id": "lane-7", "state": "running"}
+    assert run_detail == {"id": "run-9", "state": "complete"}
+    assert calls and calls[0] == calls[1]
