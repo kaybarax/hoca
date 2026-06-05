@@ -127,6 +127,48 @@ def test_pr_check_returns_unknown_when_github_check_command_fails(monkeypatch: p
     assert snapshot.pr_check == "unknown"
 
 
+def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path
+    (root / ".git").mkdir()
+    run_dir = root / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "status": "needs_human_staging",
+                "pr_url": "https://example.test/pr/4",
+                "base_ref": "main",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run_command(command: list[str], *, cwd: Path | None = None) -> CompletedProcess[str] | None:
+        calls.append(tuple(command))
+        if command[:3] == ["git", "status", "--short"]:
+            return CompletedProcess(command, 0, " M app.py\n?? notes.txt\n", "")
+        if command[:2] == ["git", "merge-base"]:
+            return CompletedProcess(command, 0, "", "")
+        if command[:3] == ["gh", "pr", "checks"]:
+            return CompletedProcess(command, 0, "", "")
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(fleet_monitor, "_run_command", fake_run_command)
+
+    snapshot = monitor_lane("lane-7", run_dir, terminal_alive=True)
+
+    assert snapshot.git_changed_files == 2
+    assert snapshot.git_merge_base_ok is True
+    assert snapshot.pr_check == "unknown"
+    assert calls[:3] == [
+        ("git", "status", "--short"),
+        ("git", "merge-base", "--is-ancestor", "main", "HEAD"),
+        ("gh", "pr", "checks", "https://example.test/pr/4", "--json", "conclusion,status,name"),
+    ]
+
+
 def test_monitor_lane_includes_active_hermes_worker_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()

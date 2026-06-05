@@ -142,17 +142,16 @@ def _run_command(command: list[str], *, cwd: Path | None = None) -> subprocess.C
         return None
 
 
-def _read_git_summary(run_dir: Path) -> tuple[int | None, bool | None]:
+def _read_git_status_summary(run_dir: Path) -> int | None:
     root = _infer_git_root(run_dir)
     if root is None:
-        return None, None
+        return None
 
     status_cmd = _run_command(["git", "status", "--short"], cwd=root)
     if status_cmd is None:
-        return None, None
+        return None
 
-    changed = len([line for line in status_cmd.stdout.splitlines() if line.strip()])
-    return changed, None
+    return len([line for line in status_cmd.stdout.splitlines() if line.strip()])
 
 
 def _check_merge_base(root: Path, status: dict[str, Any]) -> bool | None:
@@ -269,13 +268,6 @@ def monitor_lane(
     payload = _status_payload(run_dir)
     terminal = terminal_alive if terminal_alive is not None else False
 
-    pr_url = None
-    if "pr_url" in payload and isinstance(payload["pr_url"], str):
-        pr_url = payload["pr_url"] or None
-    if not pr_url:
-        pr_url = pr_url_override
-
-    pr_check = _pr_check(pr_url)
     status = payload.get("status")
     if isinstance(status, str):
         status = status.strip() or None
@@ -288,10 +280,18 @@ def monitor_lane(
     changed_files_count: int | None = None
     merge_base_ok: bool | None = None
     if keys["has_status"]:
-        changed_files_count, _ = _read_git_summary(run_dir)
+        changed_files_count = _read_git_status_summary(run_dir)
         root = _infer_git_root(run_dir)
         if root is not None:
             merge_base_ok = _check_merge_base(root, payload)
+
+    pr_url = None
+    if "pr_url" in payload and isinstance(payload["pr_url"], str):
+        pr_url = payload["pr_url"] or None
+    if not pr_url:
+        pr_url = pr_url_override
+
+    pr_check = _pr_check(pr_url)
 
     state = classify_lane_state(payload, terminal_alive=terminal, pr_check=pr_check)
 
