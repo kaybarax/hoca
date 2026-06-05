@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,12 +12,16 @@ from hoca.fleet_contracts import HocaReviewSignal
 from hoca.review_report_parser import try_extract_structured_report
 from hoca.run_state import now_iso
 
+REVIEW_FANOUT_ENABLED_ENV = "HOCA_REVIEW_FANOUT_ENABLED"
+REVIEW_ADAPTERS_ENV = "HOCA_REVIEW_ADAPTERS"
+
 
 @dataclass(frozen=True)
 class ReviewSignalSource:
-    path: Path
+    path: Path | None
     source: str
     review_round: int = 1
+    command: str | None = None
 
 
 def _now() -> str:
@@ -29,6 +35,86 @@ def _read_text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except OSError:
         return None
+
+
+def _fanout_enabled() -> bool:
+    value = os.environ.get(REVIEW_FANOUT_ENABLED_ENV, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _default_sources(run_dir: Path, review_round: int) -> tuple[ReviewSignalSource, ...]:
+    return (
+        ReviewSignalSource(
+            run_dir / "reviews" / f"review-report-{review_round}.json",
+            "reviewer",
+            review_round,
+        ),
+        ReviewSignalSource(run_dir / "openhands-review.txt", "openhands", review_round),
+        ReviewSignalSource(run_dir / "review-output.json", "adapter", review_round),
+    )
+
+
+def _parse_adapter_specs() -> tuple[tuple[str, str], ...]:
+    raw = os.environ.get(REVIEW_ADAPTERS_ENV, "")
+    if not raw.strip():
+        return ()
+
+    parsed: list[tuple[str, str]] = []
+    for item in raw.split(","):
+        spec = item.strip()
+        if not spec:
+            continue
+        if "=" in spec:
+            name, value = spec.split("=", 1)
+            name = name.strip()
+            value = value.strip()
+            if name and value:
+                parsed.append((name, value))
+            continue
+        parsed.append((f"adapter-{len(parsed) + 1}", spec))
+    return tuple(parsed)
+
+
+def _configured_fanout_sources(run_dir: Path, review_round: int) -> tuple[ReviewSignalSource, ...]:
+    if not _fanout_enabled():
+        return ()
+    sources: list[ReviewSignalSource] = []
+    for name, spec in _parse_adapter_specs():
+        candidate = Path(spec).expanduser()
+        if candidate.exists() and candidate.is_file():
+            sources.append(
+                ReviewSignalSource(path=candidate, source=name, review_round=review_round, command=None)
+            )
+            continue
+        sources.append(
+            ReviewSignalSource(
+                path=None,
+                source=name,
+                review_round=review_round,
+                command=spec,
+            )
+        )
+    return tuple(sources)
+
+
+def _run_adapter_command(command: str) -> str | None:
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except OSError:
+        return None
+    output = (result.stdout or "").strip()
+    if output:
+        return output
+    if result.returncode != 0:
+        return None
+    return None
 
 
 def _as_verdict(value: Any) -> str:
@@ -304,17 +390,21 @@ def collect_review_signals(
     review_sources: tuple[ReviewSignalSource, ...] | None = None,
 ) -> list[HocaReviewSignal]:
     if review_sources is None:
-        review_sources = (
-            ReviewSignalSource(run_dir / "reviews" / f"review-report-{review_round}.json", "reviewer", review_round),
-            ReviewSignalSource(run_dir / "openhands-review.txt", "openhands", review_round),
-            ReviewSignalSource(run_dir / "review-output.json", "adapter", review_round),
+        review_sources = _default_sources(run_dir, review_round) + _configured_fanout_sources(
+            run_dir,
+            review_round,
         )
 
     signals: list[HocaReviewSignal] = []
     seen: set[tuple[str, str, str]] = set()
 
     for item in review_sources:
-        raw = _read_text(item.path)
+        if item.command is None:
+            if item.path is None:
+                continue
+            raw = _read_text(item.path)
+        else:
+            raw = _run_adapter_command(item.command)
         if raw is None:
             continue
         batch = normalize_review_output(raw, lane_id=lane_id, source=item.source, review_round=item.review_round)

@@ -116,3 +116,41 @@ def test_normalize_review_output_falls_back_to_raw_text() -> None:
 
     assert good and good[0].verdict == "pass"
     assert blocked and blocked[0].verdict == "needs_work"
+
+
+def test_collect_review_signals_disables_fanout_adapters(monkeypatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "review-output.json").write_text('{"verdict":"pass"}', encoding="utf-8")
+
+    monkeypatch.setenv("HOCA_REVIEW_FANOUT_ENABLED", "false")
+    monkeypatch.setenv("HOCA_REVIEW_ADAPTERS", "fake=echo '{\"verdict\":\"blocked\"}'")
+
+    signals = collect_review_signals(run_dir=run_dir, lane_id="lane-disabled")
+    assert len(signals) == 1
+    assert signals[0].verdict == "pass"
+
+
+def test_collect_review_signals_runs_multiple_fake_review_adapters(monkeypatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "review-output.json").write_text('{"verdict":"pass"}', encoding="utf-8")
+
+    fake_file = tmp_path / "fake-adapter-report.json"
+    fake_file.write_text(
+        '{"verdict":"needs_work","findings":[{"id":"A-1","summary":"Manual check","file":"app.py","verdict":"needs_work"}]}',
+        encoding="utf-8",
+    )
+
+    adapter_payload = '{"verdict":"pass","summary":"fake command"}'
+    monkeypatch.setenv("HOCA_REVIEW_FANOUT_ENABLED", "true")
+    monkeypatch.setenv(
+        "HOCA_REVIEW_ADAPTERS",
+        f"file={fake_file},cmd=echo '{adapter_payload}'",
+    )
+
+    signals = collect_review_signals(run_dir=run_dir, lane_id="lane-multi")
+    assert len(signals) == 3
+    sources = {signal.source for signal in signals}
+    assert sources == {"adapter", "file", "cmd"}
+    assert any(signal.verdict == "needs_work" for signal in signals)
