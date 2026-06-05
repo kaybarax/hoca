@@ -16,6 +16,7 @@ CLI_COMMANDS = {
     "project": "Manage registered HOCA projects",
     "task": "Manage HOCA tasks",
     "scheduler": "Manage the HOCA scheduler",
+    "fleet": "Manage fleet-level HOCA state",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
     "lane": "Manage and communicate with HOCA lanes",
@@ -46,6 +47,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "project" in result.output
     assert "task" in result.output
     assert "scheduler" in result.output
+    assert "fleet" in result.output
     assert "run" in result.output
     assert "issue" in result.output
     assert "setup-profiles" in result.output
@@ -368,6 +370,51 @@ def test_lane_list_show_logs_and_stop_use_temp_control_root(tmp_path: Path) -> N
     lane = registry.get_lane("lane-task-5-01")
     assert lane is not None
     assert lane.status == "cleaned"
+
+
+def test_fleet_help_displays_group_help() -> None:
+    result = CliRunner().invoke(main, ["fleet", "--help"])
+
+    assert result.exit_code == 0
+    assert "Manage fleet-level HOCA state." in result.output
+    assert "status" in result.output
+    assert "doctor" in result.output
+    assert "report" in result.output
+    assert "cleanup" in result.output
+
+
+def test_fleet_status_report_and_cleanup_use_temp_control_root(tmp_path: Path) -> None:
+    control_root, _ = _seed_lane_for_cli(tmp_path, lane_id="lane-task-6-01")
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    stop_result = CliRunner().invoke(main, ["lane", "stop", "lane-task-6-01"], env=env)
+    assert stop_result.exit_code == 0
+
+    status_result = CliRunner().invoke(main, ["fleet", "status"], env=env)
+    assert status_result.exit_code == 0
+    assert "Projects: 1" in status_result.output
+    assert "Queued Tasks: 1" in status_result.output
+    assert "Running Lanes: 0" in status_result.output
+    assert "Blocked Lanes: 0" in status_result.output
+    assert "Ready PRs: 0" in status_result.output
+
+    report_result = CliRunner().invoke(main, ["fleet", "report"], env=env)
+    assert report_result.exit_code == 0
+    report_path = control_root / "fleet-report.md"
+    assert report_path.is_file()
+    assert "Fleet report written:" in report_result.output
+    assert "HOCA Fleet Report" in report_path.read_text(encoding="utf-8")
+
+    dry_run_result = CliRunner().invoke(main, ["fleet", "cleanup", "--dry-run"], env=env)
+    assert dry_run_result.exit_code == 0
+    assert "Would remove cleaned lane: lane-task-6-01" in dry_run_result.output
+
+    cleanup_result = CliRunner().invoke(main, ["fleet", "cleanup"], env=env)
+    assert cleanup_result.exit_code == 0
+    assert "Removed cleaned lane: lane-task-6-01" in cleanup_result.output
+
+    registry = FleetRegistry(control_root=control_root)
+    assert registry.get_lane("lane-task-6-01") is None
 
 
 def test_lane_send_helps_command() -> None:

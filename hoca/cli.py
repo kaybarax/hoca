@@ -594,6 +594,127 @@ def scheduler_status() -> None:
         click.echo(line)
 
 
+def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
+    registry = _registry()
+    lanes_index = registry._load_index(registry.paths.lanes_json)
+    cleaned_lane_ids = [
+        lane_id for lane_id, payload in lanes_index.items() if payload.get("status") == "cleaned"
+    ]
+    if dry_run or not cleaned_lane_ids:
+        return cleaned_lane_ids
+
+    remaining_lanes = {
+        lane_id: payload for lane_id, payload in lanes_index.items() if lane_id not in cleaned_lane_ids
+    }
+    registry._write_index(registry.paths.lanes_json, remaining_lanes)
+
+    tasks_index = registry._load_index(registry.paths.tasks_json)
+    tasks_changed = False
+    for task_id, payload in tasks_index.items():
+        lane_ids = [lane_id for lane_id in list(payload.get("lane_ids") or []) if lane_id not in cleaned_lane_ids]
+        if lane_ids != list(payload.get("lane_ids") or []):
+            payload["lane_ids"] = lane_ids
+            tasks_index[task_id] = payload
+            tasks_changed = True
+    if tasks_changed:
+        registry._write_index(registry.paths.tasks_json, tasks_index)
+
+    return cleaned_lane_ids
+
+
+@main.group()
+def fleet() -> None:
+    """Manage fleet-level HOCA state."""
+
+
+@fleet.command("status")
+def fleet_status() -> None:
+    """Show a fleet summary."""
+    for line in _fleet_state_summary():
+        click.echo(line)
+
+
+@fleet.command("doctor")
+def fleet_doctor() -> None:
+    """Check fleet-level registry consistency."""
+    registry = _registry()
+    projects = registry.list_projects()
+    project_ids = {project.project_id for project in projects}
+    task_ids = {task.task_id for task in registry.list_tasks()}
+    failures: list[str] = []
+
+    for project in projects:
+        try:
+            require_target_repo(Path(project.repo_path))
+        except click.ClickException as error:
+            failures.append(f"{project.project_id}: {error}")
+
+    for task in registry.list_tasks():
+        if task.project_id not in project_ids:
+            failures.append(f"{task.task_id}: unknown project {task.project_id}")
+
+    for lane in registry.list_lanes():
+        if lane.project_id not in project_ids:
+            failures.append(f"{lane.lane_id}: unknown project {lane.project_id}")
+        if lane.task_id not in task_ids:
+            failures.append(f"{lane.lane_id}: unknown task {lane.task_id}")
+
+    if failures:
+        for failure in failures:
+            click.echo(failure)
+        raise click.ClickException(f"Fleet doctor found {len(failures)} critical failure(s).")
+
+    click.echo(f"Fleet doctor OK for {len(projects)} project(s).")
+
+
+@fleet.command("report")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional report file path.",
+)
+def fleet_report(output: Path | None) -> None:
+    """Write a fleet status report."""
+    registry = _registry()
+    target = output or (registry.paths.root / "fleet-report.md")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = ["# HOCA Fleet Report", ""]
+    lines.extend(_fleet_state_summary())
+    lines.append("")
+    lines.append("Projects:")
+    for project in sorted(registry.list_projects(), key=lambda item: item.project_id):
+        lines.append(f"- {project.project_id} -> {project.repo_path}")
+    lines.append("")
+    lines.append("Tasks:")
+    for task in sorted(registry.list_tasks(), key=lambda item: item.task_id):
+        lines.append(f"- {task.task_id} [{task.status}] ({task.project_id})")
+    lines.append("")
+    lines.append("Lanes:")
+    for lane in sorted(registry.list_lanes(), key=lambda item: item.lane_id):
+        lines.append(f"- {lane.lane_id} [{lane.status}] ({lane.project_id}/{lane.task_id})")
+
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    click.echo(f"Fleet report written: {target}")
+
+
+@fleet.command("cleanup")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview cleaned-lane removal without changing files.")
+def fleet_cleanup(dry_run: bool) -> None:
+    """Remove cleaned lanes from the registry."""
+    cleaned_lane_ids = _cleanup_cleaned_lanes(dry_run=dry_run)
+    if not cleaned_lane_ids:
+        click.echo("No cleaned lanes found.")
+        return
+
+    for lane_id in cleaned_lane_ids:
+        if dry_run:
+            click.echo(f"Would remove cleaned lane: {lane_id}")
+        else:
+            click.echo(f"Removed cleaned lane: {lane_id}")
+
+
 @main.command()
 @click.argument("project_path", type=click.Path(path_type=Path))
 @click.argument("task")
