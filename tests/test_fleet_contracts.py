@@ -217,12 +217,26 @@ def test_review_signal_validates_verdict() -> None:
         "lane_id": "lane-1",
         "source": "ci",
         "verdict": "pass",
+        "finding_severity": "medium",
+        "finding_category": "correctness",
         "review_round": 1,
         "created_at": "2026-06-01T10:00:00Z",
     }
     signal = HocaReviewSignal.from_dict(payload)
     assert signal.verdict in VALID_FLEET_REVIEW_VERDICTS
+    assert signal.finding_severity == "medium"
+    assert signal.finding_category == "correctness"
 
+    payload["finding_severity"] = "off"
+    with pytest.raises(ValueError, match="Invalid finding severity"):
+        HocaReviewSignal.from_dict(payload)
+
+    payload["finding_severity"] = "medium"
+    payload["finding_category"] = "bad"
+    with pytest.raises(ValueError, match="Invalid finding category"):
+        HocaReviewSignal.from_dict(payload)
+
+    payload["finding_category"] = "correctness"
     payload["verdict"] = "unknown"
     with pytest.raises(ValueError, match="Invalid review verdict"):
         HocaReviewSignal.from_dict(payload)

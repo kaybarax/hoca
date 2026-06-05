@@ -64,6 +64,21 @@ VALID_FLEET_NOTIFICATION_STATUSES: frozenset[str] = frozenset(
 
 FleetReviewVerdict = Literal["pass", "needs_work", "blocked"]
 VALID_FLEET_REVIEW_VERDICTS: frozenset[str] = frozenset(("pass", "needs_work", "blocked"))
+VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
+    ("critical", "high", "medium", "low", "nit")
+)
+VALID_FINDING_CATEGORIES: frozenset[str] = frozenset(
+    (
+        "correctness",
+        "security",
+        "test",
+        "scope",
+        "maintainability",
+        "style",
+        "tooling",
+        "environment",
+    )
+)
 
 
 def _json_dumps(data: dict[str, Any]) -> str:
@@ -281,6 +296,15 @@ def _required_str_list_or_empty(data: dict[str, Any], field: str) -> list[str]:
     if not isinstance(value, list):
         raise ValueError(f"Contract field must be a list: {field}")
     return [_single_line_string(item, field).strip() for item in value]
+
+
+def _optional_str_or_none(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if "\n" in text or "\r" in text:
+        raise ValueError(f"Contract field must be a single line: {field}")
+    return text
 
 
 @dataclass(frozen=True)
@@ -635,6 +659,11 @@ class HocaReviewSignal(JsonContract):
     summary: str = ""
     details: str | None = None
     review_round: int = 1
+    finding_id: str | None = None
+    finding_severity: str | None = None
+    finding_category: str | None = None
+    finding_file: str | None = None
+    required_fix: str | None = None
     created_at: str = ""
 
     _required_fields: ClassVar[tuple[str, ...]] = ("signal_id", "lane_id", "source", "verdict", "created_at")
@@ -645,6 +674,15 @@ class HocaReviewSignal(JsonContract):
         verdict = str(_required(data, "verdict"))
         if verdict not in VALID_FLEET_REVIEW_VERDICTS:
             raise ValueError(f"Invalid review verdict: {verdict!r}")
+
+        finding_severity = _optional_str_or_none(data.get("finding_severity"), "finding_severity")
+        if finding_severity is not None and finding_severity not in VALID_FINDING_SEVERITIES:
+            raise ValueError(f"Invalid finding severity: {finding_severity!r}")
+
+        finding_category = _optional_str_or_none(data.get("finding_category"), "finding_category")
+        if finding_category is not None and finding_category not in VALID_FINDING_CATEGORIES:
+            raise ValueError(f"Invalid finding category: {finding_category!r}")
+
         return cls(
             schema_version=int(data.get("schema_version", 1)),
             signal_id=_required_single_line_string(data, "signal_id"),
@@ -654,8 +692,15 @@ class HocaReviewSignal(JsonContract):
             summary=str(data.get("summary", "")).strip(),
             details=_optional_str(data, "details"),
             review_round=_required_int(data, "review_round", minimum=1),
+            finding_id=_optional_str_or_none(data.get("finding_id"), "finding_id"),
+            finding_severity=finding_severity,
+            finding_category=finding_category,
+            finding_file=_optional_str_or_none(data.get("finding_file"), "finding_file"),
+            required_fix=_optional_str_or_none(data.get("required_fix"), "required_fix"),
             created_at=_required_single_line_string(data, "created_at"),
         )
+
+        
 
     @classmethod
     def from_json(cls, raw: str) -> Self:
