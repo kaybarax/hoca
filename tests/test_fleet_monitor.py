@@ -139,11 +139,17 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
                 "pr_url": "https://example.test/pr/4",
                 "base_ref": "main",
             }
-        ),
+    ),
         encoding="utf-8",
     )
 
     calls: list[tuple[str, ...]] = []
+    checks_output = json.dumps(
+        [
+            {"name": "ci", "status": "completed", "conclusion": "success"},
+            {"name": "lint", "status": "completed", "conclusion": "success"},
+        ]
+    )
 
     def fake_run_command(command: list[str], *, cwd: Path | None = None) -> CompletedProcess[str] | None:
         calls.append(tuple(command))
@@ -151,8 +157,10 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
             return CompletedProcess(command, 0, " M app.py\n?? notes.txt\n", "")
         if command[:2] == ["git", "merge-base"]:
             return CompletedProcess(command, 0, "", "")
+        if command[:2] == ["git", "diff"] and "--name-only" in command:
+            return CompletedProcess(command, 0, "app.py\nnotes.txt\n", "")
         if command[:3] == ["gh", "pr", "checks"]:
-            return CompletedProcess(command, 0, "", "")
+            return CompletedProcess(command, 0, checks_output, "")
         raise AssertionError(f"Unexpected command: {command}")
 
     monkeypatch.setattr(fleet_monitor, "_run_command", fake_run_command)
@@ -160,11 +168,13 @@ def test_monitor_lane_uses_git_checks_before_pr_checks(monkeypatch: pytest.Monke
     snapshot = monitor_lane("lane-7", run_dir, terminal_alive=True)
 
     assert snapshot.git_changed_files == 2
+    assert snapshot.git_diff_files == 2
     assert snapshot.git_merge_base_ok is True
-    assert snapshot.pr_check == "unknown"
-    assert calls[:3] == [
+    assert snapshot.pr_check == "passed"
+    assert calls[:4] == [
         ("git", "status", "--short"),
         ("git", "merge-base", "--is-ancestor", "main", "HEAD"),
+        ("git", "diff", "--name-only", "main...HEAD"),
         ("gh", "pr", "checks", "https://example.test/pr/4", "--json", "conclusion,status,name"),
     ]
 

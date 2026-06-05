@@ -46,6 +46,7 @@ class LaneMonitorSnapshot:
     run_dir: str
     hermes_worker: dict[str, Any] | None = None
     git_changed_files: int | None = None
+    git_diff_files: int | None = None
     git_merge_base_ok: bool | None = None
     pr_check: str | None = None
 
@@ -152,6 +153,18 @@ def _read_git_status_summary(run_dir: Path) -> int | None:
         return None
 
     return len([line for line in status_cmd.stdout.splitlines() if line.strip()])
+
+
+def _read_git_diff_summary(root: Path, status: dict[str, Any]) -> int | None:
+    candidates = [value for value in [status.get("base_ref"), status.get("base_branch")] if isinstance(value, str)]
+    if not candidates:
+        return None
+
+    command = ["git", "diff", "--name-only", f"{candidates[0]}...HEAD"]
+    result = _run_command(command, cwd=root)
+    if result is None or result.returncode != 0:
+        return None
+    return len([line for line in result.stdout.splitlines() if line.strip()])
 
 
 def _check_merge_base(root: Path, status: dict[str, Any]) -> bool | None:
@@ -278,12 +291,14 @@ def monitor_lane(
 
     keys = _snapshot_keys_for_artifacts(run_dir)
     changed_files_count: int | None = None
+    diff_files_count: int | None = None
     merge_base_ok: bool | None = None
     if keys["has_status"]:
         changed_files_count = _read_git_status_summary(run_dir)
         root = _infer_git_root(run_dir)
         if root is not None:
             merge_base_ok = _check_merge_base(root, payload)
+            diff_files_count = _read_git_diff_summary(root, payload)
 
     pr_url = None
     if "pr_url" in payload and isinstance(payload["pr_url"], str):
@@ -323,6 +338,7 @@ def monitor_lane(
         should_process=should_process,
         run_dir=str(run_dir),
         git_changed_files=changed_files_count,
+        git_diff_files=diff_files_count,
         git_merge_base_ok=merge_base_ok,
         pr_check=pr_check,
     )
