@@ -427,6 +427,7 @@ class HocaAgentAdapterSpec(JsonContract):
     adapter_id: str = ""
     provider: str = ""
     command_template: str = ""
+    command_allowlist: list[str] = field(default_factory=list)
     runtime_home: str | None = None
     max_concurrency: int = 1
     default_for_tasks: list[str] | None = None
@@ -447,6 +448,7 @@ class HocaAgentAdapterSpec(JsonContract):
             adapter_id=_required_single_line_string(data, "adapter_id"),
             provider=_required_single_line_string(data, "provider"),
             command_template=_required_single_line_string(data, "command_template"),
+            command_allowlist=_required_str_list_or_empty(data, "command_allowlist"),
             runtime_home=runtime_home,
             max_concurrency=_required_int(data, "max_concurrency", minimum=1),
             default_for_tasks=_required_str_list_or_empty(data, "default_for_tasks"),

@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import json
+from subprocess import CompletedProcess
+
+import pytest
+
+import hoca.fleet_monitor as fleet_monitor
+
+from hoca.fleet_monitor import LaneMonitorSnapshot, monitor_lane, missing_artifact_reason
+
+
+def test_monitor_lane_classifies_running_and_reads_status(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(json.dumps({"status": "running", "task": "Build"}), encoding="utf-8")
+
+    snapshot = monitor_lane("lane-1", run_dir, terminal_alive=True)
+
+    assert snapshot.state == "running"
+    assert snapshot.status == "running"
+    assert snapshot.lane_id == "lane-1"
+    assert snapshot.should_process is True
+
+
+def test_monitor_lane_detects_ready_for_human_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "needs_human_staging", "pr_url": "https://example.test/pr/1"}),
+        encoding="utf-8",
+    )
+    (run_dir / "tests-summary.md").write_text("passed", encoding="utf-8")
+    (run_dir / "openhands-review.txt").write_text("ok", encoding="utf-8")
+    monkeypatch.setattr("hoca.fleet_monitor._pr_check", lambda pr_url: "passed")
+
+    snapshot = monitor_lane("lane-2", run_dir, terminal_alive=True)
+
+    assert snapshot.state == "ready_for_human"
+    assert snapshot.has_validation_artifacts is True
+    assert snapshot.has_review_artifacts is True
+    assert snapshot.pr_check == "passed"
+    assert snapshot.should_process is True
+
+
+def test_monitor_lane_missing_artifacts_is_stable(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    first = monitor_lane("lane-3", run_dir, terminal_alive=False)
+    assert first.state == "missing_artifacts"
+
+    second = monitor_lane("lane-3", run_dir, terminal_alive=False)
+    assert second.should_process is False
+    assert second.state == "missing_artifacts:stabilized"
+
+
+def test_missing_artifact_reason_reports_blocking_reason(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(json.dumps({"status": "failed", "reason": "build failed"}), encoding="utf-8")
+
+    assert missing_artifact_reason(run_dir) == "build failed"
+
+
+def test_pr_check_classifies_failed_checks_from_github_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "needs_human_staging", "pr_url": "https://example.test/pr/1"}),
+        encoding="utf-8",
+    )
+
+    checks_output = json.dumps(
+        [
+            {"name": "ci", "status": "completed", "conclusion": "success"},
+            {"name": "lint", "status": "completed", "conclusion": "failure"},
+        ]
+    )
+
+    def fake_run(command, **_: object) -> CompletedProcess[str]:
+        return CompletedProcess(command, 0, checks_output, "")
+
+    monkeypatch.setattr(fleet_monitor.subprocess, "run", fake_run)
+    snapshot = monitor_lane("lane-4", run_dir, terminal_alive=True)
+    assert snapshot.pr_check == "failed"
+
+
+def test_pr_check_classifies_pending_github_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "running", "pr_url": "https://example.test/pr/2"}),
+        encoding="utf-8",
+    )
+
+    checks_output = json.dumps(
+        [
+            {"name": "ci", "status": "in_progress", "conclusion": "neutral"},
+            {"name": "lint", "status": "completed", "conclusion": "neutral"},
+        ]
+    )
+
+    def fake_run(command, **_: object) -> CompletedProcess[str]:
+        return CompletedProcess(command, 0, checks_output, "")
+
+    monkeypatch.setattr(fleet_monitor.subprocess, "run", fake_run)
+    snapshot = monitor_lane("lane-5", run_dir, terminal_alive=True)
+    assert snapshot.pr_check == "running"
+
+
+def test_pr_check_returns_unknown_when_github_check_command_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "running", "pr_url": "https://example.test/pr/3"}),
+        encoding="utf-8",
+    )
+
+    def fake_run(command, **_: object) -> CompletedProcess[str]:
+        return CompletedProcess(command, 1, "", "not authenticated")
+
+    monkeypatch.setattr(fleet_monitor.subprocess, "run", fake_run)
+    snapshot = monitor_lane("lane-6", run_dir, terminal_alive=True)
+    assert snapshot.pr_check == "unknown"
