@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 import time
@@ -81,6 +82,23 @@ def _block_secret_like(message: str) -> None:
         raise click.ClickException("message appears to contain secret-like content")
 
 
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _sanitize_project_id(value: str) -> str:
+    project_id = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower()).strip("-")
+    return project_id or "project"
+
+
+def _default_project_id(project_path: Path) -> str:
+    return _sanitize_project_id(project_path.name)
+
+
+def _registry() -> FleetRegistry:
+    return FleetRegistry()
+
+
 def _send_to_lane(
     lane_id: str,
     message: str,
@@ -128,6 +146,137 @@ def init_project(project_path: Path) -> None:
     """Install HOCA project-level templates into a target repository."""
     project_path = require_target_repo(project_path)
     run_script("init-project.sh", [str(project_path)])
+
+
+@main.group()
+def project() -> None:
+    """Manage registered HOCA projects."""
+
+
+@project.command("add")
+@click.argument("project_path", type=click.Path(path_type=Path))
+@click.option("--project-id", help="Explicit project identifier.")
+@click.option("--name", "display_name", help="Human-friendly project name.")
+@click.option(
+    "--default-branch",
+    default="main",
+    show_default=True,
+    help="Default branch used for the project registry entry.",
+)
+@click.option(
+    "--max-parallel-tasks",
+    default=1,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Maximum concurrent tasks for the registered project.",
+)
+def project_add(
+    project_path: Path,
+    project_id: str | None,
+    display_name: str | None,
+    default_branch: str,
+    max_parallel_tasks: int,
+) -> None:
+    """Register a Git repository as a HOCA project."""
+    project_path = require_target_repo(project_path)
+    resolved_project_id = _sanitize_project_id(project_id or _default_project_id(project_path))
+    timestamp = _utc_now()
+    project = HocaProject(
+        project_id=resolved_project_id,
+        repo_path=str(project_path),
+        display_name=display_name or project_path.name,
+        default_branch=default_branch,
+        max_parallel_tasks=max_parallel_tasks,
+        created_at=timestamp,
+        updated_at=timestamp,
+        is_active=True,
+    )
+
+    try:
+        _registry().create_project(project)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    click.echo(f"Project added: {resolved_project_id}")
+
+
+@project.command("list")
+def project_list() -> None:
+    """List registered HOCA projects."""
+    projects = sorted(_registry().list_projects(), key=lambda project: project.project_id)
+    if not projects:
+        click.echo("No projects registered.")
+        return
+
+    click.echo("PROJECT_ID\tDISPLAY_NAME\tREPO_PATH\tACTIVE")
+    for project in projects:
+        click.echo(
+            "\t".join(
+                (
+                    project.project_id,
+                    project.display_name or project.project_id,
+                    project.repo_path,
+                    "yes" if project.is_active else "no",
+                )
+            )
+        )
+
+
+@project.command("show")
+@click.argument("project_id")
+def project_show(project_id: str) -> None:
+    """Show a registered HOCA project."""
+    project = _registry().get_project(project_id)
+    if project is None:
+        raise click.ClickException(f"Project not found: {project_id}")
+
+    click.echo(f"Project ID: {project.project_id}")
+    click.echo(f"Display Name: {project.display_name or project.project_id}")
+    click.echo(f"Repository: {project.repo_path}")
+    click.echo(f"Default Branch: {project.default_branch}")
+    click.echo(f"Max Parallel Tasks: {project.max_parallel_tasks}")
+    click.echo(f"Active: {'yes' if project.is_active else 'no'}")
+    if project.runtime_archive_root:
+        click.echo(f"Runtime Archive Root: {project.runtime_archive_root}")
+
+
+@project.command("doctor")
+def project_doctor() -> None:
+    """Check registered HOCA projects for local repository health."""
+    projects = _registry().list_projects()
+    if not projects:
+        click.echo("No projects registered.")
+        return
+
+    failures: list[str] = []
+    for project in projects:
+        try:
+            require_target_repo(Path(project.repo_path))
+        except click.ClickException as error:
+            failures.append(f"{project.project_id}: {error}")
+
+    if failures:
+        for failure in failures:
+            click.echo(failure)
+        raise click.ClickException(f"Project doctor found {len(failures)} critical failure(s).")
+
+    click.echo(f"Project doctor OK for {len(projects)} project(s).")
+
+
+@project.command("remove")
+@click.argument("project_id")
+def project_remove(project_id: str) -> None:
+    """Remove a registered HOCA project."""
+    registry = _registry()
+    if registry.get_project(project_id) is None:
+        raise click.ClickException(f"Project not found: {project_id}")
+
+    try:
+        registry.delete_project(project_id)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    click.echo(f"Project removed: {project_id}")
 
 
 @main.command("setup-profiles")

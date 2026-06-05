@@ -13,6 +13,7 @@ from hoca.fleet_registry import FleetRegistry
 CLI_COMMANDS = {
     "doctor": "Check local HOCA dependencies",
     "init-project": "Install HOCA project-level templates",
+    "project": "Manage registered HOCA projects",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
     "lane": "Manage and communicate with HOCA lanes",
@@ -40,6 +41,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "HOCA local autonomous engineering toolkit." in result.output
     assert "doctor" in result.output
     assert "init-project" in result.output
+    assert "project" in result.output
     assert "run" in result.output
     assert "issue" in result.output
     assert "setup-profiles" in result.output
@@ -100,6 +102,67 @@ def _seed_lane_for_cli(
         )
     )
     return control_root, run_dir
+
+
+def _seed_project_repo(tmp_path: Path, repo_name: str = "project") -> Path:
+    repo = tmp_path / repo_name
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    return repo
+
+
+def test_project_help_displays_group_help() -> None:
+    result = CliRunner().invoke(main, ["project", "--help"])
+
+    assert result.exit_code == 0
+    assert "Manage registered HOCA projects." in result.output
+    assert "add" in result.output
+    assert "list" in result.output
+    assert "show" in result.output
+    assert "doctor" in result.output
+    assert "remove" in result.output
+
+
+def test_project_add_list_show_doctor_and_remove_use_temp_control_root(tmp_path: Path) -> None:
+    control_root = tmp_path / "control"
+    repo = _seed_project_repo(tmp_path, "project-one")
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    add_result = CliRunner().invoke(
+        main,
+        ["project", "add", str(repo), "--name", "App One", "--max-parallel-tasks", "3"],
+        env=env,
+    )
+
+    assert add_result.exit_code == 0
+    assert "Project added: project-one" in add_result.output
+
+    registry = FleetRegistry(control_root=control_root)
+    project = registry.get_project("project-one")
+    assert project is not None
+    assert project.display_name == "App One"
+    assert project.max_parallel_tasks == 3
+
+    list_result = CliRunner().invoke(main, ["project", "list"], env=env)
+    assert list_result.exit_code == 0
+    assert "PROJECT_ID" in list_result.output
+    assert "project-one" in list_result.output
+    assert "App One" in list_result.output
+
+    show_result = CliRunner().invoke(main, ["project", "show", "project-one"], env=env)
+    assert show_result.exit_code == 0
+    assert "Project ID: project-one" in show_result.output
+    assert f"Repository: {repo}" in show_result.output
+    assert "Max Parallel Tasks: 3" in show_result.output
+
+    doctor_result = CliRunner().invoke(main, ["project", "doctor"], env=env)
+    assert doctor_result.exit_code == 0
+    assert "Project doctor OK for 1 project(s)." in doctor_result.output
+
+    remove_result = CliRunner().invoke(main, ["project", "remove", "project-one"], env=env)
+    assert remove_result.exit_code == 0
+    assert "Project removed: project-one" in remove_result.output
+    assert registry.get_project("project-one") is None
 
 
 def test_lane_send_helps_command() -> None:
