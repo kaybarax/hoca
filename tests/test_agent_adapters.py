@@ -239,6 +239,7 @@ def test_default_openhands_adapter_has_expected_template() -> None:
     assert spec.default_for_tasks == ["coding", "review"]
     assert "run-lane-agent.sh" in spec.command_template
     assert "--project-path" in spec.command_template
+    assert "--run-dir" in spec.command_template
     assert "{task_id}" in spec.command_template
     assert "{task_id or ''}" not in spec.command_template
 

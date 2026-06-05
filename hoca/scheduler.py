@@ -7,6 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from hoca.agent_adapters import AgentAdapter, default_openhands_adapter_spec, fake_session_id
+from hoca.agent_sessions import build_session, write_session
 from hoca.conflict_planner import (
     LaneConflictProfile,
     conflict_profile_from_task,
@@ -17,6 +19,7 @@ from hoca.conflict_planner import (
 )
 from hoca.control_paths import make_fleet_control_paths
 from hoca.fleet_contracts import (
+    HocaAgentAdapterSpec,
     HocaLane,
     HocaProject,
     HocaSchedulerDecision,
@@ -82,10 +85,14 @@ class FleetScheduler:
         registry: FleetRegistry,
         governor: ResourceGovernor,
         control_root: Path | None = None,
+        start_adapters: bool = False,
+        adapter_spec: HocaAgentAdapterSpec | None = None,
     ) -> None:
         self.registry = registry
         self.governor = governor
         self.paths = make_fleet_control_paths(override=control_root)
+        self.start_adapters = start_adapters
+        self.adapter_spec = adapter_spec
 
     def _active_projects(self) -> dict[str, HocaProject]:
         return {
@@ -126,6 +133,62 @@ class FleetScheduler:
 
     def refresh_lane_state(self) -> list[HocaLane]:
         return self._active_lanes(self.registry.list_lanes())
+
+    def _start_lane_adapter(
+        self,
+        *,
+        lane: HocaLane,
+        task: HocaFleetTask,
+        project: HocaProject,
+    ) -> HocaLane:
+        adapter = AgentAdapter(spec=self.adapter_spec or default_openhands_adapter_spec())
+        session_id = fake_session_id()
+        started_at = _now_iso()
+        project_path = Path(project.repo_path)
+        run_dir = Path(lane.run_dir)
+        if not run_dir.is_absolute():
+            run_dir = project_path / run_dir
+
+        session = adapter.start(
+            session_id=session_id,
+            lane_id=lane.lane_id,
+            project_path=project_path,
+            worktree_path=Path(lane.worktree_path) if lane.worktree_path else project_path,
+            task=task.goal or task.title or task.task_id,
+            task_id=task.task_id,
+            project_id=project.project_id,
+            run_dir=run_dir,
+            metadata={"scheduler_decision": "launch"},
+        )
+        session_record = build_session(
+            session_id=session_id,
+            lane_id=lane.lane_id,
+            adapter_id=adapter.adapter_id,
+            started_at=started_at,
+        )
+        write_session(
+            self.paths.root,
+            replace(
+                session_record,
+                log_path=str(run_dir / "adapter-stdout.log"),
+                process_id=session.process.pid,
+                metadata=session.metadata,
+            ),
+        )
+
+        next_lane = replace(
+            lane,
+            status="running",
+            adapter_id=adapter.adapter_id,
+            run_dir=str(run_dir),
+            session_id=session_id,
+            run_ref=session_id,
+            started_at=started_at,
+            updated_at=_now_iso(),
+            metadata=session.metadata,
+        )
+        self.registry.update_lane(lane.lane_id, next_lane)
+        return next_lane
 
     def tick(self) -> list[HocaSchedulerDecision]:
         projects = self._active_projects()
@@ -255,6 +318,8 @@ class FleetScheduler:
                 updated_at=_now_iso(),
             )
             self.registry.create_lane(lane)
+            if self.start_adapters:
+                lane = self._start_lane_adapter(lane=lane, task=task, project=project)
             lanes.append(lane)
             lane_profiles.append(task_profile)
             self.registry.update_task(

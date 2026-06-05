@@ -213,13 +213,29 @@ def required_commands_from_template(template: str) -> list[str]:
 
 def missing_required_commands(spec: HocaAgentAdapterSpec) -> list[str]:
     missing: list[str] = []
-    seen: set[str] = set()
-    for command in required_commands_from_template(spec.command_template):
-        if command in seen:
+    command_groups: list[list[str]] = []
+    for command in _first_command_and_aliases(
+        format_command(spec.command_template, values=_fake_template_values(spec.command_template))
+    ):
+        if any(command in group for group in command_groups):
             continue
-        seen.add(command)
-        if not _available_binary(command):
-            missing.append(command)
+        normalized = _normalize_allowed_command(command)
+        matching_group = next(
+            (
+                group
+                for group in command_groups
+                if normalized and normalized in {_normalize_allowed_command(item) for item in group}
+            ),
+            None,
+        )
+        if matching_group is None:
+            command_groups.append([command])
+        else:
+            matching_group.append(command)
+
+    for group in command_groups:
+        if not any(_available_binary(command) for command in group):
+            missing.extend(group)
     return missing
 
 
@@ -274,7 +290,8 @@ def default_openhands_adapter_spec(
         provider="openhands",
         command_template=(
             f"{shlex.quote(script)} --project-path {{project_path}} --task {{task}} "
-            "--lane-id {lane_id} --task-id {task_id} --project-id {project_id}"
+            "--lane-id {lane_id} --task-id {task_id} --project-id {project_id} "
+            "--run-dir {run_dir}"
         ),
         max_concurrency=1,
         default_for_tasks=["coding", "review"],

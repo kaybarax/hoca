@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
+from hoca.agent_adapters import default_openhands_adapter_spec
+from hoca.agent_sessions import read_session
 from hoca.fleet_contracts import HocaFleetTask, HocaProject, HocaResourceBudget
 from hoca.fleet_registry import FleetRegistry
 from hoca.resource_governor import ResourceGovernor
@@ -52,6 +55,11 @@ def _registry_with_project_and_tasks(tmp_path: Path) -> FleetRegistry:
     return registry
 
 
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | 0o111)
+
+
 def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
     registry = _registry_with_project_and_tasks(tmp_path)
     budget = HocaResourceBudget(
@@ -74,6 +82,84 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
 
     tasks = {item.task_id: item for item in registry.list_tasks()}
     assert tasks["task-a"].status == "running"
+
+
+def test_scheduler_can_start_one_lane_with_openhands_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    fake_lane_runner = tmp_path / "run-lane-agent.sh"
+    _write_executable(
+        fake_lane_runner,
+        """#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_PATH=""
+TASK=""
+LANE_ID=""
+TASK_ID=""
+PROJECT_ID=""
+RUN_DIR=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --project-path) PROJECT_PATH="$2"; shift 2 ;;
+    --task) TASK="$2"; shift 2 ;;
+    --lane-id) LANE_ID="$2"; shift 2 ;;
+    --task-id) TASK_ID="$2"; shift 2 ;;
+    --project-id) PROJECT_ID="$2"; shift 2 ;;
+    --run-dir) RUN_DIR="$2"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+mkdir -p "$RUN_DIR"
+printf '{"status":"completed","lane_id":"%s","task_id":"%s","project_id":"%s"}\\n' "$LANE_ID" "$TASK_ID" "$PROJECT_ID" > "$RUN_DIR/status.json"
+printf 'project=%s task=%s lane=%s\\n' "$PROJECT_PATH" "$TASK" "$LANE_ID"
+printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
+""",
+    )
+    monkeypatch.setenv("GITHUB_TOKEN", "manager-token")
+    monkeypatch.setenv("GH_TOKEN", "manager-gh-token")
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=1,
+        max_parallel_lanes=1,
+        max_agents=4,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    scheduler = FleetScheduler(
+        registry=registry,
+        governor=ResourceGovernor(budget=budget),
+        control_root=tmp_path / "control",
+        start_adapters=True,
+        adapter_spec=default_openhands_adapter_spec(script_path=fake_lane_runner),
+    )
+
+    decisions = scheduler.tick()
+
+    launch = [decision for decision in decisions if decision.decision_type == "launch"]
+    assert len(launch) == 1
+    lane = registry.list_lanes(task_id=launch[0].task_id)[0]
+    assert lane.status == "running"
+    assert lane.adapter_id == "openhands-hermes"
+    assert lane.session_id
+    run_dir = Path(lane.run_dir)
+    assert run_dir.is_absolute()
+    stdout = run_dir / "adapter-stdout.log"
+    for _ in range(50):
+        if stdout.is_file() and (run_dir / "status.json").is_file():
+            break
+        time.sleep(0.01)
+    assert stdout.is_file()
+    output = stdout.read_text(encoding="utf-8")
+    assert f"lane={lane.lane_id}" in output
+    assert "github=manager-token" not in output
+    assert "gh=manager-gh-token" not in output
+    session = read_session(tmp_path / "control", lane.session_id)
+    assert session is not None
+    assert session.process_id is not None
+    assert session.metadata is not None
+    assert session.metadata["run_dir"] == str(run_dir)
 
 
 def test_scheduler_no_work_is_noop(tmp_path: Path) -> None:

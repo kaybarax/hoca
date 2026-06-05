@@ -520,9 +520,11 @@ def _default_resource_budget() -> HocaResourceBudget:
     )
 
 
-def _default_scheduler() -> FleetScheduler:
+def _default_scheduler(*, start_adapters: bool = False) -> FleetScheduler:
     return FleetScheduler(
-        registry=_registry(), governor=ResourceGovernor(budget=_default_resource_budget())
+        registry=_registry(),
+        governor=ResourceGovernor(budget=_default_resource_budget()),
+        start_adapters=start_adapters,
     )
 
 
@@ -565,9 +567,15 @@ def scheduler() -> None:
 
 
 @scheduler.command("tick")
-def scheduler_tick() -> None:
+@click.option(
+    "--start-adapters",
+    is_flag=True,
+    default=False,
+    help="Start adapter processes for launched lanes.",
+)
+def scheduler_tick(start_adapters: bool) -> None:
     """Run one scheduler tick."""
-    decisions = _default_scheduler().tick()
+    decisions = _default_scheduler(start_adapters=start_adapters).tick()
     if not decisions:
         click.echo("No scheduler decisions.")
         return
@@ -590,9 +598,15 @@ def scheduler_tick() -> None:
     show_default=True,
     help="Number of scheduler iterations to run.",
 )
-def scheduler_start(interval: float, iterations: int) -> None:
+@click.option(
+    "--start-adapters",
+    is_flag=True,
+    default=False,
+    help="Start adapter processes for launched lanes.",
+)
+def scheduler_start(interval: float, iterations: int, start_adapters: bool) -> None:
     """Start the scheduler loop."""
-    scheduler_runner = _default_scheduler()
+    scheduler_runner = _default_scheduler(start_adapters=start_adapters)
     iterations_run = run_scheduler_loop(
         scheduler=scheduler_runner,
         interval_seconds=interval,
