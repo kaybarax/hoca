@@ -3,9 +3,10 @@
 **Hermes + OpenHands Computer Automata**
 
 HOCA is a local-first autonomous engineering automation toolkit. It coordinates
-Hermes, OpenHands, and LLMs (Ollama, LM Studio, or cloud APIs) to turn a task
-description or GitHub issue into a reviewed pull request — running entirely on
-your own machine or using cloud LLM providers.
+Hermes, OpenHands, and LLMs to turn a task description or GitHub issue into a
+reviewed pull request. You can run it entirely on your own machine with Ollama,
+LM Studio, llama.cpp, MLX, or another LiteLLM/OpenAI-compatible local runtime,
+or use cloud LLM providers.
 
 HOCA is **not** an unrestricted self-operating computer agent. It does not
 wander across unrelated folders, commit without inspection, or merge without
@@ -47,7 +48,7 @@ Human or GitHub Issue
 | **`hoca-worker` Hermes profile** | Principal engineer lane. Converts the task spec into an OpenHands implementation prompt, monitors the worker run, and returns a structured attempt report. |
 | **`hoca-reviewer` Hermes profile** | QA, security, and release-quality lane. Reviews the diff and validation output, classifies findings, and returns a structured review report. |
 | **OpenHands** | Execution engine used by worker and reviewer profiles for code changes and independent review inside the scoped target repository. |
-| **Ollama / LM Studio / Cloud** | LLM runtime. Runs models locally (Ollama, LM Studio) or via cloud APIs (DeepSeek, Gemini, etc.). |
+| **Local or cloud LLM runtime** | Model backend. Runs models locally through Ollama or an OpenAI-compatible server such as LM Studio, llama.cpp, MLX, LocalAI, or vLLM, or via cloud APIs such as OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, and similar providers. |
 | **Git + GitHub CLI** | Version control and pull request layer. |
 
 HOCA runs through the profile-backed Manager -> Worker -> Reviewer workflow
@@ -71,7 +72,7 @@ using the resolved manager/worker/reviewer role model settings.
 | Node.js | Test runner support for JS/TS projects |
 | Git | Version control |
 | [GitHub CLI (`gh`)](https://cli.github.com) | PR creation and authentication |
-| [Ollama](https://ollama.ai) | Local LLM runtime (or LM Studio / cloud API) |
+| LLM backend | Ollama for the default local setup, or another LiteLLM/OpenAI-compatible local runtime such as LM Studio, llama.cpp, MLX, LocalAI, or vLLM; cloud providers are also supported |
 | [OpenHands CLI](https://docs.all-hands.dev) | AI worker agent and code reviewer |
 | [Hermes Agent](https://github.com/anthropics/hermes) | Manager agent |
 
@@ -87,8 +88,12 @@ your machine can comfortably run the 32B model, HOCA also supports it:
 | `qwen-14b-pro` | `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
 | `qwen-7b-pro` | `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
 
-Other Ollama-compatible coding models can be used by setting `OLLAMA_MODEL` for
-the local fallback and by configuring the role model blocks below.
+The built-in fallback path is Ollama, but the role model blocks below can point
+at any LiteLLM/OpenAI-compatible model backend. For local runtimes such as LM
+Studio, llama.cpp server, MLX server, LocalAI, or vLLM, set the model name,
+local `*_MODEL_BASE_URL`, and whatever API key placeholder that server expects.
+For cloud providers, leave `*_MODEL_BASE_URL` empty unless the provider or
+gateway requires a custom endpoint.
 
 ### Role Model Pool
 
@@ -109,7 +114,7 @@ HOCA_WORKER_MODEL_API_KEY=ollama
 HOCA_REVIEWER_MODEL_NAME=reviewer
 HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
 HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
-HOCA_REVIEWER_MODEL_API_KEY=lm-studio
+HOCA_REVIEWER_MODEL_API_KEY=local
 ```
 
 The manager can use a balanced planning model, the worker can use a
@@ -120,21 +125,29 @@ another role is active, HOCA uses the first active role model as the fallback.
 Only the selected role model's credentials are forwarded to that phase, and API
 keys are redacted from reports and logs.
 
-### LM Studio And Cloud Models
+### Local OpenAI-Compatible And Cloud Models
 
-Use the same role blocks for local OpenAI-compatible servers and cloud models:
+Use the same role blocks for local OpenAI-compatible servers and cloud models.
+Local examples include LM Studio, llama.cpp's OpenAI-compatible server, MLX
+servers, LocalAI, and vLLM:
 
 ```env
 HOCA_REVIEWER_MODEL_NAME=reviewer
 HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
-HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
-HOCA_REVIEWER_MODEL_API_KEY=lm-studio
+HOCA_REVIEWER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
+HOCA_REVIEWER_MODEL_API_KEY=local
 
 HOCA_WORKER_MODEL_NAME=worker
 HOCA_WORKER_MODEL_MODEL=deepseek/deepseek-chat
 HOCA_WORKER_MODEL_BASE_URL=
 HOCA_WORKER_MODEL_API_KEY=<your-api-key>
 ```
+
+For local OpenAI-compatible runtimes, the `openai/` model prefix tells LiteLLM
+to use the OpenAI protocol, while `*_MODEL_BASE_URL` points at your local
+server. For example, llama.cpp commonly serves at
+`http://127.0.0.1:8080/v1`; LM Studio often serves at
+`http://localhost:1234/v1`.
 
 **Ollama fallback:** when no role model blocks are active, HOCA uses
 `OLLAMA_MODEL` and `OLLAMA_BASE_URL` as the local fallback.
@@ -153,12 +166,16 @@ cp .env.example .env
 ```
 
 The install script handles Homebrew packages, a repo-local `.venv` for Python
-dependencies, OpenHands, Ollama model pulls, and model alias creation. It prints
-warnings for anything that needs manual follow-up.
+dependencies, OpenHands, and the default Ollama model pulls/aliases. If you use
+LM Studio, llama.cpp, MLX, another local OpenAI-compatible server, or a cloud
+provider, configure the role model blocks in `.env` instead of relying on the
+Ollama fallback.
 
 After installation:
 
-1. Start Ollama: `ollama serve`
+1. Start your selected model backend: for the default path, `ollama serve`; for
+   LM Studio, llama.cpp, MLX, or another local server, start its
+   OpenAI-compatible `/v1` endpoint.
 2. Start Docker: open Docker Desktop, or run `colima start --cpu 6 --memory 16`
 3. Authenticate GitHub: `gh auth login`
 
@@ -189,8 +206,9 @@ Verify that all dependencies are installed and configured:
 bin/hoca doctor
 ```
 
-Doctor checks for required commands, Docker availability, Ollama connectivity,
-model presence, GitHub authentication, and environment configuration.
+Doctor checks for required commands, Docker availability, GitHub
+authentication, environment configuration, the default Ollama fallback when
+used, and role model configuration for local or cloud providers.
 
 ## Usage
 
@@ -323,8 +341,8 @@ The sandbox provides:
   containers; PR creation uses manager-side `gh` authentication only
 - Offline network isolation by default, with explicit opt-in modes for package
   installation or broader egress
-- Host Ollama access via `host.docker.internal` when a bridge network mode is
-  selected
+- Host-local LLM access via `host.docker.internal` when a bridge network mode is
+  selected and the role model base URL points at a local server
 - Memory and PID limits (configurable via `HOCA_SANDBOX_MEMORY`, `HOCA_SANDBOX_PIDS`)
 - Dropped capabilities (`--cap-drop=ALL --security-opt=no-new-privileges`)
 - Automatic container cleanup after each run
@@ -404,7 +422,7 @@ to run HOCA against the issue.
   `HOCA_WEBHOOK_SECRET`.
 - Issue titles are never passed directly into shell commands.
 - The listener can also run as a Docker service, but running on the host is
-  preferred when it needs to launch Hermes, Docker, or Ollama.
+  preferred when it needs to launch Hermes, Docker, or a host-local LLM backend.
 
 ## Telegram Notifications
 
@@ -423,12 +441,12 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 
 | Problem | Solution |
 |---------|----------|
-| `ollama` not found | Install with `brew install ollama` |
-| Ollama server not responding | Start it with `ollama serve` |
+| `ollama` not found | Install with `brew install ollama` if using the default Ollama fallback, or configure role model blocks for another local/cloud provider |
+| Ollama server not responding | Start it with `ollama serve`, or configure active role model blocks so HOCA does not rely on the Ollama fallback |
 | Docker not running | Start Docker Desktop or run `colima start` |
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
-| Model not available | Run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases) |
+| Model not available | For Ollama, run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases). For LM Studio, llama.cpp, MLX, or cloud providers, confirm the role model name, base URL, and API key in `.env`. |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check the runtime archive or rerun with `HOCA_KEEP_RUNTIME=true` for immediate debugging. |
 | Tests fail | Check the archived run directory under `~/.hoca/runtime-archives/<repo-name>/<run-id>/` for `tests-summary.md` and test logs. |

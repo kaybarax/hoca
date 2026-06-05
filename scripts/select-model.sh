@@ -15,7 +15,9 @@ if [[ -n "${LLM_MODEL:-}" ]]; then
   esac
 fi
 
-# Try LM Studio if configured or auto-detected
+# Try a local OpenAI-compatible server, such as LM Studio, when configured or
+# auto-detected. llama.cpp, MLX, LocalAI, and vLLM users should normally prefer
+# explicit role model blocks because their default ports and model IDs vary.
 LMSTUDIO_URL="${LLM_BASE_URL:-http://localhost:1234/v1}"
 if [[ "${HOCA_LLM_PROVIDER:-}" == "lmstudio" ]] || \
    { [[ -z "${HOCA_LLM_PROVIDER:-}" ]] && ! command -v ollama >/dev/null 2>&1 && \
@@ -30,13 +32,13 @@ if [[ "${HOCA_LLM_PROVIDER:-}" == "lmstudio" ]] || \
       fi
     fi
   fi
-  echo "LM Studio provider selected but no models found at $LMSTUDIO_URL" >&2
+  echo "Local OpenAI-compatible provider selected but no models found at $LMSTUDIO_URL" >&2
   exit 1
 fi
 
 # Ollama path (default)
 if ! command -v ollama >/dev/null 2>&1; then
-  echo "No LLM provider available. Install Ollama, start LM Studio, or configure a HOCA role model provider." >&2
+  echo "No LLM provider available. Install Ollama, start a local OpenAI-compatible server, or configure a HOCA role model provider." >&2
   exit 1
 fi
 

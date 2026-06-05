@@ -63,7 +63,7 @@ case "${LLM_MODEL:-}" in
   deepseek/*|gemini/*|anthropic/*|together_ai/*|openrouter/*)
     MODEL="${LLM_MODEL}"
     BASE_URL="${LLM_BASE_URL:-}"
-    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required for cloud providers}"
+    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required for this provider}"
     ;;
   openai/*)
     MODEL="${LLM_MODEL}"

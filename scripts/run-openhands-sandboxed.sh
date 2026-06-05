@@ -35,7 +35,8 @@ if ! docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
   docker build -t "$SANDBOX_IMAGE" -f "$HOCA_ROOT/docker/Dockerfile.sandbox" "$HOCA_ROOT/docker"
 fi
 
-# Remap localhost URLs to host.docker.internal for container access to host Ollama
+# Remap localhost URLs to host.docker.internal for container access to host-local
+# LLM servers such as Ollama, LM Studio, llama.cpp, MLX, LocalAI, or vLLM.
 CONTAINER_BASE_URL="${BASE_URL//127.0.0.1/host.docker.internal}"
 CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 

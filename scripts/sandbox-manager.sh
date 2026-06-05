@@ -48,11 +48,12 @@ sandbox_start() {
   local sandbox_home
   sandbox_home="$(sandbox_prepare_home "${HOCA_ROOT}/.hoca-runtime/sandbox/${run_id}")"
 
-  # Determine Ollama base URL for container
-  local ollama_url="${LLM_BASE_URL:-http://127.0.0.1:11434}"
-  # If Ollama is on localhost, remap to host.docker.internal for container access
-  ollama_url="${ollama_url//127.0.0.1/host.docker.internal}"
-  ollama_url="${ollama_url//localhost/host.docker.internal}"
+  # Determine host-local LLM base URL for container access. This may be Ollama,
+  # LM Studio, llama.cpp, MLX, LocalAI, vLLM, or another OpenAI-compatible server.
+  local llm_url="${LLM_BASE_URL:-http://127.0.0.1:11434}"
+  # If the LLM server is on localhost, remap to host.docker.internal for the container.
+  llm_url="${llm_url//127.0.0.1/host.docker.internal}"
+  llm_url="${llm_url//localhost/host.docker.internal}"
 
   local network_mode
   network_mode="$(sandbox_resolve_network_mode "$agent_role" "$run_dir")"
@@ -71,7 +72,7 @@ sandbox_start() {
     -v "${HOCA_ROOT}/hoca:/hoca/hoca:ro"
     -v "${HOCA_ROOT}/templates:/hoca/templates:ro"
     -v "${sandbox_home}:/home/hoca-sandbox"
-    -e "LLM_BASE_URL=${ollama_url}"
+    -e "LLM_BASE_URL=${llm_url}"
     -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}"
     -e "LLM_API_KEY=${LLM_API_KEY:-ollama}"
     -e "HOME=/home/hoca-sandbox"
