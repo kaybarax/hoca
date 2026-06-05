@@ -19,6 +19,14 @@ def _project(*, max_parallel_tasks: int = 2) -> HocaProject:
     return HocaProject(project_id="p", repo_path="/tmp/p", default_branch="main", max_parallel_tasks=max_parallel_tasks)
 
 
+def test_default_budget_is_conservative() -> None:
+    budget = HocaResourceBudget(budget_id="default")
+    assert budget.max_parallel_projects == 1
+    assert budget.max_parallel_tasks == 1
+    assert budget.max_parallel_lanes == 1
+    assert budget.max_agents == 1
+
+
 def test_resource_cap_by_project_and_lane_budget() -> None:
     budget = HocaResourceBudget(
         budget_id="default",
@@ -68,3 +76,38 @@ def test_resource_can_block_by_agents_weight() -> None:
     )
     assert decision.allowed is False
     assert decision.reason.startswith("agent weight cap reached")
+
+
+def test_budget_blocking_does_not_modify_running_lanes() -> None:
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=1,
+        max_parallel_lanes=1,
+        max_agents=1,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    governor = ResourceGovernor(budget=budget)
+    project = _project(max_parallel_tasks=1)
+    task = _task("t1", weight=1.0)
+    running = [
+        HocaLane(
+            lane_id="l1",
+            task_id="running",
+            project_id="p",
+            status="running",
+            branch="b",
+            attempt_number=0,
+        )
+    ]
+    before = list(running)
+    decision = governor.can_launch(
+        project=project,
+        task=task,
+        active_lanes=running,
+        project_running_count=1,
+        adapter_id="default",
+    )
+    assert decision.allowed is False
+    assert running == before

@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget
 from hoca.fleet_registry import FleetRegistry
 from hoca.resource_governor import ResourceGovernor
@@ -62,6 +64,112 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
 
     tasks = {item.task_id: item for item in registry.list_tasks()}
     assert tasks["task-a"].status == "running"
+
+
+def test_scheduler_no_work_is_noop(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=1,
+        max_parallel_lanes=1,
+        max_agents=4,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    governor = ResourceGovernor(budget=budget)
+    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+
+    for task_id in ("task-a", "task-b"):
+        registry.update_task(task_id, HocaFleetTask(task_id=task_id, project_id="project-a", status="completed", readiness="not_ready", priority=1))
+
+    decisions = scheduler.tick()
+    assert decisions == []
+    assert "task-a" not in [item.task_id for item in registry.list_lanes()]
+
+
+def test_scheduler_non_overlapping_tasks_can_run_together_when_capacity_allows(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    registry.update_project(
+        "project-a",
+        HocaProject(
+            project_id="project-a",
+            repo_path=str(tmp_path / "repo"),
+            default_branch="main",
+            max_parallel_tasks=2,
+        ),
+    )
+    registry.update_task(
+        "task-a",
+        HocaFleetTask(
+            task_id="task-a",
+            project_id="project-a",
+            status="queued",
+            readiness="not_ready",
+            metadata={"owned_files": ["src/app.py"]},
+            priority=1,
+        ),
+    )
+    registry.update_task(
+        "task-b",
+        HocaFleetTask(
+            task_id="task-b",
+            project_id="project-a",
+            status="queued",
+            readiness="not_ready",
+            metadata={"owned_files": ["docs/README.md"]},
+            priority=1,
+        ),
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=2,
+        max_parallel_lanes=2,
+        max_agents=10,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    governor = ResourceGovernor(budget=budget)
+    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+    decisions = scheduler.tick()
+    launch_decisions = [d for d in decisions if d.decision_type == "launch"]
+    assert len(launch_decisions) == 2
+
+
+def test_scheduler_run_interruption_keeps_state_intact(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=1,
+        max_parallel_lanes=1,
+        max_agents=4,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    governor = ResourceGovernor(budget=budget)
+    scheduler = FleetScheduler(registry=registry, governor=governor, control_root=tmp_path / "control")
+
+    original_tasks = list(registry.list_tasks())
+    lock = _resolve_lock_path(tmp_path / "control")
+
+    # simulate interruption during a subsequent loop run.
+    def _explode() -> list:
+        raise KeyboardInterrupt("intentional test interrupt")
+
+    scheduler.tick = _explode  # type: ignore[method-assign]
+    with pytest.raises(KeyboardInterrupt):
+        run_scheduler_loop(
+            scheduler=scheduler,
+            interval_seconds=0.0,
+            max_iterations=1,
+            read_only_on_conflict=True,
+            control_root=tmp_path / "control",
+        )
+
+    assert not lock.exists()
+    assert list(registry.list_tasks()) == original_tasks
 
 
 def test_scheduler_respects_conflicts_and_is_deterministic(tmp_path: Path) -> None:

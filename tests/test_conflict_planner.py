@@ -42,6 +42,18 @@ def test_exact_and_directory_overlaps() -> None:
     assert not conflicts[0].can_launch
 
 
+def test_non_overlapping_tasks_can_run_together() -> None:
+    left = conflict_profile_from_task(
+        _task(
+            "a",
+            {
+                "owned_files": ["src/app.py"],
+            },
+        )
+    )
+    right = conflict_profile_from_task(_task("b", {"owned_files": ["docs/README.md"]}))
+    conflicts = detect_task_conflicts(left, [left, right])
+    assert conflicts == []
 def test_high_conflict_serialization_file() -> None:
     left = conflict_profile_from_task(_task("a", {"owned_files": ["package-lock.json"]}))
     right = conflict_profile_from_task(_task("b", {"owned_files": ["README.md"]}))
