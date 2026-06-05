@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -224,6 +225,25 @@ def missing_required_commands(spec: HocaAgentAdapterSpec) -> list[str]:
 
 def required_commands_ok(spec: HocaAgentAdapterSpec) -> bool:
     return not missing_required_commands(spec)
+
+
+def adapter_doctor_lines(spec: HocaAgentAdapterSpec | None = None) -> list[tuple[str, str]]:
+    active_spec = spec or default_openhands_adapter_spec()
+    missing = missing_required_commands(active_spec)
+    required = required_commands_from_template(active_spec.command_template)
+    if missing:
+        return [
+            (
+                "fail",
+                f"Adapter {active_spec.adapter_id!r} is missing required commands: {', '.join(sorted(set(missing)))}",
+            )
+        ]
+    return [
+        (
+            "ok",
+            f"Adapter {active_spec.adapter_id!r} required commands available: {', '.join(required)}",
+        )
+    ]
 
 
 def session_metadata_from_spec(spec: HocaAgentAdapterSpec) -> dict[str, str]:
@@ -499,3 +519,28 @@ class AgentAdapter:
             project_path=session.metadata.get("project_path") or None,
             metadata=metadata,
         )
+
+
+def _doctor_main() -> int:
+    failed = False
+    for status, message in adapter_doctor_lines():
+        print(f"[{status.upper()}] {message}")
+        if status == "fail":
+            failed = True
+    return 1 if failed else 0
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Adapter command checks for HOCA doctor.")
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("doctor-checks", help="Print adapter command availability checks.")
+    args = parser.parse_args()
+
+    if args.command == "doctor-checks":
+        return _doctor_main()
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

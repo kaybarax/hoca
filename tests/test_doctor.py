@@ -112,6 +112,8 @@ def test_hoca_doctor_script_includes_sandbox_section() -> None:
     content = script.read_text(encoding="utf-8")
     assert 'section "Sandbox"' in content
     assert "hoca.sandbox_doctor doctor-checks" in content
+    assert 'section "Adapter Commands"' in content
+    assert "hoca.agent_adapters doctor-checks" in content
     assert "podman" in content
     assert "docker" in content
 

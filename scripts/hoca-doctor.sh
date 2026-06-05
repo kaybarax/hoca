@@ -246,6 +246,14 @@ else
   warn "Skipping OpenHands flag checks because openhands is missing."
 fi
 
+section "Adapter Commands"
+if ADAPTER_CHECKS_OUTPUT="$(python3 -m hoca.agent_adapters doctor-checks 2>&1)"; then
+  printf '%s\n' "$ADAPTER_CHECKS_OUTPUT"
+else
+  printf '%s\n' "$ADAPTER_CHECKS_OUTPUT"
+  FAILED=1
+fi
+
 section "Environment"
 DOCTOR_ENV_FILE="${HOCA_DOTENV_PATH:-.env}"
 if [ -f "$DOCTOR_ENV_FILE" ]; then

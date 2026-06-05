@@ -12,6 +12,7 @@ from hoca.agent_adapters import (
     AdapterUnavailableError,
     AdapterRunArtifact,
     AgentAdapter,
+    adapter_doctor_lines,
     custom_command_adapter_spec,
     default_openhands_adapter_spec,
     fake_session_id,
@@ -287,3 +288,18 @@ def test_command_allowlist_blocks_unlisted_binary() -> None:
 
     with pytest.raises(AdapterUnavailableError, match="not be allow-listed"):
         AgentAdapter(spec=spec)
+
+
+def test_adapter_doctor_lines_reports_missing_required_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = HocaAgentAdapterSpec(
+        adapter_id="openhands-hermes",
+        provider="openhands",
+        command_template="not-a-real-command --task {task}",
+        max_concurrency=1,
+    )
+    monkeypatch.setattr("hoca.agent_adapters.default_openhands_adapter_spec", lambda: spec)
+
+    lines = adapter_doctor_lines()
+
+    assert lines[0][0] == "fail"
+    assert "not-a-real-command" in lines[0][1]
