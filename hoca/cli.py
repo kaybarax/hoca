@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 import subprocess
 from pathlib import Path
@@ -93,6 +94,10 @@ def _sanitize_project_id(value: str) -> str:
 
 def _default_project_id(project_path: Path) -> str:
     return _sanitize_project_id(project_path.name)
+
+
+def _default_task_id(title: str) -> str:
+    return _sanitize_project_id(title)
 
 
 def _registry() -> FleetRegistry:
@@ -277,6 +282,187 @@ def project_remove(project_id: str) -> None:
         raise click.ClickException(str(error)) from error
 
     click.echo(f"Project removed: {project_id}")
+
+
+@main.group()
+def task() -> None:
+    """Manage HOCA tasks."""
+
+
+@task.command("create")
+@click.argument("project_id")
+@click.argument("title")
+@click.option("--task-id", help="Explicit task identifier.")
+@click.option("--description", default="", help="Optional task description.")
+@click.option("--goal", default="", help="Optional task goal.")
+@click.option("--issue-id", default=None, help="Optional linked issue identifier.")
+@click.option(
+    "--dependency",
+    "dependencies",
+    multiple=True,
+    help="Dependency task identifier. May be supplied multiple times.",
+)
+@click.option(
+    "--priority",
+    default=1,
+    type=click.IntRange(min=0),
+    show_default=True,
+    help="Task priority.",
+)
+@click.option(
+    "--status",
+    default="queued",
+    type=click.Choice(["queued", "ready", "running", "blocked", "cancelled", "completed"]),
+    show_default=True,
+    help="Initial task status.",
+)
+@click.option(
+    "--readiness",
+    default="not_ready",
+    type=click.Choice(["not_ready", "ready", "draft_ready", "blocked"]),
+    show_default=True,
+    help="Initial readiness state.",
+)
+def task_create(
+    project_id: str,
+    title: str,
+    task_id: str | None,
+    description: str,
+    goal: str,
+    issue_id: str | None,
+    dependencies: tuple[str, ...],
+    priority: int,
+    status: str,
+    readiness: str,
+) -> None:
+    """Create a HOCA task for a registered project."""
+    registry = _registry()
+    if registry.get_project(project_id) is None:
+        raise click.ClickException(f"Project not found: {project_id}")
+
+    resolved_task_id = _sanitize_project_id(task_id or _default_task_id(title))
+    timestamp = _utc_now()
+    task = HocaFleetTask(
+        task_id=resolved_task_id,
+        project_id=project_id,
+        title=title.strip(),
+        description=description.strip(),
+        issue_id=issue_id,
+        goal=goal.strip(),
+        status=status,  # type: ignore[arg-type]
+        readiness=readiness,  # type: ignore[arg-type]
+        dependencies=list(dependencies),
+        lane_ids=[],
+        created_at=timestamp,
+        updated_at=timestamp,
+        completed_at=None,
+        priority=priority,
+        metadata={},
+    )
+
+    try:
+        registry.create_task(task)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    click.echo(f"Task created: {resolved_task_id}")
+
+
+@task.command("list")
+@click.option("--project-id", default=None, help="Filter tasks by project identifier.")
+@click.option(
+    "--status",
+    "statuses",
+    multiple=True,
+    type=click.Choice(["queued", "ready", "running", "blocked", "cancelled", "completed"]),
+    help="Filter tasks by status. May be supplied multiple times.",
+)
+def task_list(project_id: str | None, statuses: tuple[str, ...]) -> None:
+    """List HOCA tasks."""
+    tasks = sorted(_registry().list_tasks(project_id=project_id), key=lambda task: task.task_id)
+    if statuses:
+        tasks = [task for task in tasks if task.status in statuses]
+
+    if not tasks:
+        click.echo("No tasks found.")
+        return
+
+    click.echo("TASK_ID\tPROJECT_ID\tSTATUS\tREADINESS\tTITLE")
+    for task in tasks:
+        click.echo(
+            "\t".join(
+                (
+                    task.task_id,
+                    task.project_id,
+                    task.status,
+                    task.readiness,
+                    task.title or task.task_id,
+                )
+            )
+        )
+
+
+@task.command("show")
+@click.argument("task_id")
+def task_show(task_id: str) -> None:
+    """Show a HOCA task."""
+    task = _registry().get_task(task_id)
+    if task is None:
+        raise click.ClickException(f"Task not found: {task_id}")
+
+    click.echo(f"Task ID: {task.task_id}")
+    click.echo(f"Project ID: {task.project_id}")
+    click.echo(f"Title: {task.title}")
+    click.echo(f"Status: {task.status}")
+    click.echo(f"Readiness: {task.readiness}")
+    click.echo(f"Priority: {task.priority}")
+    if task.description:
+        click.echo(f"Description: {task.description}")
+    if task.goal:
+        click.echo(f"Goal: {task.goal}")
+    if task.issue_id:
+        click.echo(f"Issue ID: {task.issue_id}")
+    if task.dependencies:
+        click.echo(f"Dependencies: {', '.join(task.dependencies)}")
+    if task.lane_ids:
+        click.echo(f"Lane IDs: {', '.join(task.lane_ids)}")
+    click.echo(f"Created At: {task.created_at}")
+    click.echo(f"Updated At: {task.updated_at}")
+
+
+def _update_task_status(task_id: str, *, status: str, readiness: str | None = None) -> HocaFleetTask:
+    registry = _registry()
+    task = registry.get_task(task_id)
+    if task is None:
+        raise click.ClickException(f"Task not found: {task_id}")
+
+    next_task = replace(
+        task,
+        status=status,  # type: ignore[arg-type]
+        readiness=readiness or task.readiness,  # type: ignore[arg-type]
+        updated_at=_utc_now(),
+    )
+    try:
+        registry.update_task(task_id, next_task)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    return next_task
+
+
+@task.command("cancel")
+@click.argument("task_id")
+def task_cancel(task_id: str) -> None:
+    """Cancel a HOCA task."""
+    _update_task_status(task_id, status="cancelled")
+    click.echo(f"Task cancelled: {task_id}")
+
+
+@task.command("block")
+@click.argument("task_id")
+def task_block(task_id: str) -> None:
+    """Mark a HOCA task as blocked."""
+    _update_task_status(task_id, status="blocked", readiness="blocked")
+    click.echo(f"Task blocked: {task_id}")
 
 
 @main.command("setup-profiles")

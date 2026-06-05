@@ -14,6 +14,7 @@ CLI_COMMANDS = {
     "doctor": "Check local HOCA dependencies",
     "init-project": "Install HOCA project-level templates",
     "project": "Manage registered HOCA projects",
+    "task": "Manage HOCA tasks",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
     "lane": "Manage and communicate with HOCA lanes",
@@ -42,6 +43,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "doctor" in result.output
     assert "init-project" in result.output
     assert "project" in result.output
+    assert "task" in result.output
     assert "run" in result.output
     assert "issue" in result.output
     assert "setup-profiles" in result.output
@@ -163,6 +165,129 @@ def test_project_add_list_show_doctor_and_remove_use_temp_control_root(tmp_path:
     assert remove_result.exit_code == 0
     assert "Project removed: project-one" in remove_result.output
     assert registry.get_project("project-one") is None
+
+
+def test_task_help_displays_group_help() -> None:
+    result = CliRunner().invoke(main, ["task", "--help"])
+
+    assert result.exit_code == 0
+    assert "Manage HOCA tasks." in result.output
+    assert "create" in result.output
+    assert "list" in result.output
+    assert "show" in result.output
+    assert "cancel" in result.output
+    assert "block" in result.output
+
+
+def test_task_create_list_show_cancel_and_block_use_temp_control_root(tmp_path: Path) -> None:
+    control_root = tmp_path / "control"
+    repo = _seed_project_repo(tmp_path, "project-two")
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    project_result = CliRunner().invoke(
+        main,
+        ["project", "add", str(repo), "--project-id", "project-two"],
+        env=env,
+    )
+    assert project_result.exit_code == 0
+
+    create_alpha = CliRunner().invoke(
+        main,
+        [
+            "task",
+            "create",
+            "project-two",
+            "Implement task lifecycle",
+            "--task-id",
+            "task-alpha",
+            "--description",
+            "Detailed notes",
+            "--goal",
+            "Ship feature",
+            "--priority",
+            "2",
+        ],
+        env=env,
+    )
+    assert create_alpha.exit_code == 0
+    assert "Task created: task-alpha" in create_alpha.output
+
+    create_beta = CliRunner().invoke(
+        main,
+        [
+            "task",
+            "create",
+            "project-two",
+            "Cancel me",
+            "--task-id",
+            "task-beta",
+        ],
+        env=env,
+    )
+    assert create_beta.exit_code == 0
+
+    registry = FleetRegistry(control_root=control_root)
+    alpha = registry.get_task("task-alpha")
+    assert alpha is not None
+    assert alpha.project_id == "project-two"
+    assert alpha.title == "Implement task lifecycle"
+    assert alpha.goal == "Ship feature"
+    assert alpha.priority == 2
+
+    list_result = CliRunner().invoke(
+        main,
+        ["task", "list", "--project-id", "project-two", "--status", "queued"],
+        env=env,
+    )
+    assert list_result.exit_code == 0
+    assert "TASK_ID" in list_result.output
+    assert "task-alpha" in list_result.output
+    assert "task-beta" in list_result.output
+
+    show_result = CliRunner().invoke(main, ["task", "show", "task-alpha"], env=env)
+    assert show_result.exit_code == 0
+    assert "Task ID: task-alpha" in show_result.output
+    assert "Project ID: project-two" in show_result.output
+    assert "Goal: Ship feature" in show_result.output
+
+    block_result = CliRunner().invoke(main, ["task", "block", "task-alpha"], env=env)
+    assert block_result.exit_code == 0
+    assert "Task blocked: task-alpha" in block_result.output
+
+    cancel_result = CliRunner().invoke(main, ["task", "cancel", "task-beta"], env=env)
+    assert cancel_result.exit_code == 0
+    assert "Task cancelled: task-beta" in cancel_result.output
+
+    blocked = registry.get_task("task-alpha")
+    cancelled = registry.get_task("task-beta")
+    assert blocked is not None
+    assert cancelled is not None
+    assert blocked.status == "blocked"
+    assert blocked.readiness == "blocked"
+    assert cancelled.status == "cancelled"
+
+    filtered_list = CliRunner().invoke(
+        main,
+        ["task", "list", "--project-id", "project-two", "--status", "blocked", "--status", "cancelled"],
+        env=env,
+    )
+    assert filtered_list.exit_code == 0
+    assert "task-alpha" in filtered_list.output
+    assert "task-beta" in filtered_list.output
+
+
+def test_task_create_rejects_unknown_project_id(tmp_path: Path) -> None:
+    control_root = tmp_path / "control"
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    result = CliRunner().invoke(
+        main,
+        ["task", "create", "missing-project", "Do the thing"],
+        env=env,
+    )
+
+    assert result.exit_code != 0
+    assert "Project not found: missing-project" in result.output
 
 
 def test_lane_send_helps_command() -> None:
