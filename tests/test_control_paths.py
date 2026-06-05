@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hoca.control_paths import CONTROL_ROOT_ENV, control_root, make_fleet_control_paths
 import pytest
+
+from hoca.control_paths import CONTROL_ROOT_ENV, control_root, make_fleet_control_paths
 
 
 def test_control_root_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
