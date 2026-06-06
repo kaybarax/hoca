@@ -78,10 +78,12 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
     decisions = scheduler.tick()
 
     assert any(decision.decision_type == "launch" for decision in decisions)
-    assert len(decisions) == 1
+    assert any(decision.decision_type == "wait_capacity" for decision in decisions)
+    assert len([decision for decision in decisions if decision.decision_type == "launch"]) == 1
 
     tasks = {item.task_id: item for item in registry.list_tasks()}
     assert tasks["task-a"].status == "running"
+    assert tasks["task-b"].status == "queued"
 
 
 def test_scheduler_can_start_one_lane_with_openhands_adapter(

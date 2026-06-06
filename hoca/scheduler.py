@@ -370,12 +370,6 @@ class FleetScheduler:
                 )
             )
 
-            if (
-                len([lane for lane in lanes if lane.status not in {"completed", "cleaned"}])
-                >= self.governor.budget.max_parallel_lanes
-            ):
-                break
-
         return decisions
 
 
