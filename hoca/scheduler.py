@@ -219,6 +219,24 @@ class FleetScheduler:
 
         decisions: list[HocaSchedulerDecision] = []
         for task in tasks:
+            if task.task_id in active_ids:
+                self.registry.update_task(
+                    task.task_id,
+                    replace(task, status="running", updated_at=_now_iso()),
+                )
+                decisions.append(
+                    HocaSchedulerDecision(
+                        decision_id=f"dec-{task.task_id}-active",
+                        project_id=task.project_id,
+                        task_id=task.task_id,
+                        decision_type="wait_dependency",
+                        reason="active_lane_exists",
+                        selected_adapter_id=(task.metadata or {}).get("adapter_id", "default"),
+                        created_at=_now_iso(),
+                    )
+                )
+                continue
+
             project = projects.get(task.project_id)
             if project is None:
                 decisions.append(
