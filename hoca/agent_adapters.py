@@ -386,6 +386,9 @@ class AgentAdapter:
                 path = Path(_coerce_template_value(values[key]))
                 if str(path).strip() and is_secret_like_path(path):
                     raise AdapterCommandError(f"Refusing to use secret-like path for {key}: {path}")
+        if "task" in values:
+            values = dict(values)
+            values["task"] = shlex.quote(_coerce_template_value(values["task"]))
         return format_command(self.spec.command_template, values=values)
 
     def start(

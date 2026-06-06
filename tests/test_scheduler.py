@@ -158,6 +158,7 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     output = stdout.read_text(encoding="utf-8")
     assert f"lane={lane.lane_id}" in output
     assert f"worktree={lane.worktree_path}" in output
+    assert "task=task-a" in output
     assert "github=manager-token" not in output
     assert "gh=manager-gh-token" not in output
     session = read_session(tmp_path / "control", lane.session_id)
