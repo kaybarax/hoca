@@ -247,7 +247,10 @@ else
 fi
 
 section "Adapter Commands"
-if ADAPTER_CHECKS_OUTPUT="$(python3 -m hoca.agent_adapters doctor-checks 2>&1)"; then
+if ADAPTER_CHECKS_OUTPUT="$(
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m hoca.agent_adapters doctor-checks 2>&1
+)"; then
   printf '%s\n' "$ADAPTER_CHECKS_OUTPUT"
 else
   printf '%s\n' "$ADAPTER_CHECKS_OUTPUT"

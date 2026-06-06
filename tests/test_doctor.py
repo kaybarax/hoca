@@ -114,6 +114,7 @@ def test_hoca_doctor_script_includes_sandbox_section() -> None:
     assert "hoca.sandbox_doctor doctor-checks" in content
     assert 'section "Adapter Commands"' in content
     assert "hoca.agent_adapters doctor-checks" in content
+    assert 'PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}"' in content
     assert "podman" in content
     assert "docker" in content
 
