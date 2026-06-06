@@ -408,6 +408,40 @@ def _task_description_for_run(run_dir: Path) -> str:
     return ""
 
 
+def _validation_summary_fields(run_dir: Path) -> tuple[str | None, int | None, str | None]:
+    failed_command = None
+    summary = None
+    exit_code = None
+
+    exit_code_path = run_dir / "tests-exit-code.txt"
+    if exit_code_path.is_file():
+        try:
+            exit_code = int(exit_code_path.read_text(encoding="utf-8").strip())
+        except ValueError:
+            exit_code = None
+
+    summary_path = run_dir / "tests-summary.md"
+    if summary_path.is_file():
+        for raw_line in summary_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            key, _, value = line.partition(":")
+            normalized = key.strip().strip("*").lower()
+            text = value.strip().strip("*").strip()
+            if normalized == "command" and text:
+                failed_command = text
+            elif normalized == "exit code" and text:
+                try:
+                    exit_code = int(text)
+                except ValueError:
+                    pass
+            elif normalized == "summary" and text:
+                summary = text
+
+    return failed_command, exit_code, summary
+
+
 def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
     ensure_run_layout(run_dir)
     validation = build_validation_status_from_run_dir(run_dir)
@@ -425,6 +459,7 @@ def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
             if "Failure type" in line:
                 failure_type = line.split(":", 1)[-1].strip().strip("*")
                 break
+    failed_command, exit_code, summary = _validation_summary_fields(run_dir)
 
     artifact_paths = {
         "tests_summary": str(run_dir / "tests-summary.md"),
@@ -442,6 +477,9 @@ def record_validation_report(run_dir: Path, *, round_number: int) -> Path:
         round=round_number,
         tests_passed=validation.tests_passed,
         test_failure_type=failure_type or None,
+        failed_command=failed_command,
+        exit_code=exit_code,
+        summary=summary,
         git_status=_read_lines(run_dir / "git-status.txt"),
         changed_files=changed_files,
         secret_scan_clean=validation.secret_scan_clean,

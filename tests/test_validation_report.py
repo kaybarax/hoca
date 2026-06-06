@@ -83,7 +83,11 @@ class TestRecordValidationReport:
         )
         (run_dir / "tests-exit-code.txt").write_text("0\n", encoding="utf-8")
         (run_dir / "tests-summary.md").write_text(
-            "# Tests\n\n- **Status**: passed\n", encoding="utf-8"
+            "Command: pytest tests/test_demo.py\n"
+            "Exit code: 7\n"
+            "Failure type: current_task\n"
+            "Summary: assertion failed\n",
+            encoding="utf-8",
         )
         (run_dir / "secret-detected.txt").write_text("src/other/unrelated.py\n", encoding="utf-8")
         write_json_atomic(
@@ -98,6 +102,9 @@ class TestRecordValidationReport:
         assert report.run_id == "run-val"
         assert report.round == 1
         assert report.tests_passed is True
+        assert report.failed_command == "pytest tests/test_demo.py"
+        assert report.exit_code == 7
+        assert report.summary == "assertion failed"
         assert report.git_status == ["M src/other/unrelated.py"]
         assert report.changed_files == ["src/other/unrelated.py", "package-lock.json"]
         assert report.secret_scan_clean is False
