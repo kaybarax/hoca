@@ -463,8 +463,6 @@ class AgentAdapter:
             "status": "running",
         }
         session_metadata.update(session_metadata_from_spec(self.spec))
-        if extra_env and "OPENAI_API_KEY" in extra_env:
-            session_metadata["openai"] = extra_env["OPENAI_API_KEY"]
         if metadata:
             session_metadata.update(metadata)
 

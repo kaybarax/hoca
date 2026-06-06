@@ -137,6 +137,7 @@ def test_adapter_start_filters_github_tokens_from_worker_phase(
     assert "gh=keep-out" not in artifact.stdout
     assert "github=" in artifact.stdout
     assert "gh=" in artifact.stdout
+    assert "still-allowed" not in json.dumps(session.metadata)
 
 
 def test_start_rejects_secret_like_extra_env(
