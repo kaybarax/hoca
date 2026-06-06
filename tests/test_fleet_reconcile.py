@@ -126,3 +126,30 @@ def test_lane_and_task_list_sync_before_display(tmp_path: Path) -> None:
     assert "task-1\tproject-1\tcompleted\tdraft_ready" in task_result.output
     assert fleet_result.exit_code == 0
     assert "Ready PRs: 1" in fleet_result.output
+
+
+def test_fleet_reconcile_command_reports_updates(tmp_path: Path) -> None:
+    registry, run_dir = _seed_running_lane(tmp_path)
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "blocked", "ended_at": "2026-06-06T00:02:00Z"}) + "\n",
+        encoding="utf-8",
+    )
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    result = CliRunner().invoke(main, ["fleet", "reconcile"], env=env)
+
+    assert result.exit_code == 0
+    assert "Reconciled lane:lane-1:blocked" in result.output
+    assert "Reconciled task:task-1:blocked" in result.output
+    assert registry.get_lane("lane-1").status == "blocked"
+    assert registry.get_task("task-1").status == "blocked"
+
+
+def test_fleet_reconcile_command_reports_noop(tmp_path: Path) -> None:
+    _seed_running_lane(tmp_path)
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    result = CliRunner().invoke(main, ["fleet", "reconcile"], env=env)
+
+    assert result.exit_code == 0
+    assert "Fleet registry already reconciled." in result.output

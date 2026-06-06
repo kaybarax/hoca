@@ -730,6 +730,17 @@ def fleet_doctor() -> None:
     click.echo(f"Fleet doctor OK for {len(projects)} project(s).")
 
 
+@fleet.command("reconcile")
+def fleet_reconcile() -> None:
+    """Reconcile fleet registry state from run artifacts."""
+    changed = sync_registry_from_run_artifacts(_registry())
+    if not changed:
+        click.echo("Fleet registry already reconciled.")
+        return
+    for item in changed:
+        click.echo(f"Reconciled {item}")
+
+
 @fleet.command("report")
 @click.option(
     "--output",
