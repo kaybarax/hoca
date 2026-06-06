@@ -781,6 +781,16 @@ latest_worker_attempt_status() {
   jq -r '.status // ""' "$latest_attempt" 2>/dev/null || true
 }
 
+latest_worker_reported_changed_files_count() {
+  local latest_attempt
+  latest_attempt="$(find "$RUN_DIR/attempts" -maxdepth 1 -name 'worker-attempt-*.json' -type f 2>/dev/null | sort | tail -n 1)"
+  if [ -z "$latest_attempt" ] || [ ! -f "$latest_attempt" ] || ! command -v jq >/dev/null 2>&1; then
+    printf '0\n'
+    return 0
+  fi
+  jq -r '(.changed_files // []) | length' "$latest_attempt" 2>/dev/null || printf '0\n'
+}
+
 stop_if_worker_attempt_blocked() {
   local worker_status
   worker_status="$(latest_worker_attempt_status)"
@@ -807,6 +817,9 @@ stop_if_worker_attempt_blocked() {
 while true; do
   stop_if_worker_attempt_blocked
   if [ -z "$(git_status_short_for_task)" ]; then
+    if [ "$(latest_worker_attempt_status)" = "completed" ] && [ "$(latest_worker_reported_changed_files_count)" -gt 0 ]; then
+      fail_run "worker_report_mismatch" "Worker reported changed files, but the task worktree has no Git changes. Stopping before a silent no-PR completion."
+    fi
     echo "No changes produced."
     update_status "no_changes"
     exit 0

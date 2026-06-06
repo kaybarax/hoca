@@ -133,6 +133,7 @@ def make_fake_preflight_bin(
     openhands_body: str | None = None,
     review_body: str | None = None,
     pytest_body: str | None = None,
+    worker_changed_files_json: str = "[]",
 ) -> Path:
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir(parents=True)
@@ -256,7 +257,9 @@ def make_fake_preflight_bin(
         '{"schema_version":1,"run_id":"run-test","round":'
         "${ROUND}"
         ',"role":"worker",'
-        '"status":"completed","changed_files":[],"summary":["Hermes worker completed"],'
+        '"status":"completed","changed_files":'
+        f"{worker_changed_files_json}"
+        ',"summary":["Hermes worker completed"],'
         '"commands_run":["run-openhands-task.sh"],"tests_run":[],"known_risks":[],'
         '"blocked_reason":null,"artifact_paths":{}}\n'
         "EOF\n"
@@ -1042,6 +1045,25 @@ def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_cha
     assert '"status": "no_changes"' in latest_status(tmp_path)
     assert not (run_dir / "tests-summary.md").exists()
     assert not (run_dir / "openhands-review.txt").exists()
+
+
+def test_run_hoca_task_fails_when_worker_reports_changes_but_git_is_clean(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        worker_changed_files_json='["CONTRIBUTING.md"]',
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update CONTRIBUTING", env)
+
+    assert result.returncode != 0
+    assert "Worker reported changed files, but the task worktree has no Git changes" in result.stderr
+    assert '"status": "failed"' in latest_status(tmp_path)
+    assert '"reason": "worker_report_mismatch"' in latest_status(tmp_path)
 
 
 def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Path) -> None:
