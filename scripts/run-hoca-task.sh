@@ -564,6 +564,26 @@ allocate_task_branch() {
 
 BRANCH="$(allocate_task_branch "$BRANCH")"
 
+create_task_branch_from_base() {
+  local requested_branch="$1"
+  local base_ref="$2"
+  local candidate="$requested_branch"
+  local attempts=0
+
+  while [ "$attempts" -lt 5 ]; do
+    echo "Creating branch: $candidate from $base_ref ($(git rev-parse --short "$base_ref"))"
+    if git branch "$candidate" "$base_ref"; then
+      BRANCH="$candidate"
+      TASK_BRANCH_CREATED="true"
+      return 0
+    fi
+    candidate="$(allocate_task_branch "$candidate")"
+    attempts=$((attempts + 1))
+  done
+
+  return 1
+}
+
 USE_WORKTREE_SANDBOX="false"
 WORKTREE_PATH=""
 WORKER_PROJECT_PATH="$PROJECT_PATH"
@@ -600,9 +620,7 @@ remove_worktree(Path(sys.argv[1]), sys.argv[2])
 
 if worktree_enabled; then
   USE_WORKTREE_SANDBOX="true"
-  echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
-  git branch "$BRANCH" "$TASK_BASE_REF"
-  TASK_BRANCH_CREATED="true"
+  create_task_branch_from_base "$BRANCH" "$TASK_BASE_REF"
   create_disposable_worktree
 else
   echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
