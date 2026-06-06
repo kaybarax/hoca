@@ -90,7 +90,7 @@ def test_adapter_start_collect_round_trip_with_fake_command(
     assert "from-manager" in artifact.stderr
     assert artifact.command.startswith("hoca-fake-agent")
     assert artifact.metadata is not None
-    assert artifact.metadata["openai"] == "done"
+    assert "openai" not in artifact.metadata
 
 
 def test_adapter_start_filters_github_tokens_from_worker_phase(
@@ -137,6 +137,7 @@ def test_adapter_start_filters_github_tokens_from_worker_phase(
     assert "gh=keep-out" not in artifact.stdout
     assert "github=" in artifact.stdout
     assert "gh=" in artifact.stdout
+    assert "still-allowed" not in json.dumps(session.metadata)
 
 
 def test_start_rejects_secret_like_extra_env(

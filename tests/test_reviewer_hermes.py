@@ -68,6 +68,25 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "[redacted: possible secret]" in prompt
 
 
+def test_prepare_reviewer_inputs_excludes_run_artifacts_inside_repo(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    init_repo(project)
+    run_dir = project / "lane" / "lane-1"
+    ensure_run_layout(run_dir)
+    (project / "README.md").write_text("updated\n", encoding="utf-8")
+    (project / "docs").mkdir()
+    (project / "docs" / "note.md").write_text("note\n", encoding="utf-8")
+    (run_dir / "adapter-stdout.log").write_text("runtime log\n", encoding="utf-8")
+
+    inputs = prepare_reviewer_inputs(project_path=project, run_dir=run_dir, round_number=1)
+
+    changed_files = inputs.changed_files_path.read_text(encoding="utf-8").splitlines()
+    assert "README.md" in changed_files
+    assert "docs/note.md" in changed_files
+    assert not any(path.startswith("lane/lane-1/") for path in changed_files)
+
+
 def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

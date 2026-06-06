@@ -121,7 +121,13 @@ def _git_output(project_path: Path, *args: str) -> str:
     return result.stdout
 
 
-def _changed_files(project_path: Path) -> list[str]:
+def _changed_files(project_path: Path, *, run_dir: Path | None = None) -> list[str]:
+    run_prefix = None
+    if run_dir is not None:
+        try:
+            run_prefix = str(run_dir.resolve().relative_to(project_path.resolve())).rstrip("/")
+        except ValueError:
+            run_prefix = None
     paths: set[str] = set()
     for command in (
         ("diff", "--name-only", "--diff-filter=ACMRTUXB"),
@@ -132,6 +138,10 @@ def _changed_files(project_path: Path) -> list[str]:
             if not changed_path or changed_path == ".hoca-runtime":
                 continue
             if changed_path.startswith(".hoca-runtime/"):
+                continue
+            if run_prefix and (
+                changed_path == run_prefix or changed_path.startswith(f"{run_prefix}/")
+            ):
                 continue
             if (project_path / changed_path).exists():
                 paths.add(changed_path)
@@ -154,7 +164,7 @@ def prepare_reviewer_inputs(
     changed_files_path = review_dir / "changed-files.txt"
     diff_path = review_dir / "git-diff.patch"
     changed_files_path.write_text(
-        "".join(f"{path}\n" for path in _changed_files(project_path)),
+        "".join(f"{path}\n" for path in _changed_files(project_path, run_dir=run_dir)),
         encoding="utf-8",
     )
     diff_path.write_text(_git_output(project_path, "diff"), encoding="utf-8")
