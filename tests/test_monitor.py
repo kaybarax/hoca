@@ -590,6 +590,24 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
 
+    def test_dangerous_text_in_partial_observation_stream_is_ignored(self, tmp_path: Path):
+        import io
+
+        partial_observation = (
+            '{"id":"event-1","source":"environment","kind":"ObservationEvent",'
+            '"observation":{"content":"Existing script text mentions rm -rf."}'
+        )
+        stream = io.StringIO(f"reading\n{partial_observation}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
     def test_dangerous_text_in_action_stream_still_stops(self, tmp_path: Path):
         import io
 
@@ -601,6 +619,24 @@ class TestMonitorProcessStream:
             }
         )
         stream = io.StringIO(f"working\n{action}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "dangerous_command"
+        assert result.exit_code == 1
+
+    def test_dangerous_text_in_partial_action_stream_still_stops(self, tmp_path: Path):
+        import io
+
+        partial_action = (
+            '{"id":"event-1","source":"agent","kind":"ActionEvent",'
+            '"action":{"command":"rm -rf /"'
+        )
+        stream = io.StringIO(f"working\n{partial_action}\ndone\n")
         result = monitor_process_stream(
             stream,
             project_path="/tmp/test",
