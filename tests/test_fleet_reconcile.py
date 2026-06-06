@@ -79,6 +79,7 @@ def test_sync_registry_from_run_artifacts_marks_pr_created_lane_and_task(tmp_pat
                 "status": "pr_created",
                 "final_state": "pr_opened",
                 "pr_url": "https://example.test/pull/1",
+                "started_at": "2026-06-05T23:59:00Z",
                 "ended_at": "2026-06-06T00:00:00Z",
             }
         )
@@ -94,6 +95,7 @@ def test_sync_registry_from_run_artifacts_marks_pr_created_lane_and_task(tmp_pat
     task = registry.get_task("task-1")
     assert lane is not None
     assert lane.status == "pr_created"
+    assert lane.started_at == "2026-06-05T23:59:00Z"
     assert lane.completed_at == "2026-06-06T00:00:00Z"
     assert lane.metadata["pr_url"] == "https://example.test/pull/1"
     assert task is not None

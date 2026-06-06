@@ -45,18 +45,19 @@ def _run_dir_for_lane(registry: FleetRegistry, lane: HocaLane) -> Path | None:
 
 
 def _lane_status_from_artifacts(run_dir: Path) -> tuple[str | None, dict[str, Any]]:
+    status = read_optional_json(run_dir / "status.json")
+    status_payload = status if isinstance(status, dict) else {}
     final_state = read_optional_json(run_dir / "final-state.json")
     if isinstance(final_state, dict):
         final_status = str(final_state.get("status") or "")
         mapped = FINAL_STATE_TO_LANE_STATUS.get(final_status)
         if mapped:
-            return mapped, final_state
+            return mapped, {**status_payload, **final_state}
 
-    status = read_optional_json(run_dir / "status.json")
-    if isinstance(status, dict):
-        raw_status = str(status.get("status") or "")
+    if status_payload:
+        raw_status = str(status_payload.get("status") or "")
         if raw_status in FINAL_RUN_STATUSES:
-            return raw_status, status
+            return raw_status, status_payload
     return None, {}
 
 
@@ -100,6 +101,7 @@ def sync_lane_from_artifacts(registry: FleetRegistry, lane: HocaLane) -> HocaLan
     if next_status is None:
         return _stale_lane_from_session(registry, lane)
 
+    started_at = str(artifact.get("started_at") or "").strip()
     completed_at = str(artifact.get("completed_at") or artifact.get("ended_at") or "").strip()
     metadata = dict(lane.metadata or {})
     pr_url = artifact.get("pr_url")
@@ -112,6 +114,7 @@ def sync_lane_from_artifacts(registry: FleetRegistry, lane: HocaLane) -> HocaLan
     next_lane = replace(
         lane,
         status=next_status,  # type: ignore[arg-type]
+        started_at=started_at or lane.started_at,
         completed_at=completed_at or lane.completed_at,
         updated_at=completed_at or lane.updated_at,
         metadata=metadata,
