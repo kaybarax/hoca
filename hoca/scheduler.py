@@ -27,7 +27,7 @@ from hoca.fleet_contracts import (
 )
 from hoca.fleet_registry import FleetRegistry
 from hoca.resource_governor import ResourceGovernor
-from hoca.worktree_pool import generate_lane_branch, slugify
+from hoca.worktree_pool import WorktreeLeasePool, generate_lane_branch, slugify
 
 
 def _now_iso() -> str:
@@ -317,6 +317,17 @@ class FleetScheduler:
                 created_at=_now_iso(),
                 updated_at=_now_iso(),
             )
+            if self.start_adapters:
+                lease = WorktreeLeasePool(control_root=self.paths.root).create_lease(
+                    lane_id=lane_id,
+                    project_id=project.project_id,
+                    task_id=task.task_id,
+                    branch=branch,
+                    base_ref=project.default_branch,
+                    project_path=Path(repo),
+                    lease_id=lane_id,
+                )
+                lane = replace(lane, worktree_path=lease.worktree_path)
             self.registry.create_lane(lane)
             if self.start_adapters:
                 lane = self._start_lane_adapter(lane=lane, task=task, project=project)
