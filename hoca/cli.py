@@ -22,6 +22,7 @@ from hoca.fleet_registry import FleetRegistry
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
 from hoca.fleet_resources import write_resource_monitor_report
 from hoca.paths import repo_root
+from hoca.redaction import redact_public_evidence_lines
 from hoca.resource_governor import ResourceGovernor
 from hoca.run_state import read_optional_json
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
@@ -906,11 +907,18 @@ def _validation_summary_lines(registry: FleetRegistry) -> list[str]:
     default=False,
     help="Include validation PR/status/test/change summary details.",
 )
+@click.option(
+    "--redact-sensitive",
+    is_flag=True,
+    default=False,
+    help="Redact local paths, emails, and secret-like assignments from the report.",
+)
 def fleet_report(
     output: Path | None,
     include_resources: bool,
     resource_report: Path | None,
     validation_summary: bool,
+    redact_sensitive: bool,
 ) -> None:
     """Write a fleet status report."""
     registry = _registry()
@@ -942,6 +950,8 @@ def fleet_report(
     if validation_summary:
         lines.append("")
         lines.extend(_validation_summary_lines(registry))
+    if redact_sensitive:
+        lines = redact_public_evidence_lines(lines)
 
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     click.echo(f"Fleet report written: {target}")

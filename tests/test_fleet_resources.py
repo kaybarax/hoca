@@ -212,3 +212,38 @@ def test_fleet_report_can_include_validation_summary(tmp_path: Path) -> None:
     assert "changed_files=2" in content
     assert "tests=1" in content
     assert "HOCA Interventions:" in content
+
+
+def test_fleet_report_can_redact_sensitive_validation_summary(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    registry.update_lane(
+        "lane-1",
+        HocaLane(
+            **{
+                **lane.to_dict(),
+                "metadata": {"hoca_intervention": f"fixed in {tmp_path}/private"},
+            }
+        ),
+    )
+    output = tmp_path / "fleet-redacted.md"
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "fleet",
+            "report",
+            "--validation-summary",
+            "--redact-sensitive",
+            "--output",
+            str(output),
+        ],
+        env=env,
+    )
+
+    assert result.exit_code == 0
+    content = output.read_text(encoding="utf-8")
+    assert str(tmp_path) not in content
+    assert "<LOCAL_PATH>" in content
