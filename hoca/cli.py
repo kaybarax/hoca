@@ -17,6 +17,7 @@ from hoca.fleet_contracts import (
     HocaSchedulerDecision,
 )
 from hoca.fleet_registry import FleetRegistry
+from hoca.fleet_reconcile import sync_registry_from_run_artifacts
 from hoca.paths import repo_root
 from hoca.resource_governor import ResourceGovernor
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
@@ -393,7 +394,9 @@ def task_create(
 )
 def task_list(project_id: str | None, statuses: tuple[str, ...]) -> None:
     """List HOCA tasks."""
-    tasks = sorted(_registry().list_tasks(project_id=project_id), key=lambda task: task.task_id)
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    tasks = sorted(registry.list_tasks(project_id=project_id), key=lambda task: task.task_id)
     if statuses:
         tasks = [task for task in tasks if task.status in statuses]
 
@@ -541,6 +544,7 @@ def _decision_summary(decision: HocaSchedulerDecision) -> str:
 
 def _fleet_state_summary() -> list[str]:
     registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     projects = registry.list_projects()
     tasks = registry.list_tasks()
     lanes = registry.list_lanes()
@@ -736,6 +740,7 @@ def fleet_doctor() -> None:
 def fleet_report(output: Path | None) -> None:
     """Write a fleet status report."""
     registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     target = output or (registry.paths.root / "fleet-report.md")
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -917,8 +922,10 @@ def lane() -> None:
 )
 def lane_list(project_id: str | None, task_id: str | None, statuses: tuple[str, ...]) -> None:
     """List HOCA lanes."""
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     lanes = sorted(
-        _registry().list_lanes(task_id=task_id, project_id=project_id),
+        registry.list_lanes(task_id=task_id, project_id=project_id),
         key=lambda lane: lane.lane_id,
     )
     if statuses:

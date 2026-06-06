@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from hoca.cli import main
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
+from hoca.fleet_reconcile import sync_registry_from_run_artifacts
+from hoca.fleet_registry import FleetRegistry
+
+
+def _init_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "hoca@example.test"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "HOCA Test"], cwd=path, check=True, capture_output=True
+    )
+    (path / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
+
+
+def _seed_running_lane(tmp_path: Path) -> tuple[FleetRegistry, Path]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    registry = FleetRegistry(control_root=tmp_path / "control")
+    registry.create_project(
+        HocaProject(
+            project_id="project-1",
+            repo_path=str(repo),
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    registry.create_task(
+        HocaFleetTask(
+            task_id="task-1",
+            project_id="project-1",
+            status="running",
+            readiness="ready",
+            lane_ids=["lane-1"],
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    run_dir = repo / ".hoca-runtime" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    registry.create_lane(
+        HocaLane(
+            lane_id="lane-1",
+            task_id="task-1",
+            project_id="project-1",
+            status="running",
+            run_dir=str(run_dir),
+            branch="feat/task-1",
+            attempt_number=0,
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    return registry, run_dir
+
+
+def test_sync_registry_from_run_artifacts_marks_pr_created_lane_and_task(tmp_path: Path) -> None:
+    registry, run_dir = _seed_running_lane(tmp_path)
+    (run_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "status": "pr_created",
+                "final_state": "pr_opened",
+                "pr_url": "https://example.test/pull/1",
+                "ended_at": "2026-06-06T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    changed = sync_registry_from_run_artifacts(registry)
+
+    assert "lane:lane-1:pr_created" in changed
+    assert "task:task-1:completed" in changed
+    lane = registry.get_lane("lane-1")
+    task = registry.get_task("task-1")
+    assert lane is not None
+    assert lane.status == "pr_created"
+    assert lane.completed_at == "2026-06-06T00:00:00Z"
+    assert lane.metadata["pr_url"] == "https://example.test/pull/1"
+    assert task is not None
+    assert task.status == "completed"
+    assert task.readiness == "draft_ready"
+    assert task.metadata["pr_url"] == "https://example.test/pull/1"
+
+
+def test_lane_and_task_list_sync_before_display(tmp_path: Path) -> None:
+    _, run_dir = _seed_running_lane(tmp_path)
+    (run_dir / "final-state.json").write_text(
+        json.dumps(
+            {
+                "status": "pr_opened",
+                "pr_url": "https://example.test/pull/2",
+                "completed_at": "2026-06-06T00:01:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    lane_result = CliRunner().invoke(main, ["lane", "list"], env=env)
+    task_result = CliRunner().invoke(main, ["task", "list"], env=env)
+    fleet_result = CliRunner().invoke(main, ["fleet", "status"], env=env)
+
+    assert lane_result.exit_code == 0
+    assert "lane-1\ttask-1\tproject-1\tpr_created" in lane_result.output
+    assert task_result.exit_code == 0
+    assert "task-1\tproject-1\tcompleted\tdraft_ready" in task_result.output
+    assert fleet_result.exit_code == 0
+    assert "Ready PRs: 1" in fleet_result.output
