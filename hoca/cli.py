@@ -19,6 +19,7 @@ from hoca.fleet_contracts import (
 )
 from hoca.fleet_registry import FleetRegistry
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
+from hoca.fleet_resources import write_resource_monitor_report
 from hoca.paths import repo_root
 from hoca.resource_governor import ResourceGovernor
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
@@ -865,6 +866,40 @@ def fleet_cleanup(dry_run: bool) -> None:
             click.echo(f"Would remove task lane reference: {ref}")
         else:
             click.echo(f"Removed task lane reference: {ref}")
+
+
+@fleet.command("monitor")
+@click.option("--resources", is_flag=True, default=False, help="Collect fleet resource metrics.")
+@click.option("--interval", default=1.0, type=float, show_default=True, help="Seconds between samples.")
+@click.option("--samples", default=1, type=click.IntRange(min=1), show_default=True)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Resource report output path.",
+)
+def fleet_monitor(resources: bool, interval: float, samples: int, output: Path | None) -> None:
+    """Monitor fleet runtime state."""
+    if not resources:
+        raise click.ClickException("Pass --resources to collect resource metrics.")
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    target = output or (registry.paths.root / "fleet-resource-report.json")
+    report = write_resource_monitor_report(
+        registry,
+        output=target,
+        interval_seconds=interval,
+        samples=samples,
+    )
+    summary = report["summary"]
+    click.echo(f"Fleet resource report written: {target}")
+    click.echo(
+        "Resources: "
+        f"samples={summary['sample_count']} "
+        f"peak_cpu_pct={summary['peak_cpu_pct']} "
+        f"peak_rss_mb={summary['peak_rss_mb']} "
+        f"peak_process_count={summary['peak_process_count']}"
+    )
 
 
 @main.command()
