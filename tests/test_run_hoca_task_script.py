@@ -20,6 +20,14 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
     assert 'export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"' in content
 
 
+def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'if [ -n "${HOCA_LANE_ID:-}" ]; then' in content
+    assert 'RUN_ID="${RUN_ID}-${SAFE_LANE_ID}"' in content
+    assert 'RUN_ID="issue-${ISSUE_ID}"' in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

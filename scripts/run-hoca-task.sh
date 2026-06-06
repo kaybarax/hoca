@@ -275,11 +275,21 @@ fi
 
 mkdir -p .hoca-runtime/runs .hoca-runtime/logs
 
+safe_run_id_part() {
+  printf '%s' "$1" | tr -c '[:alnum:]_.-' '-' | sed 's/^-*//; s/-*$//' | cut -c1-80
+}
+
 if [ -n "$ISSUE_ID" ]; then
   RUN_ID="issue-${ISSUE_ID}"
   LOCK_FILE=".hoca-runtime/runs/issue-${ISSUE_ID}.lock"
 else
   RUN_ID="run-$(date -u +%Y%m%dT%H%M%SZ)"
+  if [ -n "${HOCA_LANE_ID:-}" ]; then
+    SAFE_LANE_ID="$(safe_run_id_part "$HOCA_LANE_ID")"
+    if [ -n "$SAFE_LANE_ID" ]; then
+      RUN_ID="${RUN_ID}-${SAFE_LANE_ID}"
+    fi
+  fi
   LOCK_FILE=".hoca-runtime/runs/${RUN_ID}.lock"
 fi
 
