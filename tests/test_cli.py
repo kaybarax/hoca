@@ -7,7 +7,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from hoca.cli import main
-from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaSchedulerDecision
 from hoca.fleet_registry import FleetRegistry
 from hoca.worktree_pool import WorktreeLeasePool
 
@@ -457,15 +457,154 @@ def test_fleet_status_report_and_cleanup_use_temp_control_root(tmp_path: Path) -
     dry_run_result = CliRunner().invoke(main, ["fleet", "cleanup", "--dry-run"], env=env)
     assert dry_run_result.exit_code == 0
     assert "Would remove cleaned lane: lane-task-6-01" in dry_run_result.output
+    assert "Would release lease: lane-task-6-01" in dry_run_result.output
+    assert "Would remove task lane reference: task-1:lane-task-6-01" in dry_run_result.output
 
     cleanup_result = CliRunner().invoke(main, ["fleet", "cleanup"], env=env)
     assert cleanup_result.exit_code == 0
     assert "Removed cleaned lane: lane-task-6-01" in cleanup_result.output
+    assert "Released lease: lane-task-6-01" in cleanup_result.output
+    assert "Removed task lane reference: task-1:lane-task-6-01" in cleanup_result.output
 
     registry = FleetRegistry(control_root=control_root)
     assert registry.get_lane("lane-task-6-01") is None
     assert lease_pool.get_lease("lane-task-6-01") is None
     assert not Path(lease.worktree_path).exists()
+
+
+def test_lane_rerun_releases_lease_requeues_task_and_relaunches(
+    tmp_path: Path, monkeypatch
+) -> None:
+    control_root, _ = _seed_lane_for_cli(
+        tmp_path, lane_id="lane-task-rerun-01", lane_status="blocked"
+    )
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+    lease_pool = WorktreeLeasePool(control_root=control_root)
+    lease = lease_pool.create_lease(
+        lane_id="lane-task-rerun-01",
+        project_id="project-1",
+        task_id="task-1",
+        branch="hoca/lane-task-rerun-01",
+        base_ref="main",
+        project_path=tmp_path / "repo",
+        lease_id="lane-task-rerun-01",
+    )
+
+    class FakeScheduler:
+        def __init__(self) -> None:
+            self.start_adapters = True
+
+        def tick(self):
+            return [
+                HocaSchedulerDecision(
+                    decision_id="decision-1",
+                    project_id="project-1",
+                    task_id="task-1",
+                    lane_id="lane-task-rerun-02",
+                    decision_type="launch",
+                    reason="allocated_lane",
+                )
+            ]
+
+    monkeypatch.setattr("hoca.cli._default_scheduler", lambda start_adapters: FakeScheduler())
+
+    result = CliRunner().invoke(main, ["lane", "rerun", "lane-task-rerun-01"], env=env)
+
+    assert result.exit_code == 0
+    assert "Rerun queued task: task-1" in result.output
+    assert "Removed lane: lane-task-rerun-01" in result.output
+    assert "Released lease: lane-task-rerun-01" in result.output
+    assert "launch\tproject-1\ttask-1\tlane-task-rerun-02\tallocated_lane" in result.output
+    registry = FleetRegistry(control_root=control_root)
+    task = registry.get_task("task-1")
+    assert task is not None
+    assert task.status == "queued"
+    assert task.readiness == "ready"
+    assert task.lane_ids == []
+    assert registry.get_lane("lane-task-rerun-01") is None
+    assert lease_pool.get_lease("lane-task-rerun-01") is None
+    assert not Path(lease.worktree_path).exists()
+
+
+def test_lane_rerun_refuses_successful_lane_without_force(tmp_path: Path) -> None:
+    control_root, _ = _seed_lane_for_cli(
+        tmp_path, lane_id="lane-task-success-01", lane_status="pr_created"
+    )
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    result = CliRunner().invoke(main, ["lane", "rerun", "lane-task-success-01"], env=env)
+
+    assert result.exit_code != 0
+    assert "pass --force to rerun it" in result.output
+
+
+def test_lane_rerun_preserves_successful_sibling_lane_and_branch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    control_root, _ = _seed_lane_for_cli(
+        tmp_path, lane_id="lane-task-failed-01", lane_status="blocked"
+    )
+    repo = tmp_path / "repo"
+    subprocess.run(
+        ["git", "branch", "hoca/successful-sibling"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    registry = FleetRegistry(control_root=control_root)
+    task = registry.get_task("task-1")
+    assert task is not None
+    registry.create_lane(
+        HocaLane(
+            lane_id="lane-task-success-02",
+            task_id="task-1",
+            project_id="project-1",
+            status="pr_created",
+            branch="hoca/successful-sibling",
+            run_dir=".hoca-runtime/runs/lane-task-success-02",
+            attempt_number=0,
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    registry.update_task(
+        "task-1",
+        HocaFleetTask(
+            **{
+                **task.to_dict(),
+                "status": "blocked",
+                "readiness": "blocked",
+                "lane_ids": ["lane-task-failed-01", "lane-task-success-02"],
+            }
+        ),
+    )
+
+    class FakeScheduler:
+        def tick(self):
+            return []
+
+    monkeypatch.setattr("hoca.cli._default_scheduler", lambda start_adapters: FakeScheduler())
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    result = CliRunner().invoke(main, ["lane", "rerun", "lane-task-failed-01"], env=env)
+
+    assert result.exit_code == 0
+    assert registry.get_lane("lane-task-failed-01") is None
+    sibling = registry.get_lane("lane-task-success-02")
+    assert sibling is not None
+    assert sibling.status == "pr_created"
+    assert sibling.branch == "hoca/successful-sibling"
+    updated_task = registry.get_task("task-1")
+    assert updated_task is not None
+    assert updated_task.lane_ids == ["lane-task-success-02"]
+    branch_check = subprocess.run(
+        ["git", "branch", "--list", "hoca/successful-sibling"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "hoca/successful-sibling" in branch_check.stdout
 
 
 def test_lane_send_helps_command() -> None:

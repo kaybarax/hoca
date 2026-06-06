@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import re
+import shutil
 import subprocess
 from pathlib import Path
 import time
+import json
 
 import click
 
@@ -17,8 +19,13 @@ from hoca.fleet_contracts import (
     HocaSchedulerDecision,
 )
 from hoca.fleet_registry import FleetRegistry
+from hoca.fleet_reconcile import sync_registry_from_run_artifacts
+from hoca.fleet_resources import write_resource_monitor_report
+from hoca.legacy_tools import scan_removed_tool_references
 from hoca.paths import repo_root
+from hoca.redaction import redact_public_evidence_lines
 from hoca.resource_governor import ResourceGovernor
+from hoca.run_state import read_optional_json
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
 from hoca.tmux_sessions import AdapterCommandError, _sanitize_session_name, send_to_session
 from hoca.worktree_pool import WorktreeLeasePool
@@ -393,7 +400,9 @@ def task_create(
 )
 def task_list(project_id: str | None, statuses: tuple[str, ...]) -> None:
     """List HOCA tasks."""
-    tasks = sorted(_registry().list_tasks(project_id=project_id), key=lambda task: task.task_id)
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    tasks = sorted(registry.list_tasks(project_id=project_id), key=lambda task: task.task_id)
     if statuses:
         tasks = [task for task in tasks if task.status in statuses]
 
@@ -541,6 +550,7 @@ def _decision_summary(decision: HocaSchedulerDecision) -> str:
 
 def _fleet_state_summary() -> list[str]:
     registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     projects = registry.list_projects()
     tasks = registry.list_tasks()
     lanes = registry.list_lanes()
@@ -631,17 +641,35 @@ def scheduler_status() -> None:
         click.echo(line)
 
 
-def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
+@dataclass(frozen=True)
+class FleetCleanupReport:
+    cleaned_lane_ids: list[str]
+    released_lease_ids: list[str]
+    task_refs_removed: list[str]
+
+
+def _cleanup_cleaned_lanes(*, dry_run: bool) -> FleetCleanupReport:
     registry = _registry()
     lanes_index = registry._load_index(registry.paths.lanes_json)
     cleaned_lane_ids = [
         lane_id for lane_id, payload in lanes_index.items() if payload.get("status") == "cleaned"
     ]
     if dry_run or not cleaned_lane_ids:
-        return cleaned_lane_ids
+        released_lease_ids = [
+            lease.lease_id
+            for lease in WorktreeLeasePool(control_root=registry.paths.root).list_leases()
+            if lease.lane_id in cleaned_lane_ids
+        ]
+        task_refs_removed = []
+        for task_id, payload in registry._load_index(registry.paths.tasks_json).items():
+            for lane_id in list(payload.get("lane_ids") or []):
+                if lane_id in cleaned_lane_ids:
+                    task_refs_removed.append(f"{task_id}:{lane_id}")
+        return FleetCleanupReport(cleaned_lane_ids, released_lease_ids, task_refs_removed)
 
     projects_index = registry._load_index(registry.paths.projects_json)
     lease_pool = WorktreeLeasePool(control_root=registry.paths.root)
+    released_lease_ids: list[str] = []
     for lease in lease_pool.list_leases():
         if lease.lane_id not in cleaned_lane_ids:
             continue
@@ -653,6 +681,7 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
             continue
         try:
             lease_pool.release_lease(lease.lease_id, project_path=Path(str(repo_path)), force=True)
+            released_lease_ids.append(lease.lease_id)
         except ValueError:
             continue
 
@@ -665,6 +694,7 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
 
     tasks_index = registry._load_index(registry.paths.tasks_json)
     tasks_changed = False
+    task_refs_removed: list[str] = []
     for task_id, payload in tasks_index.items():
         lane_ids = [
             lane_id
@@ -672,13 +702,54 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
             if lane_id not in cleaned_lane_ids
         ]
         if lane_ids != list(payload.get("lane_ids") or []):
+            for removed in set(payload.get("lane_ids") or []) - set(lane_ids):
+                task_refs_removed.append(f"{task_id}:{removed}")
             payload["lane_ids"] = lane_ids
             tasks_index[task_id] = payload
             tasks_changed = True
     if tasks_changed:
         registry._write_index(registry.paths.tasks_json, tasks_index)
 
-    return cleaned_lane_ids
+    return FleetCleanupReport(cleaned_lane_ids, released_lease_ids, task_refs_removed)
+
+
+def _remove_lane_record(registry: FleetRegistry, lane_id: str) -> None:
+    lanes_index = registry._load_index(registry.paths.lanes_json)
+    if lane_id in lanes_index:
+        del lanes_index[lane_id]
+        registry._write_index(registry.paths.lanes_json, lanes_index)
+
+    tasks_index = registry._load_index(registry.paths.tasks_json)
+    changed = False
+    for task_id, payload in tasks_index.items():
+        lane_ids = [item for item in list(payload.get("lane_ids") or []) if item != lane_id]
+        if lane_ids != list(payload.get("lane_ids") or []):
+            payload["lane_ids"] = lane_ids
+            tasks_index[task_id] = payload
+            changed = True
+    if changed:
+        registry._write_index(registry.paths.tasks_json, tasks_index)
+
+
+def _safe_runtime_path(path: Path, project_path: Path) -> bool:
+    try:
+        resolved = path.expanduser().resolve()
+        runtime_root = (project_path / ".hoca-runtime").resolve()
+    except OSError:
+        return False
+    return resolved == runtime_root or resolved.is_relative_to(runtime_root)
+
+
+def _remove_runtime_path(path: str | None, *, project_path: Path) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.is_absolute():
+        target = project_path / target
+    if not _safe_runtime_path(target, project_path):
+        raise click.ClickException(f"Refusing to remove non-runtime path: {target}")
+    shutil.rmtree(target, ignore_errors=True)
+    return str(target)
 
 
 @main.group()
@@ -726,6 +797,92 @@ def fleet_doctor() -> None:
     click.echo(f"Fleet doctor OK for {len(projects)} project(s).")
 
 
+@fleet.command("reconcile")
+def fleet_reconcile() -> None:
+    """Reconcile fleet registry state from run artifacts."""
+    changed = sync_registry_from_run_artifacts(_registry())
+    if not changed:
+        click.echo("Fleet registry already reconciled.")
+        return
+    for item in changed:
+        click.echo(f"Reconciled {item}")
+
+
+def _fleet_resource_summary_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return ["Resource Summary:", f"- Resource report missing: {path}"]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ["Resource Summary:", f"- Resource report is not valid JSON: {path}"]
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        return ["Resource Summary:", f"- Resource report has no summary: {path}"]
+    return [
+        "Resource Summary:",
+        f"- Samples: {summary.get('sample_count', 0)}",
+        f"- Peak CPU %: {summary.get('peak_cpu_pct', 0)}",
+        f"- Average CPU %: {summary.get('average_cpu_pct', 0)}",
+        f"- Peak RSS MB: {summary.get('peak_rss_mb', 0)}",
+        f"- Average RSS MB: {summary.get('average_rss_mb', 0)}",
+        f"- Peak process count: {summary.get('peak_process_count', 0)}",
+    ]
+
+
+def _resolved_lane_run_dir(registry: FleetRegistry, lane: HocaLane) -> Path | None:
+    if not lane.run_dir:
+        return None
+    raw = Path(lane.run_dir)
+    if raw.is_absolute():
+        return raw
+    project = registry.get_project(lane.project_id)
+    if project is None:
+        return None
+    return Path(project.repo_path) / raw
+
+
+def _duration_label(started_at: str | None, completed_at: str | None) -> str:
+    if started_at and completed_at:
+        return f"{started_at} -> {completed_at}"
+    return started_at or completed_at or "unknown"
+
+
+def _validation_summary_lines(registry: FleetRegistry) -> list[str]:
+    lines = ["Validation Summary:"]
+    for lane in sorted(registry.list_lanes(), key=lambda item: item.lane_id):
+        run_dir = _resolved_lane_run_dir(registry, lane)
+        status = read_optional_json(run_dir / "status.json") if run_dir else {}
+        final_state = read_optional_json(run_dir / "final-state.json") if run_dir else {}
+        status = status if isinstance(status, dict) else {}
+        final_state = final_state if isinstance(final_state, dict) else {}
+        pr_url = (
+            str(final_state.get("pr_url") or status.get("pr_url") or lane.metadata.get("pr_url"))
+            if lane.metadata
+            else str(final_state.get("pr_url") or status.get("pr_url") or "")
+        )
+        changed_files = final_state.get("changed_files")
+        changed_count = len(changed_files) if isinstance(changed_files, list) else 0
+        tests_run = final_state.get("tests_run")
+        tests_count = len(tests_run) if isinstance(tests_run, list) else 0
+        round_count = status.get("current_round") or final_state.get("current_round") or "unknown"
+        duration = _duration_label(lane.started_at, lane.completed_at)
+        lines.append(
+            "- "
+            f"{lane.lane_id}: task={lane.task_id}; status={lane.status}; "
+            f"pr={pr_url or 'none'}; rounds={round_count}; duration={duration}; "
+            f"changed_files={changed_count}; tests={tests_count}"
+        )
+    lines.append("HOCA Interventions:")
+    interventions: list[str] = []
+    for lane in registry.list_lanes():
+        metadata = lane.metadata or {}
+        value = metadata.get("hoca_intervention") or metadata.get("hoca_interventions")
+        if value:
+            interventions.append(f"- {lane.lane_id}: {value}")
+    lines.extend(interventions or ["- none recorded"])
+    return lines
+
+
 @fleet.command("report")
 @click.option(
     "--output",
@@ -733,9 +890,40 @@ def fleet_doctor() -> None:
     default=None,
     help="Optional report file path.",
 )
-def fleet_report(output: Path | None) -> None:
+@click.option(
+    "--include-resources",
+    is_flag=True,
+    default=False,
+    help="Include a fleet resource summary when a resource report is available.",
+)
+@click.option(
+    "--resource-report",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Resource report JSON to summarize.",
+)
+@click.option(
+    "--validation-summary",
+    is_flag=True,
+    default=False,
+    help="Include validation PR/status/test/change summary details.",
+)
+@click.option(
+    "--redact-sensitive",
+    is_flag=True,
+    default=False,
+    help="Redact local paths, emails, and secret-like assignments from the report.",
+)
+def fleet_report(
+    output: Path | None,
+    include_resources: bool,
+    resource_report: Path | None,
+    validation_summary: bool,
+    redact_sensitive: bool,
+) -> None:
     """Write a fleet status report."""
     registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     target = output or (registry.paths.root / "fleet-report.md")
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -753,6 +941,18 @@ def fleet_report(output: Path | None) -> None:
     lines.append("Lanes:")
     for lane in sorted(registry.list_lanes(), key=lambda item: item.lane_id):
         lines.append(f"- {lane.lane_id} [{lane.status}] ({lane.project_id}/{lane.task_id})")
+    if include_resources:
+        lines.append("")
+        lines.extend(
+            _fleet_resource_summary_lines(
+                resource_report or (registry.paths.root / "fleet-resource-report.json")
+            )
+        )
+    if validation_summary:
+        lines.append("")
+        lines.extend(_validation_summary_lines(registry))
+    if redact_sensitive:
+        lines = redact_public_evidence_lines(lines)
 
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     click.echo(f"Fleet report written: {target}")
@@ -767,16 +967,80 @@ def fleet_report(output: Path | None) -> None:
 )
 def fleet_cleanup(dry_run: bool) -> None:
     """Remove cleaned lanes from the registry."""
-    cleaned_lane_ids = _cleanup_cleaned_lanes(dry_run=dry_run)
-    if not cleaned_lane_ids:
+    report = _cleanup_cleaned_lanes(dry_run=dry_run)
+    if not report.cleaned_lane_ids:
         click.echo("No cleaned lanes found.")
         return
 
-    for lane_id in cleaned_lane_ids:
+    for lane_id in report.cleaned_lane_ids:
         if dry_run:
             click.echo(f"Would remove cleaned lane: {lane_id}")
         else:
             click.echo(f"Removed cleaned lane: {lane_id}")
+    for lease_id in report.released_lease_ids:
+        if dry_run:
+            click.echo(f"Would release lease: {lease_id}")
+        else:
+            click.echo(f"Released lease: {lease_id}")
+    for ref in report.task_refs_removed:
+        if dry_run:
+            click.echo(f"Would remove task lane reference: {ref}")
+        else:
+            click.echo(f"Removed task lane reference: {ref}")
+
+
+@fleet.command("monitor")
+@click.option("--resources", is_flag=True, default=False, help="Collect fleet resource metrics.")
+@click.option("--interval", default=1.0, type=float, show_default=True, help="Seconds between samples.")
+@click.option("--samples", default=1, type=click.IntRange(min=1), show_default=True)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Resource report output path.",
+)
+def fleet_monitor(resources: bool, interval: float, samples: int, output: Path | None) -> None:
+    """Monitor fleet runtime state."""
+    if not resources:
+        raise click.ClickException("Pass --resources to collect resource metrics.")
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    target = output or (registry.paths.root / "fleet-resource-report.json")
+    report = write_resource_monitor_report(
+        registry,
+        output=target,
+        interval_seconds=interval,
+        samples=samples,
+    )
+    summary = report["summary"]
+    click.echo(f"Fleet resource report written: {target}")
+    click.echo(
+        "Resources: "
+        f"samples={summary['sample_count']} "
+        f"peak_cpu_pct={summary['peak_cpu_pct']} "
+        f"peak_rss_mb={summary['peak_rss_mb']} "
+        f"peak_process_count={summary['peak_process_count']}"
+    )
+
+
+@fleet.command("legacy-check")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Repository root to scan. Defaults to the HOCA repository.",
+)
+def fleet_legacy_check(root: Path | None) -> None:
+    """Fail when removed legacy tool references are present."""
+    scan_root = (root or repo_root()).resolve()
+    findings = scan_removed_tool_references(scan_root)
+    if findings:
+        for finding in findings:
+            click.echo(f"{finding.path}:{finding.line_number}: removed tool reference")
+        raise click.ClickException(
+            f"Legacy removed-tool check found {len(findings)} finding(s)."
+        )
+    click.echo("Legacy removed-tool check passed.")
 
 
 @main.command()
@@ -917,8 +1181,10 @@ def lane() -> None:
 )
 def lane_list(project_id: str | None, task_id: str | None, statuses: tuple[str, ...]) -> None:
     """List HOCA lanes."""
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
     lanes = sorted(
-        _registry().list_lanes(task_id=task_id, project_id=project_id),
+        registry.list_lanes(task_id=task_id, project_id=project_id),
         key=lambda lane: lane.lane_id,
     )
     if statuses:
@@ -1005,6 +1271,85 @@ def lane_stop(lane_id: str) -> None:
     """Mark a HOCA lane as cleaned."""
     _update_lane_status(lane_id, status="cleaned")
     click.echo(f"Lane stopped: {lane_id}")
+
+
+@lane.command("rerun")
+@click.argument("lane_id")
+@click.option(
+    "--clean-artifacts",
+    is_flag=True,
+    default=False,
+    help="Remove the failed lane run/worktree artifacts when they are under .hoca-runtime.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Allow rerunning a lane that already reached a PR/ready state.",
+)
+@click.option(
+    "--start-adapters/--no-start-adapters",
+    default=True,
+    show_default=True,
+    help="Start the relaunched lane adapter immediately.",
+)
+def lane_rerun(lane_id: str, clean_artifacts: bool, force: bool, start_adapters: bool) -> None:
+    """Stop one lane, requeue its task, and relaunch it through the scheduler."""
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    lane_record = registry.get_lane(lane_id)
+    if lane_record is None:
+        raise click.ClickException(f"Lane not found: {lane_id}")
+    if lane_record.status in {"pr_created", "ready_for_human"} and not force:
+        raise click.ClickException(
+            f"Lane already reached {lane_record.status}; pass --force to rerun it."
+        )
+    task_record = registry.get_task(lane_record.task_id)
+    if task_record is None:
+        raise click.ClickException(f"Task not found: {lane_record.task_id}")
+    project = registry.get_project(lane_record.project_id)
+    if project is None:
+        raise click.ClickException(f"Project not found: {lane_record.project_id}")
+
+    project_path = Path(project.repo_path)
+    released_leases: list[str] = []
+    lease_pool = WorktreeLeasePool(control_root=registry.paths.root)
+    for lease in lease_pool.list_leases():
+        if lease.lane_id != lane_id:
+            continue
+        lease_pool.release_lease(lease.lease_id, project_path=project_path, force=True)
+        released_leases.append(lease.lease_id)
+
+    removed_paths: list[str] = []
+    if clean_artifacts:
+        for path in (lane_record.run_dir, lane_record.worktree_path):
+            removed = _remove_runtime_path(path, project_path=project_path)
+            if removed is not None:
+                removed_paths.append(removed)
+
+    _remove_lane_record(registry, lane_id)
+    next_task = replace(
+        task_record,
+        status="queued",
+        readiness="ready",
+        lane_ids=[item for item in list(task_record.lane_ids or []) if item != lane_id],
+        completed_at=None,
+        updated_at=_utc_now(),
+    )
+    registry.update_task(task_record.task_id, next_task)
+
+    decisions = _default_scheduler(start_adapters=start_adapters).tick()
+    click.echo(f"Rerun queued task: {task_record.task_id}")
+    click.echo(f"Removed lane: {lane_id}")
+    for lease_id in released_leases:
+        click.echo(f"Released lease: {lease_id}")
+    for path in removed_paths:
+        click.echo(f"Removed artifact path: {path}")
+    if decisions:
+        for decision in decisions:
+            click.echo(_decision_summary(decision))
+    else:
+        click.echo("No scheduler decisions.")
 
 
 @lane.command("send")
