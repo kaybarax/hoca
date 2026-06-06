@@ -1,9 +1,0 @@
-- name: ollama_chat/qwen-32b-pro
-  extra_params:
-    num_ctx: 32768
-- name: ollama_chat/qwen-14b-pro
-  extra_params:
-    num_ctx: 16384
-- name: ollama_chat/qwen-7b-pro
-  extra_params:
-    num_ctx: 8192
