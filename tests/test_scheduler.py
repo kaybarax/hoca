@@ -95,6 +95,7 @@ def test_scheduler_can_start_one_lane_with_openhands_adapter(
 set -euo pipefail
 PROJECT_PATH=""
 TASK=""
+WORKTREE_PATH=""
 LANE_ID=""
 TASK_ID=""
 PROJECT_ID=""
@@ -102,6 +103,7 @@ RUN_DIR=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --project-path) PROJECT_PATH="$2"; shift 2 ;;
+    --worktree-path) WORKTREE_PATH="$2"; shift 2 ;;
     --task) TASK="$2"; shift 2 ;;
     --lane-id) LANE_ID="$2"; shift 2 ;;
     --task-id) TASK_ID="$2"; shift 2 ;;
@@ -112,7 +114,7 @@ while [ "$#" -gt 0 ]; do
 done
 mkdir -p "$RUN_DIR"
 printf '{"status":"completed","lane_id":"%s","task_id":"%s","project_id":"%s"}\\n' "$LANE_ID" "$TASK_ID" "$PROJECT_ID" > "$RUN_DIR/status.json"
-printf 'project=%s task=%s lane=%s\\n' "$PROJECT_PATH" "$TASK" "$LANE_ID"
+printf 'project=%s worktree=%s task=%s lane=%s\\n' "$PROJECT_PATH" "$WORKTREE_PATH" "$TASK" "$LANE_ID"
 printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
 """,
     )
@@ -143,6 +145,8 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     assert lane.status == "running"
     assert lane.adapter_id == "openhands-hermes"
     assert lane.session_id
+    assert lane.worktree_path
+    assert Path(lane.worktree_path).is_dir()
     run_dir = Path(lane.run_dir)
     assert run_dir.is_absolute()
     stdout = run_dir / "adapter-stdout.log"
@@ -153,6 +157,7 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     assert stdout.is_file()
     output = stdout.read_text(encoding="utf-8")
     assert f"lane={lane.lane_id}" in output
+    assert f"worktree={lane.worktree_path}" in output
     assert "github=manager-token" not in output
     assert "gh=manager-gh-token" not in output
     session = read_session(tmp_path / "control", lane.session_id)

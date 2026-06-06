@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -106,7 +107,7 @@ def _placeholder_sample(name: str) -> str:
 
 
 def fake_session_id() -> str:
-    return f"lane-session-{_now()}"
+    return f"lane-session-{_now()}-{uuid.uuid4().hex[:8]}"
 
 
 def redact_env_for_session(env: dict[str, str]) -> dict[str, str]:
@@ -290,6 +291,7 @@ def default_openhands_adapter_spec(
         provider="openhands",
         command_template=(
             f"{shlex.quote(script)} --project-path {{project_path}} --task {{task}} "
+            "--worktree-path {worktree_path} "
             "--lane-id {lane_id} --task-id {task_id} --project-id {project_id} "
             "--run-dir {run_dir}"
         ),
