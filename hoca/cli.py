@@ -21,6 +21,7 @@ from hoca.fleet_contracts import (
 from hoca.fleet_registry import FleetRegistry
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
 from hoca.fleet_resources import write_resource_monitor_report
+from hoca.legacy_tools import scan_removed_tool_references
 from hoca.paths import repo_root
 from hoca.redaction import redact_public_evidence_lines
 from hoca.resource_governor import ResourceGovernor
@@ -1020,6 +1021,26 @@ def fleet_monitor(resources: bool, interval: float, samples: int, output: Path |
         f"peak_rss_mb={summary['peak_rss_mb']} "
         f"peak_process_count={summary['peak_process_count']}"
     )
+
+
+@fleet.command("legacy-check")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Repository root to scan. Defaults to the HOCA repository.",
+)
+def fleet_legacy_check(root: Path | None) -> None:
+    """Fail when removed legacy tool references are present."""
+    scan_root = (root or repo_root()).resolve()
+    findings = scan_removed_tool_references(scan_root)
+    if findings:
+        for finding in findings:
+            click.echo(f"{finding.path}:{finding.line_number}: removed tool reference")
+        raise click.ClickException(
+            f"Legacy removed-tool check found {len(findings)} finding(s)."
+        )
+    click.echo("Legacy removed-tool check passed.")
 
 
 @main.command()
