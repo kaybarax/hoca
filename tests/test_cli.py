@@ -457,10 +457,14 @@ def test_fleet_status_report_and_cleanup_use_temp_control_root(tmp_path: Path) -
     dry_run_result = CliRunner().invoke(main, ["fleet", "cleanup", "--dry-run"], env=env)
     assert dry_run_result.exit_code == 0
     assert "Would remove cleaned lane: lane-task-6-01" in dry_run_result.output
+    assert "Would release lease: lane-task-6-01" in dry_run_result.output
+    assert "Would remove task lane reference: task-1:lane-task-6-01" in dry_run_result.output
 
     cleanup_result = CliRunner().invoke(main, ["fleet", "cleanup"], env=env)
     assert cleanup_result.exit_code == 0
     assert "Removed cleaned lane: lane-task-6-01" in cleanup_result.output
+    assert "Released lease: lane-task-6-01" in cleanup_result.output
+    assert "Removed task lane reference: task-1:lane-task-6-01" in cleanup_result.output
 
     registry = FleetRegistry(control_root=control_root)
     assert registry.get_lane("lane-task-6-01") is None

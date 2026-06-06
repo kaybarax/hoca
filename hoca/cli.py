@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import re
 import shutil
 import subprocess
@@ -636,17 +636,35 @@ def scheduler_status() -> None:
         click.echo(line)
 
 
-def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
+@dataclass(frozen=True)
+class FleetCleanupReport:
+    cleaned_lane_ids: list[str]
+    released_lease_ids: list[str]
+    task_refs_removed: list[str]
+
+
+def _cleanup_cleaned_lanes(*, dry_run: bool) -> FleetCleanupReport:
     registry = _registry()
     lanes_index = registry._load_index(registry.paths.lanes_json)
     cleaned_lane_ids = [
         lane_id for lane_id, payload in lanes_index.items() if payload.get("status") == "cleaned"
     ]
     if dry_run or not cleaned_lane_ids:
-        return cleaned_lane_ids
+        released_lease_ids = [
+            lease.lease_id
+            for lease in WorktreeLeasePool(control_root=registry.paths.root).list_leases()
+            if lease.lane_id in cleaned_lane_ids
+        ]
+        task_refs_removed = []
+        for task_id, payload in registry._load_index(registry.paths.tasks_json).items():
+            for lane_id in list(payload.get("lane_ids") or []):
+                if lane_id in cleaned_lane_ids:
+                    task_refs_removed.append(f"{task_id}:{lane_id}")
+        return FleetCleanupReport(cleaned_lane_ids, released_lease_ids, task_refs_removed)
 
     projects_index = registry._load_index(registry.paths.projects_json)
     lease_pool = WorktreeLeasePool(control_root=registry.paths.root)
+    released_lease_ids: list[str] = []
     for lease in lease_pool.list_leases():
         if lease.lane_id not in cleaned_lane_ids:
             continue
@@ -658,6 +676,7 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
             continue
         try:
             lease_pool.release_lease(lease.lease_id, project_path=Path(str(repo_path)), force=True)
+            released_lease_ids.append(lease.lease_id)
         except ValueError:
             continue
 
@@ -670,6 +689,7 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
 
     tasks_index = registry._load_index(registry.paths.tasks_json)
     tasks_changed = False
+    task_refs_removed: list[str] = []
     for task_id, payload in tasks_index.items():
         lane_ids = [
             lane_id
@@ -677,13 +697,15 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
             if lane_id not in cleaned_lane_ids
         ]
         if lane_ids != list(payload.get("lane_ids") or []):
+            for removed in set(payload.get("lane_ids") or []) - set(lane_ids):
+                task_refs_removed.append(f"{task_id}:{removed}")
             payload["lane_ids"] = lane_ids
             tasks_index[task_id] = payload
             tasks_changed = True
     if tasks_changed:
         registry._write_index(registry.paths.tasks_json, tasks_index)
 
-    return cleaned_lane_ids
+    return FleetCleanupReport(cleaned_lane_ids, released_lease_ids, task_refs_removed)
 
 
 def _remove_lane_record(registry: FleetRegistry, lane_id: str) -> None:
@@ -823,16 +845,26 @@ def fleet_report(output: Path | None) -> None:
 )
 def fleet_cleanup(dry_run: bool) -> None:
     """Remove cleaned lanes from the registry."""
-    cleaned_lane_ids = _cleanup_cleaned_lanes(dry_run=dry_run)
-    if not cleaned_lane_ids:
+    report = _cleanup_cleaned_lanes(dry_run=dry_run)
+    if not report.cleaned_lane_ids:
         click.echo("No cleaned lanes found.")
         return
 
-    for lane_id in cleaned_lane_ids:
+    for lane_id in report.cleaned_lane_ids:
         if dry_run:
             click.echo(f"Would remove cleaned lane: {lane_id}")
         else:
             click.echo(f"Removed cleaned lane: {lane_id}")
+    for lease_id in report.released_lease_ids:
+        if dry_run:
+            click.echo(f"Would release lease: {lease_id}")
+        else:
+            click.echo(f"Released lease: {lease_id}")
+    for ref in report.task_refs_removed:
+        if dry_run:
+            click.echo(f"Would remove task lane reference: {ref}")
+        else:
+            click.echo(f"Removed task lane reference: {ref}")
 
 
 @main.command()
