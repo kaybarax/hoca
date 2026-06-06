@@ -527,6 +527,9 @@ class HocaValidationReport(JsonContract):
     scope_risk: bool
     staging_risk: bool
     artifact_paths: dict[str, str]
+    failed_command: str | None = None
+    exit_code: int | None = None
+    summary: str | None = None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "run_id",
@@ -558,6 +561,13 @@ class HocaValidationReport(JsonContract):
             test_failure_type=None
             if data["test_failure_type"] is None
             else _single_line_string(data["test_failure_type"], "test_failure_type"),
+            failed_command=None
+            if data.get("failed_command") is None
+            else _single_line_string(data["failed_command"], "failed_command"),
+            exit_code=None if data.get("exit_code") is None else int(data["exit_code"]),
+            summary=None
+            if data.get("summary") is None
+            else _single_line_string(data["summary"], "summary"),
             git_status=_single_line_string_list(data, "git_status"),
             changed_files=_single_line_string_list(data, "changed_files"),
             secret_scan_clean=bool(_required(data, "secret_scan_clean")),
