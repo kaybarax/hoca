@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -99,6 +100,19 @@ def test_write_json_atomic_writes_readable_json(tmp_path: Path) -> None:
     assert path.is_file()
     assert not (tmp_path / "atomic.json.tmp").exists()
     assert read_json(path)["status"] == "running"
+
+
+def test_write_json_atomic_allows_concurrent_writers(tmp_path: Path) -> None:
+    path = tmp_path / "atomic.json"
+
+    def write(index: int) -> None:
+        write_json_atomic(path, {"index": index})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(write, range(20)))
+
+    assert "index" in read_json(path)
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_read_optional_json_missing_file(tmp_path: Path) -> None:

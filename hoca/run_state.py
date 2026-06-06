@@ -6,6 +6,7 @@ import os
 import re
 import signal
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -119,7 +120,7 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     write_json(temp_path, data)
     temp_path.replace(path)
 
