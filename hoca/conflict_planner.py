@@ -70,6 +70,8 @@ class ConflictDecision:
     reason: str
     overlap_paths: tuple[str, ...] = ()
     override_reason: str | None = None
+    release_risk: str = ""
+    escalation_reason: str = ""
 
 
 def _from_metadata(task: HocaFleetTask, field: str, *, as_set: bool = False) -> list[str] | bool:
@@ -151,6 +153,23 @@ def _is_serialization_file(path: str) -> bool:
     )
 
 
+def _release_risk_for_serialization_file(path: str) -> tuple[str, str]:
+    normalized = _normalise_area(path)
+    if normalized in HOCALowRiskSerialFiles:
+        return ("high", "dependency_manifest_or_lockfile")
+    if normalized.startswith(tuple(HIGH_CONFLICT_PREFIXES)):
+        return ("high", "shared_contract_or_generated_surface")
+    return ("", "")
+
+
+def release_risk_for_profile(profile: LaneConflictProfile) -> tuple[str, str]:
+    for path in profile.all_files:
+        release_risk, escalation_reason = _release_risk_for_serialization_file(path)
+        if release_risk:
+            return (release_risk, escalation_reason)
+    return ("", "")
+
+
 def _is_high_conflict_due_to_manifests(profile: LaneConflictProfile) -> bool:
     return any(_is_serialization_file(path) for path in profile.all_files)
 
@@ -163,11 +182,26 @@ def lanes_conflict(
 ) -> ConflictDecision:
     overlap, paths = detect_path_overlaps(left, right)
     if _is_high_conflict_due_to_manifests(left) or _is_high_conflict_due_to_manifests(right):
+        release_risk, escalation_reason = release_risk_for_profile(left)
+        if not release_risk:
+            release_risk, escalation_reason = release_risk_for_profile(right)
         if left.task_id == right.task_id:
             return ConflictDecision(True, "same-task")
         if override is not None:
-            return ConflictDecision(True, "allowed_by_override", override_reason=override)
-        return ConflictDecision(False, "package_lock_or_manifest_file_in_use", paths)
+            return ConflictDecision(
+                True,
+                "allowed_by_override",
+                override_reason=override,
+                release_risk=release_risk,
+                escalation_reason=escalation_reason,
+            )
+        return ConflictDecision(
+            False,
+            "package_lock_or_manifest_file_in_use",
+            paths,
+            release_risk=release_risk,
+            escalation_reason=escalation_reason,
+        )
 
     if overlap:
         if override is not None:

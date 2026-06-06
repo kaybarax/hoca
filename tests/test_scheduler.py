@@ -342,6 +342,62 @@ def test_scheduler_respects_conflicts_and_is_deterministic(tmp_path: Path) -> No
     }
 
 
+def test_scheduler_records_release_risk_for_high_conflict_files(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    registry.update_project(
+        "project-a",
+        HocaProject(
+            project_id="project-a",
+            repo_path=str(tmp_path / "repo"),
+            default_branch="main",
+            max_parallel_tasks=2,
+        ),
+    )
+    registry.update_task(
+        "task-a",
+        HocaFleetTask(
+            task_id="task-a",
+            project_id="project-a",
+            status="queued",
+            readiness="not_ready",
+            metadata={"owned_files": ["package-lock.json"]},
+            priority=1,
+        ),
+    )
+    registry.update_task(
+        "task-b",
+        HocaFleetTask(
+            task_id="task-b",
+            project_id="project-a",
+            status="queued",
+            readiness="not_ready",
+            metadata={"owned_files": ["docs/README.md"]},
+            priority=1,
+        ),
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=2,
+        max_parallel_lanes=2,
+        max_agents=10,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    scheduler = FleetScheduler(
+        registry=registry,
+        governor=ResourceGovernor(budget=budget),
+        control_root=tmp_path / "control",
+    )
+
+    decisions = scheduler.tick()
+
+    conflict = next(item for item in decisions if item.decision_type == "wait_conflict")
+    assert "package_lock_or_manifest_file_in_use" in conflict.reason
+    assert "release_risk=high" in conflict.reason
+    assert "human_escalation=dependency_manifest_or_lockfile" in conflict.reason
+
+
 def test_scheduler_process_loop_lock(tmp_path: Path) -> None:
     registry = _registry_with_project_and_tasks(tmp_path)
     budget = HocaResourceBudget(

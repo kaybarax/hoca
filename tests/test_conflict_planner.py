@@ -62,6 +62,18 @@ def test_high_conflict_serialization_file() -> None:
     conflicts = detect_task_conflicts(left, [left, right])
     assert conflicts
     assert conflicts[0].reason == "package_lock_or_manifest_file_in_use"
+    assert conflicts[0].release_risk == "high"
+    assert conflicts[0].escalation_reason == "dependency_manifest_or_lockfile"
+
+
+def test_high_conflict_shared_contract_records_release_risk() -> None:
+    left = conflict_profile_from_task(_task("a", {"owned_files": ["api/openapi.yaml"]}))
+    right = conflict_profile_from_task(_task("b", {"owned_files": ["README.md"]}))
+    conflicts = detect_task_conflicts(left, [left, right])
+    assert conflicts
+    assert conflicts[0].reason == "package_lock_or_manifest_file_in_use"
+    assert conflicts[0].release_risk == "high"
+    assert conflicts[0].escalation_reason == "shared_contract_or_generated_surface"
 
 
 def test_conflict_override_records_reason() -> None:
