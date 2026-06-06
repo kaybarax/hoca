@@ -983,6 +983,33 @@ def test_run_hoca_task_applies_worktree_changes_after_review(tmp_path: Path) -> 
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_applies_new_file_only_worktree_changes(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=("mkdir -p docs\nprintf 'new spec\\n' > docs/new-spec.md\n"),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_USE_WORKTREE_SANDBOX"] = "true"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    result = run_hoca_task_with_env(tmp_path, "Add docs/new-spec.md with setup notes", env)
+
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=tmp_path,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert "No valid patches in input" not in result.stderr
+    assert branch == "feat/add-docs-new-spec-md-with-setup-notes"
+    assert (tmp_path / "docs/new-spec.md").read_text(encoding="utf-8") == "new spec\n"
+    assert '"status": "needs_human_staging"' in latest_status(tmp_path)
+
+
 def test_run_hoca_task_stops_before_tests_and_review_when_openhands_makes_no_changes(
     tmp_path: Path,
 ) -> None:

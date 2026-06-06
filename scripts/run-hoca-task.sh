@@ -881,8 +881,10 @@ if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WOR
   fi
   remove_disposable_worktree
   git -C "$PROJECT_PATH" checkout "$BRANCH"
-  git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
-  git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
+  if [ -s "$RUN_DIR/git-diff.patch" ]; then
+    git -C "$PROJECT_PATH" apply --stat "$RUN_DIR/git-diff.patch"
+    git -C "$PROJECT_PATH" apply "$RUN_DIR/git-diff.patch"
+  fi
   if [ -s "$UNTRACKED_WORKTREE_TAR" ]; then
     tar -C "$PROJECT_PATH" -xf "$UNTRACKED_WORKTREE_TAR"
   fi
