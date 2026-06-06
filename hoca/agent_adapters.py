@@ -447,6 +447,7 @@ class AgentAdapter:
                 stderr=err_f,
                 stdin=subprocess.PIPE,
                 text=True,
+                start_new_session=True,
             )
 
         session_metadata = {

@@ -245,6 +245,11 @@ def test_default_openhands_adapter_has_expected_template() -> None:
     assert "{task_id or ''}" not in spec.command_template
 
 
+def test_adapter_processes_start_in_new_session() -> None:
+    source = Path(__file__).resolve().parents[1] / "hoca" / "agent_adapters.py"
+    assert "start_new_session=True" in source.read_text(encoding="utf-8")
+
+
 def test_send_with_stdin_pipe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
