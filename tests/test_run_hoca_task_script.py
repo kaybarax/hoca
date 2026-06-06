@@ -1066,6 +1066,38 @@ def test_run_hoca_task_fails_when_worker_reports_changes_but_git_is_clean(
     assert '"reason": "worker_report_mismatch"' in latest_status(tmp_path)
 
 
+def test_run_hoca_task_restores_worker_commits_to_manager_worktree(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            "printf 'agent edit\\n' > README.md\n"
+            "git config user.email worker@example.test\n"
+            "git config user.name 'Worker Agent'\n"
+            "git add README.md\n"
+            "git commit -m 'worker commit'\n"
+        ),
+        worker_changed_files_json='["README.md"]',
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    run_dir = latest_run_dir(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "restoring them to unstaged worktree changes" in result.stdout
+    assert (run_dir / "worker-created-commits.txt").is_file()
+    assert "README.md" in (run_dir / "changed-files-after-openhands.txt").read_text(
+        encoding="utf-8"
+    )
+    assert '"reason": "worker_report_mismatch"' not in latest_status(tmp_path)
+    assert '"status": "pr_created"' in latest_status(tmp_path)
+
+
 def test_run_hoca_task_distinguishes_review_failure_from_rejection(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(

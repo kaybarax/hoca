@@ -757,6 +757,19 @@ run_openhands_phase "implementation" "$WORKER_ROUND"
 # shellcheck source=lib/hoca-security.sh
 source "$SCRIPT_DIR/lib/hoca-security.sh"
 
+restore_worker_commits_to_worktree() {
+  local ahead_count
+  ahead_count="$(worker_git rev-list --count "${TASK_BASE_REF}..HEAD" 2>/dev/null || printf '0\n')"
+  if [ "${ahead_count:-0}" -le 0 ]; then
+    return 0
+  fi
+
+  local commit_log_path="$RUN_DIR/worker-created-commits.txt"
+  worker_git log --oneline --decorate --no-abbrev-commit "${TASK_BASE_REF}..HEAD" > "$commit_log_path"
+  echo "Worker created $ahead_count Git commit(s); restoring them to unstaged worktree changes for manager-owned Git lifecycle."
+  worker_git reset --mixed "$TASK_BASE_REF"
+}
+
 check_openhands_changed_files() {
   changed_files_for_task > "$RUN_DIR/changed-files-after-openhands.txt"
   while IFS= read -r changed_path || [ -n "$changed_path" ]; do
@@ -768,6 +781,7 @@ check_openhands_changed_files() {
   done < "$RUN_DIR/changed-files-after-openhands.txt"
 }
 
+restore_worker_commits_to_worktree
 check_openhands_changed_files
 
 current_round=1
