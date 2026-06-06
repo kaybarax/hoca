@@ -9,7 +9,7 @@ import pytest
 
 from hoca.agent_adapters import default_openhands_adapter_spec
 from hoca.agent_sessions import read_session
-from hoca.fleet_contracts import HocaFleetTask, HocaProject, HocaResourceBudget
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget
 from hoca.fleet_registry import FleetRegistry
 from hoca.resource_governor import ResourceGovernor
 from hoca.scheduler import FleetScheduler, run_scheduler_loop, _resolve_lock_path
@@ -201,6 +201,64 @@ def test_scheduler_no_work_is_noop(tmp_path: Path) -> None:
     decisions = scheduler.tick()
     assert decisions == []
     assert "task-a" not in [item.task_id for item in registry.list_lanes()]
+
+
+def test_scheduler_restart_does_not_duplicate_active_lane(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    registry.update_project(
+        "project-a",
+        HocaProject(
+            project_id="project-a",
+            repo_path=str(tmp_path / "repo"),
+            default_branch="main",
+            max_parallel_tasks=4,
+        ),
+    )
+    registry.update_task(
+        "task-a",
+        HocaFleetTask(
+            task_id="task-a",
+            project_id="project-a",
+            status="queued",
+            readiness="not_ready",
+            priority=1,
+        ),
+    )
+    registry.create_lane(
+        HocaLane(
+            lane_id="task-a-lane-01",
+            task_id="task-a",
+            project_id="project-a",
+            status="running",
+            branch="hoca/task-a-lane-01",
+            run_dir="lane/task-a-lane-01",
+        )
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=4,
+        max_parallel_lanes=4,
+        max_agents=4,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    scheduler = FleetScheduler(
+        registry=registry,
+        governor=ResourceGovernor(budget=budget),
+        control_root=tmp_path / "control",
+    )
+
+    decisions = scheduler.tick()
+
+    assert [lane.lane_id for lane in registry.list_lanes(task_id="task-a")] == ["task-a-lane-01"]
+    assert registry.get_task("task-a").status == "running"
+    assert any(
+        decision.task_id == "task-a"
+        and decision.decision_type == "wait_dependency"
+        and decision.reason == "active_lane_exists"
+        for decision in decisions
+    )
 
 
 def test_scheduler_non_overlapping_tasks_can_run_together_when_capacity_allows(
