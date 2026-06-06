@@ -1,6 +1,6 @@
 [project]
 name = "hoca"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local-first autonomous engineering workflow using Hermes, OpenHands, multi-provider LLMs, and GitHub CLI."
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
