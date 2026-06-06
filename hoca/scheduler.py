@@ -262,6 +262,24 @@ class FleetScheduler:
                 reasons = sorted(
                     {decision.reason for decision in conflicts if not decision.can_launch}
                 )
+                release_risks = sorted(
+                    {
+                        decision.release_risk
+                        for decision in conflicts
+                        if not decision.can_launch and decision.release_risk
+                    }
+                )
+                escalation_reasons = sorted(
+                    {
+                        decision.escalation_reason
+                        for decision in conflicts
+                        if not decision.can_launch and decision.escalation_reason
+                    }
+                )
+                if release_risks:
+                    reasons.append(f"release_risk={','.join(release_risks)}")
+                if escalation_reasons:
+                    reasons.append(f"human_escalation={','.join(escalation_reasons)}")
                 decisions.append(
                     HocaSchedulerDecision(
                         decision_id=f"dec-{task.task_id}-conflict",

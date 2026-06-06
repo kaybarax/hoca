@@ -59,6 +59,27 @@ def test_task_roundtrip_and_invalid_status() -> None:
         HocaFleetTask.from_dict(payload)
 
 
+def test_task_metadata_preserves_structured_values() -> None:
+    payload = {
+        "schema_version": 1,
+        "task_id": "task-a",
+        "project_id": "alpha",
+        "status": "queued",
+        "readiness": "not_ready",
+        "metadata": {
+            "owned_files": ["package-lock.json"],
+            "requires_ready_pr": True,
+        },
+    }
+
+    item = HocaFleetTask.from_json(HocaFleetTask.from_dict(payload).to_json())
+
+    assert item.metadata == {
+        "owned_files": ["package-lock.json"],
+        "requires_ready_pr": True,
+    }
+
+
 def test_task_dependencies_keep_known_fields() -> None:
     payload = {
         "schema_version": 1,

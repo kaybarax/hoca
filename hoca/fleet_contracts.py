@@ -164,6 +164,15 @@ def _optional_string_map(
     return {str(k): str(v) for k, v in value.items()}
 
 
+def _optional_metadata_map(data: dict[str, Any], field: str) -> dict[str, Any]:
+    value = data.get(field, {})
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Contract field must be an object: {field}")
+    return {str(k): v for k, v in value.items()}
+
+
 def _validate_non_secret_path(path: str, field: str) -> str:
     if is_secret_like_path(path):
         raise ValueError(f"Contract field path appears secret-like: {field}")
@@ -251,7 +260,7 @@ class HocaFleetTask(JsonContract):
     updated_at: str = ""
     completed_at: str | None = None
     priority: int = 1
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, Any] | None = None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "task_id",
@@ -285,7 +294,7 @@ class HocaFleetTask(JsonContract):
             updated_at=str(data.get("updated_at", "")).strip(),
             completed_at=_optional_str(data, "completed_at"),
             priority=_required_int({"priority": data.get("priority", 1)}, "priority", minimum=0),
-            metadata=_optional_string_map(data, "metadata", default={}),
+            metadata=_optional_metadata_map(data, "metadata"),
         )
 
     @classmethod
@@ -355,7 +364,7 @@ class HocaLane(JsonContract):
     started_at: str | None = None
     updated_at: str = ""
     completed_at: str | None = None
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, Any] | None = None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "lane_id",
@@ -390,7 +399,7 @@ class HocaLane(JsonContract):
             started_at=_optional_str(data, "started_at"),
             updated_at=str(data.get("updated_at", "")).strip(),
             completed_at=_optional_str(data, "completed_at"),
-            metadata=_optional_string_map(data, "metadata", default={}),
+            metadata=_optional_metadata_map(data, "metadata"),
         )
 
     @classmethod
@@ -502,7 +511,7 @@ class HocaAgentSession(JsonContract):
     ended_at: str | None = None
     log_path: str | None = None
     process_id: int | None = None
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, Any] | None = None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "session_id",
@@ -531,7 +540,7 @@ class HocaAgentSession(JsonContract):
             ended_at=_optional_str(data, "ended_at"),
             log_path=log_path,
             process_id=None if "process_id" not in data else int(data["process_id"]),
-            metadata=_optional_string_map(data, "metadata", default={}),
+            metadata=_optional_metadata_map(data, "metadata"),
         )
 
     @classmethod
@@ -551,7 +560,7 @@ class HocaResourceBudget(JsonContract):
     cpu_limit_percent: int = 0
     created_at: str = ""
     updated_at: str = ""
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, Any] | None = None
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "budget_id",
@@ -574,7 +583,7 @@ class HocaResourceBudget(JsonContract):
             cpu_limit_percent=_required_int(data, "cpu_limit_percent", minimum=0),
             created_at=str(data.get("created_at", "")).strip(),
             updated_at=str(data.get("updated_at", "")).strip(),
-            metadata=_optional_string_map(data, "metadata", default={}),
+            metadata=_optional_metadata_map(data, "metadata"),
         )
 
     @classmethod
