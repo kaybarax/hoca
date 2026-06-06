@@ -63,11 +63,16 @@ def _candidate_run_dirs_for_lane(registry: FleetRegistry, lane: HocaLane) -> lis
         except OSError:
             return 0.0
 
-    matching = [
-        path
-        for path in runs_root.iterdir()
-        if path.is_dir() and (lane.lane_id in path.name or lane.task_id in path.name)
-    ]
+    matching = []
+    for path in runs_root.iterdir():
+        if not path.is_dir() or (lane.lane_id not in path.name and lane.task_id not in path.name):
+            continue
+        status = read_optional_json(path / "status.json")
+        status_payload = status if isinstance(status, dict) else {}
+        artifact_started = str(status_payload.get("started_at") or "").strip()
+        if lane.created_at and artifact_started and artifact_started < lane.created_at:
+            continue
+        matching.append(path)
     candidates.extend(sorted(matching, key=sort_key, reverse=True))
     return candidates
 

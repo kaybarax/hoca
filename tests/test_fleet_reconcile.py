@@ -159,6 +159,66 @@ def test_sync_registry_uses_latest_project_run_when_lane_points_at_adapter_dir(
     assert synced_lane.metadata["pr_url"] == "https://example.test/pull/adapter"
 
 
+def test_sync_registry_ignores_old_failed_run_after_lane_rerun(
+    tmp_path: Path, monkeypatch
+) -> None:
+    registry, _ = _seed_running_lane(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    repo = tmp_path / "repo"
+    adapter_dir = repo / ".hoca-runtime" / "fleet-lanes" / "lane-1"
+    adapter_dir.mkdir(parents=True)
+    old_run = repo / ".hoca-runtime" / "runs" / "run-20260606T000000Z-lane-1"
+    old_run.mkdir(parents=True)
+    (old_run / "status.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "final_state": "failed",
+                "reason": "old_failure",
+                "started_at": "2026-06-06T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    new_run = repo / ".hoca-runtime" / "runs" / "run-20260606T010000Z-lane-1"
+    new_run.mkdir(parents=True)
+    (new_run / "status.json").write_text(
+        json.dumps({"status": "started", "started_at": "2026-06-06T01:00:00Z"}) + "\n",
+        encoding="utf-8",
+    )
+    registry.update_lane(
+        "lane-1",
+        HocaLane(
+            **{
+                **lane.to_dict(),
+                "run_dir": str(adapter_dir),
+                "created_at": "2026-06-06T01:00:00Z",
+                "session_id": "session-1",
+            }
+        ),
+    )
+    session = build_session(
+        session_id="session-1",
+        lane_id="lane-1",
+        adapter_id="openhands-hermes",
+        started_at="2026-06-06T01:00:00Z",
+    )
+    write_session(
+        registry.paths.root,
+        type(session)(**{**session.to_dict(), "process_id": 12345}),
+    )
+    monkeypatch.setattr("hoca.fleet_reconcile._process_alive", lambda pid: True)
+
+    changed = sync_registry_from_run_artifacts(registry)
+
+    assert changed == []
+    synced_lane = registry.get_lane("lane-1")
+    assert synced_lane is not None
+    assert synced_lane.status == "running"
+
+
 def test_lane_and_task_list_sync_before_display(tmp_path: Path) -> None:
     _, run_dir = _seed_running_lane(tmp_path)
     (run_dir / "final-state.json").write_text(
