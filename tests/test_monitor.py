@@ -12,6 +12,7 @@ from hoca.monitor import (
     MonitorEvent,
     MonitorResult,
     check_manager_only_git_lifecycle_command,
+    command_policy_scan_context,
     check_dangerous_command,
     check_secret_access,
     check_unrelated_directory,
@@ -95,6 +96,22 @@ class TestCheckDangerousCommand:
 
     def test_safe_git_push_u(self):
         assert check_dangerous_command("git push -u origin HEAD") is None
+
+
+class TestCommandPolicyScanContext:
+    def test_complete_action_reports_structured_command_source(self):
+        line = json.dumps(
+            {"source": "agent", "action": {"command": "rm -rf /", "kind": "CmdRunAction"}}
+        )
+        assert command_policy_scan_context(line) == ("rm -rf /", "structured_command_field")
+
+    def test_partial_action_reports_partial_command_source(self):
+        line = '{"source":"agent","action":{"command":"rm -rf /"'
+        assert command_policy_scan_context(line) == ("rm -rf /", "partial_command_field")
+
+    def test_passive_structured_text_reports_passive_source(self):
+        line = '{"source":"agent","thought":[{"text":"rm -rf"}]'
+        assert command_policy_scan_context(line) == ("", "passive_structured_text")
 
 
 class TestManagerOnlyGitLifecyclePolicy:
@@ -646,6 +663,8 @@ class TestMonitorProcessStream:
         )
         assert result.stop_reason == "dangerous_command"
         assert result.exit_code == 1
+        stop = json.loads((tmp_path / "monitor-stop.json").read_text(encoding="utf-8"))
+        assert "source=structured_command_field" in stop["detail"]
 
     def test_dangerous_text_in_partial_action_stream_still_stops(self, tmp_path: Path):
         import io
@@ -664,6 +683,8 @@ class TestMonitorProcessStream:
         )
         assert result.stop_reason == "dangerous_command"
         assert result.exit_code == 1
+        stop = json.loads((tmp_path / "monitor-stop.json").read_text(encoding="utf-8"))
+        assert "source=partial_command_field" in stop["detail"]
 
     def test_reviewer_pr_create_in_stream_stops(self, tmp_path: Path):
         import io

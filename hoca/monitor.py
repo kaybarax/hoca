@@ -248,21 +248,25 @@ def _structured_command_scan_line(line: str) -> str | None:
     return ""
 
 
-def command_policy_scan_text(line: str) -> str:
+def command_policy_scan_context(line: str) -> tuple[str, str]:
     structured = _structured_command_scan_line(line)
     if structured is not None:
-        return structured
+        return structured, "structured_command_field"
     stripped = line.strip()
     if stripped.startswith("{") and '"source"' in stripped:
         command_match = re.search(r'"command"\s*:\s*"((?:\\.|[^"\\])*)', stripped)
         if command_match:
             try:
-                return json.loads(f'"{command_match.group(1)}"')
+                return json.loads(f'"{command_match.group(1)}"'), "partial_command_field"
             except json.JSONDecodeError:
-                return command_match.group(1)
+                return command_match.group(1), "partial_command_field"
         if '"action"' not in stripped and '"command"' not in stripped:
-            return ""
-    return line
+            return "", "passive_structured_text"
+    return line, "plain_output"
+
+
+def command_policy_scan_text(line: str) -> str:
+    return command_policy_scan_context(line)[0]
 
 
 def check_unrelated_directory(
@@ -420,10 +424,14 @@ def monitor_process_stream(
                 break
 
             if should_scan_line_for_policy(line):
-                command_scan_text = command_policy_scan_text(line)
+                command_scan_text, command_source = command_policy_scan_context(line)
                 dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
-                    _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
+                    _record(
+                        events,
+                        "dangerous_command",
+                        f"Detected: {dangerous}; source={command_source}; line={line[:200]}",
+                    )
                     stop_reason = "dangerous_command"
                     break
 
@@ -433,7 +441,7 @@ def monitor_process_stream(
                         events,
                         "manager_only_git_lifecycle",
                         f"Detected manager-only Git lifecycle command for {actor_role}: "
-                        f"{manager_only} in: {line[:200]}",
+                        f"{manager_only}; source={command_source}; line={line[:200]}",
                     )
                     stop_reason = "manager_only_git_lifecycle"
                     break
@@ -561,10 +569,14 @@ def monitor_process(
                 break
 
             if should_scan_line_for_policy(line):
-                command_scan_text = command_policy_scan_text(line)
+                command_scan_text, command_source = command_policy_scan_context(line)
                 dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
-                    _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
+                    _record(
+                        events,
+                        "dangerous_command",
+                        f"Detected: {dangerous}; source={command_source}; line={line[:200]}",
+                    )
                     stop_reason = "dangerous_command"
                     break
 
@@ -574,7 +586,7 @@ def monitor_process(
                         events,
                         "manager_only_git_lifecycle",
                         f"Detected manager-only Git lifecycle command for {actor_role}: "
-                        f"{manager_only} in: {line[:200]}",
+                        f"{manager_only}; source={command_source}; line={line[:200]}",
                     )
                     stop_reason = "manager_only_git_lifecycle"
                     break
