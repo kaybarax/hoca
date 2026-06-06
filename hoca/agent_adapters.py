@@ -487,7 +487,7 @@ class AgentAdapter:
             except OSError:
                 pass
         try:
-            session.process.wait(timeout=1)
+            session.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             session.process.terminate()
             try:
