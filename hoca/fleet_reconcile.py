@@ -12,6 +12,12 @@ from hoca.run_state import read_optional_json
 
 ACTIVE_LANE_STATUSES = frozenset({"allocated", "starting", "running", "validating", "reviewing", "repairing"})
 FINAL_RUN_STATUSES = frozenset({"pr_created", "ready_for_human", "blocked", "failed"})
+ACTIVE_RUN_STATUS_TO_LANE_STATUS = {
+    "started": "running",
+    "validating": "validating",
+    "reviewing": "reviewing",
+    "repairing": "repairing",
+}
 FINAL_STATE_TO_LANE_STATUS = {
     "pr_opened": "pr_created",
     "ready_for_human": "ready_for_human",
@@ -91,6 +97,9 @@ def _lane_status_from_artifacts(run_dir: Path) -> tuple[str | None, dict[str, An
         raw_status = str(status_payload.get("status") or "")
         if raw_status in FINAL_RUN_STATUSES:
             return raw_status, status_payload
+        mapped = ACTIVE_RUN_STATUS_TO_LANE_STATUS.get(raw_status)
+        if mapped:
+            return mapped, status_payload
     return None, {}
 
 

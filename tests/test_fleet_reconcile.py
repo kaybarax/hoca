@@ -193,6 +193,7 @@ def test_sync_registry_ignores_old_failed_run_after_lane_rerun(
         HocaLane(
             **{
                 **lane.to_dict(),
+                "status": "failed",
                 "run_dir": str(adapter_dir),
                 "created_at": "2026-06-06T01:00:00Z",
                 "session_id": "session-1",
@@ -213,7 +214,7 @@ def test_sync_registry_ignores_old_failed_run_after_lane_rerun(
 
     changed = sync_registry_from_run_artifacts(registry)
 
-    assert changed == []
+    assert "lane:lane-1:running" in changed
     synced_lane = registry.get_lane("lane-1")
     assert synced_lane is not None
     assert synced_lane.status == "running"
