@@ -23,6 +23,7 @@ from hoca.fleet_reconcile import sync_registry_from_run_artifacts
 from hoca.fleet_resources import write_resource_monitor_report
 from hoca.paths import repo_root
 from hoca.resource_governor import ResourceGovernor
+from hoca.run_state import read_optional_json
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
 from hoca.tmux_sessions import AdapterCommandError, _sanitize_session_name, send_to_session
 from hoca.worktree_pool import WorktreeLeasePool
@@ -826,6 +827,60 @@ def _fleet_resource_summary_lines(path: Path) -> list[str]:
     ]
 
 
+def _resolved_lane_run_dir(registry: FleetRegistry, lane: HocaLane) -> Path | None:
+    if not lane.run_dir:
+        return None
+    raw = Path(lane.run_dir)
+    if raw.is_absolute():
+        return raw
+    project = registry.get_project(lane.project_id)
+    if project is None:
+        return None
+    return Path(project.repo_path) / raw
+
+
+def _duration_label(started_at: str | None, completed_at: str | None) -> str:
+    if started_at and completed_at:
+        return f"{started_at} -> {completed_at}"
+    return started_at or completed_at or "unknown"
+
+
+def _validation_summary_lines(registry: FleetRegistry) -> list[str]:
+    lines = ["Validation Summary:"]
+    for lane in sorted(registry.list_lanes(), key=lambda item: item.lane_id):
+        run_dir = _resolved_lane_run_dir(registry, lane)
+        status = read_optional_json(run_dir / "status.json") if run_dir else {}
+        final_state = read_optional_json(run_dir / "final-state.json") if run_dir else {}
+        status = status if isinstance(status, dict) else {}
+        final_state = final_state if isinstance(final_state, dict) else {}
+        pr_url = (
+            str(final_state.get("pr_url") or status.get("pr_url") or lane.metadata.get("pr_url"))
+            if lane.metadata
+            else str(final_state.get("pr_url") or status.get("pr_url") or "")
+        )
+        changed_files = final_state.get("changed_files")
+        changed_count = len(changed_files) if isinstance(changed_files, list) else 0
+        tests_run = final_state.get("tests_run")
+        tests_count = len(tests_run) if isinstance(tests_run, list) else 0
+        round_count = status.get("current_round") or final_state.get("current_round") or "unknown"
+        duration = _duration_label(lane.started_at, lane.completed_at)
+        lines.append(
+            "- "
+            f"{lane.lane_id}: task={lane.task_id}; status={lane.status}; "
+            f"pr={pr_url or 'none'}; rounds={round_count}; duration={duration}; "
+            f"changed_files={changed_count}; tests={tests_count}"
+        )
+    lines.append("HOCA Interventions:")
+    interventions: list[str] = []
+    for lane in registry.list_lanes():
+        metadata = lane.metadata or {}
+        value = metadata.get("hoca_intervention") or metadata.get("hoca_interventions")
+        if value:
+            interventions.append(f"- {lane.lane_id}: {value}")
+    lines.extend(interventions or ["- none recorded"])
+    return lines
+
+
 @fleet.command("report")
 @click.option(
     "--output",
@@ -845,8 +900,17 @@ def _fleet_resource_summary_lines(path: Path) -> list[str]:
     default=None,
     help="Resource report JSON to summarize.",
 )
+@click.option(
+    "--validation-summary",
+    is_flag=True,
+    default=False,
+    help="Include validation PR/status/test/change summary details.",
+)
 def fleet_report(
-    output: Path | None, include_resources: bool, resource_report: Path | None
+    output: Path | None,
+    include_resources: bool,
+    resource_report: Path | None,
+    validation_summary: bool,
 ) -> None:
     """Write a fleet status report."""
     registry = _registry()
@@ -875,6 +939,9 @@ def fleet_report(
                 resource_report or (registry.paths.root / "fleet-resource-report.json")
             )
         )
+    if validation_summary:
+        lines.append("")
+        lines.extend(_validation_summary_lines(registry))
 
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     click.echo(f"Fleet report written: {target}")

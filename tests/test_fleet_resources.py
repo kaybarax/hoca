@@ -170,3 +170,45 @@ def test_fleet_report_can_include_resource_summary(tmp_path: Path) -> None:
     assert "- Samples: 2" in content
     assert "- Peak CPU %: 20.0" in content
     assert "- Peak RSS MB: 200.0" in content
+
+
+def test_fleet_report_can_include_validation_summary(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    run_dir = Path(lane.run_dir)
+    run_dir.mkdir(parents=True)
+    (run_dir / "status.json").write_text(
+        json.dumps({"status": "pr_created", "current_round": 2, "pr_url": "https://x/pr/1"})
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "final-state.json").write_text(
+        json.dumps(
+            {
+                "status": "pr_opened",
+                "pr_url": "https://x/pr/1",
+                "changed_files": ["README.md", "scripts/install.sh"],
+                "tests_run": ["pytest"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "fleet-validation.md"
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    result = CliRunner().invoke(
+        main,
+        ["fleet", "report", "--validation-summary", "--output", str(output)],
+        env=env,
+    )
+
+    assert result.exit_code == 0
+    content = output.read_text(encoding="utf-8")
+    assert "Validation Summary:" in content
+    assert "lane-1: task=task-1; status=pr_created; pr=https://x/pr/1" in content
+    assert "rounds=2" in content
+    assert "changed_files=2" in content
+    assert "tests=1" in content
+    assert "HOCA Interventions:" in content
