@@ -6,6 +6,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from hoca.agent_sessions import build_session, write_session
 from hoca.cli import main
 from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
@@ -153,3 +154,50 @@ def test_fleet_reconcile_command_reports_noop(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Fleet registry already reconciled." in result.output
+
+
+def test_sync_registry_blocks_stale_running_lane_with_dead_session(
+    tmp_path: Path, monkeypatch
+) -> None:
+    registry, _ = _seed_running_lane(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    registry.update_lane(
+        "lane-1",
+        HocaLane(
+            **{
+                **lane.to_dict(),
+                "session_id": "session-1",
+                "run_dir": str(tmp_path / "repo" / ".hoca-runtime" / "runs" / "run-missing"),
+            }
+        ),
+    )
+    session = build_session(
+        session_id="session-1",
+        lane_id="lane-1",
+        adapter_id="openhands-hermes",
+        started_at="2026-06-06T00:00:00Z",
+    )
+    write_session(
+        registry.paths.root,
+        type(session)(
+            **{
+                **session.to_dict(),
+                "process_id": 12345,
+                "ended_at": "2026-06-06T00:03:00Z",
+            }
+        ),
+    )
+    monkeypatch.setattr("hoca.fleet_reconcile._process_alive", lambda pid: False)
+
+    changed = sync_registry_from_run_artifacts(registry)
+
+    assert "lane:lane-1:blocked" in changed
+    assert "task:task-1:blocked" in changed
+    stale_lane = registry.get_lane("lane-1")
+    assert stale_lane is not None
+    assert stale_lane.status == "blocked"
+    assert stale_lane.metadata["status_reason"] == "adapter process exited before final run artifact"
+    stale_task = registry.get_task("task-1")
+    assert stale_task is not None
+    assert stale_task.status == "blocked"

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from pathlib import Path
 from typing import Any
 
+from hoca.agent_sessions import read_session
 from hoca.fleet_contracts import HocaFleetTask, HocaLane
 from hoca.fleet_registry import FleetRegistry
 from hoca.run_state import read_optional_json
 
+ACTIVE_LANE_STATUSES = frozenset({"allocated", "starting", "running", "validating", "reviewing", "repairing"})
 FINAL_RUN_STATUSES = frozenset({"pr_created", "ready_for_human", "blocked", "failed"})
 FINAL_STATE_TO_LANE_STATUS = {
     "pr_opened": "pr_created",
@@ -57,13 +60,45 @@ def _lane_status_from_artifacts(run_dir: Path) -> tuple[str | None, dict[str, An
     return None, {}
 
 
+def _process_alive(pid: int | None) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _stale_lane_from_session(registry: FleetRegistry, lane: HocaLane) -> HocaLane | None:
+    if lane.status not in ACTIVE_LANE_STATUSES or not lane.session_id:
+        return None
+    session = read_session(registry.paths.root, lane.session_id)
+    if session is None or session.process_id is None:
+        return None
+    if _process_alive(session.process_id):
+        return None
+    metadata = dict(lane.metadata or {})
+    metadata["status_reason"] = "adapter process exited before final run artifact"
+    metadata["stale_session_id"] = lane.session_id
+    next_lane = replace(
+        lane,
+        status="blocked",
+        completed_at=session.ended_at or lane.completed_at,
+        updated_at=session.ended_at or lane.updated_at,
+        metadata=metadata,
+    )
+    registry.update_lane(lane.lane_id, next_lane)
+    return next_lane
+
+
 def sync_lane_from_artifacts(registry: FleetRegistry, lane: HocaLane) -> HocaLane | None:
     run_dir = _run_dir_for_lane(registry, lane)
     if run_dir is None:
-        return None
+        return _stale_lane_from_session(registry, lane)
     next_status, artifact = _lane_status_from_artifacts(run_dir)
     if next_status is None:
-        return None
+        return _stale_lane_from_session(registry, lane)
 
     completed_at = str(artifact.get("completed_at") or artifact.get("ended_at") or "").strip()
     metadata = dict(lane.metadata or {})
