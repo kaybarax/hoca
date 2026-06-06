@@ -254,6 +254,12 @@ def command_policy_scan_text(line: str) -> str:
         return structured
     stripped = line.strip()
     if stripped.startswith("{") and '"source"' in stripped:
+        command_match = re.search(r'"command"\s*:\s*"((?:\\.|[^"\\])*)', stripped)
+        if command_match:
+            try:
+                return json.loads(f'"{command_match.group(1)}"')
+            except json.JSONDecodeError:
+                return command_match.group(1)
         if '"action"' not in stripped and '"command"' not in stripped:
             return ""
     return line

@@ -608,6 +608,24 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
 
+    def test_dangerous_file_text_in_partial_file_editor_action_is_ignored(self, tmp_path: Path):
+        import io
+
+        partial_file_editor = (
+            '{"id":"event-1","source":"agent","tool_name":"file_editor",'
+            '"action":{"command":"create","file_text":"Existing script mentions rm -rf."}'
+        )
+        stream = io.StringIO(f"working\n{partial_file_editor}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
     def test_dangerous_text_in_action_stream_still_stops(self, tmp_path: Path):
         import io
 
