@@ -86,6 +86,82 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
     assert tasks["task-b"].status == "queued"
 
 
+def test_scheduler_ignores_pr_created_lanes_for_launch_capacity(tmp_path: Path) -> None:
+    registry = _registry_with_project_and_tasks(tmp_path)
+    registry.update_project(
+        "project-a",
+        HocaProject(
+            project_id="project-a",
+            repo_path=str(tmp_path / "repo"),
+            default_branch="main",
+            max_parallel_tasks=1,
+        ),
+    )
+    registry.update_task(
+        "task-a",
+        HocaFleetTask(
+            task_id="task-a",
+            project_id="project-a",
+            status="completed",
+            readiness="draft_ready",
+            priority=1,
+        ),
+    )
+    registry.create_task(
+        HocaFleetTask(
+            task_id="task-old",
+            project_id="project-a",
+            status="completed",
+            readiness="draft_ready",
+            priority=1,
+        )
+    )
+    registry.create_lane(
+        HocaLane(
+            lane_id="task-a-lane-01",
+            task_id="task-a",
+            project_id="project-a",
+            status="pr_created",
+            branch="feat/task-a",
+            run_dir=".hoca-runtime/fleet-lanes/task-a-lane-01",
+            attempt_number=0,
+        )
+    )
+    registry.create_lane(
+        HocaLane(
+            lane_id="task-old-lane-01",
+            task_id="task-old",
+            project_id="project-a",
+            status="pr_created",
+            branch="feat/task-old",
+            run_dir=".hoca-runtime/fleet-lanes/task-old-lane-01",
+            attempt_number=0,
+        )
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=1,
+        max_parallel_lanes=1,
+        max_agents=4,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+    )
+    scheduler = FleetScheduler(
+        registry=registry,
+        governor=ResourceGovernor(budget=budget),
+        control_root=tmp_path / "control",
+    )
+
+    decisions = scheduler.tick()
+
+    assert any(
+        decision.task_id == "task-b" and decision.decision_type == "launch"
+        for decision in decisions
+    )
+    assert registry.get_task("task-b").status == "running"
+
+
 def test_scheduler_can_start_one_lane_with_openhands_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

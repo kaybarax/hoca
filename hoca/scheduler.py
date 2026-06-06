@@ -114,8 +114,6 @@ class FleetScheduler:
                 "validating",
                 "reviewing",
                 "repairing",
-                "pr_created",
-                "ready_for_human",
             }
         ]
 

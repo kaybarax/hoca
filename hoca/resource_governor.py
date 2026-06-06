@@ -70,7 +70,11 @@ class ResourceGovernor:
 
     @staticmethod
     def active_lanes(lanes: list[HocaLane]) -> list[HocaLane]:
-        return [lane for lane in lanes if lane.status not in {"completed", "cleaned"}]
+        return [
+            lane
+            for lane in lanes
+            if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
+        ]
 
     def can_launch(
         self,
