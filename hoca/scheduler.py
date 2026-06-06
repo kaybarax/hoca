@@ -348,7 +348,7 @@ class FleetScheduler:
                 status="allocated",
                 branch=branch,
                 adapter_id=(task.metadata or {}).get("adapter_id", "default"),
-                run_dir=f"lane/{lane_id}",
+                run_dir=f".hoca-runtime/fleet-lanes/{lane_id}",
                 attempt_number=0,
                 created_at=_now_iso(),
                 updated_at=_now_iso(),

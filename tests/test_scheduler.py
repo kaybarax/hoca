@@ -151,6 +151,7 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     assert Path(lane.worktree_path).is_dir()
     run_dir = Path(lane.run_dir)
     assert run_dir.is_absolute()
+    assert ".hoca-runtime/fleet-lanes" in str(run_dir)
     stdout = run_dir / "adapter-stdout.log"
     for _ in range(50):
         if stdout.is_file() and (run_dir / "status.json").is_file():
@@ -168,6 +169,14 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     assert session.process_id is not None
     assert session.metadata is not None
     assert session.metadata["run_dir"] == str(run_dir)
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=tmp_path / "repo",
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "lane/" not in status.stdout
 
 
 def test_scheduler_no_work_is_noop(tmp_path: Path) -> None:
