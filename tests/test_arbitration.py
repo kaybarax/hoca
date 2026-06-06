@@ -303,6 +303,33 @@ class TestArbitrate:
 
         assert decision.decision == "blocked"
 
+    def test_lgtm_can_proceed_after_completed_dangerous_command_monitor_note(self) -> None:
+        decision = arbitrate(
+            review=_review(round_number=1, verdict="LGTM"),
+            validation=ValidationStatus(
+                tests_passed=True,
+                secret_scan_clean=True,
+                monitor_clean=False,
+                monitor_stop_reason="dangerous_command",
+            ),
+        )
+
+        assert decision.decision == "proceed_to_pr"
+        assert any("non-blocking environment note" in line for line in decision.reasoning)
+
+    def test_non_lgtm_dangerous_command_monitor_stop_still_blocks(self) -> None:
+        decision = arbitrate(
+            review=_review(round_number=1, verdict="fix_required"),
+            validation=ValidationStatus(
+                tests_passed=True,
+                secret_scan_clean=True,
+                monitor_clean=False,
+                monitor_stop_reason="dangerous_command",
+            ),
+        )
+
+        assert decision.decision == "blocked"
+
     def test_blocked_verdict_blocks(self) -> None:
         decision = arbitrate(
             review=_review(

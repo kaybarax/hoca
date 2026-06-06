@@ -225,6 +225,28 @@ def _decision_from_material_findings(
     )
 
 
+def _validation_blockers_for_arbitration(
+    *,
+    review: HocaReviewReport,
+    validation: ValidationStatus,
+    reasoning: list[str],
+) -> list[str]:
+    blockers = collect_validation_hard_blockers(validation)
+    if (
+        review.verdict == "LGTM"
+        and validation.tests_passed
+        and validation.secret_scan_clean
+        and validation.monitor_stop_reason == "dangerous_command"
+        and set(blockers) == {"unsafe_filesystem_access"}
+    ):
+        reasoning.append(
+            "Reviewer approved after successful validation; treating monitor "
+            "dangerous_command stop as a non-blocking environment note."
+        )
+        return []
+    return blockers
+
+
 def arbitrate(
     *,
     review: HocaReviewReport,
@@ -261,8 +283,22 @@ def arbitrate(
             reasoning=reasoning,
         )
 
-    validation_blockers = collect_validation_hard_blockers(validation)
-    if has_absolute_validation_blocker(validation):
+    validation_blockers = _validation_blockers_for_arbitration(
+        review=review,
+        validation=validation,
+        reasoning=reasoning,
+    )
+    if any(
+        blocker
+        in {
+            "secret_file_change",
+            "secret_access_attempt",
+            "unsafe_filesystem_access",
+            "missing_pr_credentials",
+            "detached_head",
+        }
+        for blocker in validation_blockers
+    ):
         reasoning.append(
             "Absolute validation hard blocker detected: "
             + ", ".join(sorted(set(validation_blockers)))
