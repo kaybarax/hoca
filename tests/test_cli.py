@@ -534,6 +534,75 @@ def test_lane_rerun_refuses_successful_lane_without_force(tmp_path: Path) -> Non
     assert "pass --force to rerun it" in result.output
 
 
+def test_lane_rerun_preserves_successful_sibling_lane_and_branch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    control_root, _ = _seed_lane_for_cli(
+        tmp_path, lane_id="lane-task-failed-01", lane_status="blocked"
+    )
+    repo = tmp_path / "repo"
+    subprocess.run(
+        ["git", "branch", "hoca/successful-sibling"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    registry = FleetRegistry(control_root=control_root)
+    task = registry.get_task("task-1")
+    assert task is not None
+    registry.create_lane(
+        HocaLane(
+            lane_id="lane-task-success-02",
+            task_id="task-1",
+            project_id="project-1",
+            status="pr_created",
+            branch="hoca/successful-sibling",
+            run_dir=".hoca-runtime/runs/lane-task-success-02",
+            attempt_number=0,
+            created_at="2026-06-05T00:00:00Z",
+            updated_at="2026-06-05T00:00:00Z",
+        )
+    )
+    registry.update_task(
+        "task-1",
+        HocaFleetTask(
+            **{
+                **task.to_dict(),
+                "status": "blocked",
+                "readiness": "blocked",
+                "lane_ids": ["lane-task-failed-01", "lane-task-success-02"],
+            }
+        ),
+    )
+
+    class FakeScheduler:
+        def tick(self):
+            return []
+
+    monkeypatch.setattr("hoca.cli._default_scheduler", lambda start_adapters: FakeScheduler())
+    env = {"HOCA_CONTROL_ROOT": str(control_root)}
+
+    result = CliRunner().invoke(main, ["lane", "rerun", "lane-task-failed-01"], env=env)
+
+    assert result.exit_code == 0
+    assert registry.get_lane("lane-task-failed-01") is None
+    sibling = registry.get_lane("lane-task-success-02")
+    assert sibling is not None
+    assert sibling.status == "pr_created"
+    assert sibling.branch == "hoca/successful-sibling"
+    updated_task = registry.get_task("task-1")
+    assert updated_task is not None
+    assert updated_task.lane_ids == ["lane-task-success-02"]
+    branch_check = subprocess.run(
+        ["git", "branch", "--list", "hoca/successful-sibling"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "hoca/successful-sibling" in branch_check.stdout
+
+
 def test_lane_send_helps_command() -> None:
     result = CliRunner().invoke(main, ["lane", "send", "--help"])
 
