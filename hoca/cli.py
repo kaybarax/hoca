@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import re
+import shutil
 import subprocess
 from pathlib import Path
 import time
@@ -685,6 +686,45 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
     return cleaned_lane_ids
 
 
+def _remove_lane_record(registry: FleetRegistry, lane_id: str) -> None:
+    lanes_index = registry._load_index(registry.paths.lanes_json)
+    if lane_id in lanes_index:
+        del lanes_index[lane_id]
+        registry._write_index(registry.paths.lanes_json, lanes_index)
+
+    tasks_index = registry._load_index(registry.paths.tasks_json)
+    changed = False
+    for task_id, payload in tasks_index.items():
+        lane_ids = [item for item in list(payload.get("lane_ids") or []) if item != lane_id]
+        if lane_ids != list(payload.get("lane_ids") or []):
+            payload["lane_ids"] = lane_ids
+            tasks_index[task_id] = payload
+            changed = True
+    if changed:
+        registry._write_index(registry.paths.tasks_json, tasks_index)
+
+
+def _safe_runtime_path(path: Path, project_path: Path) -> bool:
+    try:
+        resolved = path.expanduser().resolve()
+        runtime_root = (project_path / ".hoca-runtime").resolve()
+    except OSError:
+        return False
+    return resolved == runtime_root or resolved.is_relative_to(runtime_root)
+
+
+def _remove_runtime_path(path: str | None, *, project_path: Path) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.is_absolute():
+        target = project_path / target
+    if not _safe_runtime_path(target, project_path):
+        raise click.ClickException(f"Refusing to remove non-runtime path: {target}")
+    shutil.rmtree(target, ignore_errors=True)
+    return str(target)
+
+
 @main.group()
 def fleet() -> None:
     """Manage fleet-level HOCA state."""
@@ -1023,6 +1063,85 @@ def lane_stop(lane_id: str) -> None:
     """Mark a HOCA lane as cleaned."""
     _update_lane_status(lane_id, status="cleaned")
     click.echo(f"Lane stopped: {lane_id}")
+
+
+@lane.command("rerun")
+@click.argument("lane_id")
+@click.option(
+    "--clean-artifacts",
+    is_flag=True,
+    default=False,
+    help="Remove the failed lane run/worktree artifacts when they are under .hoca-runtime.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Allow rerunning a lane that already reached a PR/ready state.",
+)
+@click.option(
+    "--start-adapters/--no-start-adapters",
+    default=True,
+    show_default=True,
+    help="Start the relaunched lane adapter immediately.",
+)
+def lane_rerun(lane_id: str, clean_artifacts: bool, force: bool, start_adapters: bool) -> None:
+    """Stop one lane, requeue its task, and relaunch it through the scheduler."""
+    registry = _registry()
+    sync_registry_from_run_artifacts(registry)
+    lane_record = registry.get_lane(lane_id)
+    if lane_record is None:
+        raise click.ClickException(f"Lane not found: {lane_id}")
+    if lane_record.status in {"pr_created", "ready_for_human"} and not force:
+        raise click.ClickException(
+            f"Lane already reached {lane_record.status}; pass --force to rerun it."
+        )
+    task_record = registry.get_task(lane_record.task_id)
+    if task_record is None:
+        raise click.ClickException(f"Task not found: {lane_record.task_id}")
+    project = registry.get_project(lane_record.project_id)
+    if project is None:
+        raise click.ClickException(f"Project not found: {lane_record.project_id}")
+
+    project_path = Path(project.repo_path)
+    released_leases: list[str] = []
+    lease_pool = WorktreeLeasePool(control_root=registry.paths.root)
+    for lease in lease_pool.list_leases():
+        if lease.lane_id != lane_id:
+            continue
+        lease_pool.release_lease(lease.lease_id, project_path=project_path, force=True)
+        released_leases.append(lease.lease_id)
+
+    removed_paths: list[str] = []
+    if clean_artifacts:
+        for path in (lane_record.run_dir, lane_record.worktree_path):
+            removed = _remove_runtime_path(path, project_path=project_path)
+            if removed is not None:
+                removed_paths.append(removed)
+
+    _remove_lane_record(registry, lane_id)
+    next_task = replace(
+        task_record,
+        status="queued",
+        readiness="ready",
+        lane_ids=[item for item in list(task_record.lane_ids or []) if item != lane_id],
+        completed_at=None,
+        updated_at=_utc_now(),
+    )
+    registry.update_task(task_record.task_id, next_task)
+
+    decisions = _default_scheduler(start_adapters=start_adapters).tick()
+    click.echo(f"Rerun queued task: {task_record.task_id}")
+    click.echo(f"Removed lane: {lane_id}")
+    for lease_id in released_leases:
+        click.echo(f"Released lease: {lease_id}")
+    for path in removed_paths:
+        click.echo(f"Removed artifact path: {path}")
+    if decisions:
+        for decision in decisions:
+            click.echo(_decision_summary(decision))
+    else:
+        click.echo("No scheduler decisions.")
 
 
 @lane.command("send")
