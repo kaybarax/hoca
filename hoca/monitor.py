@@ -252,6 +252,10 @@ def command_policy_scan_text(line: str) -> str:
     structured = _structured_command_scan_line(line)
     if structured is not None:
         return structured
+    stripped = line.strip()
+    if stripped.startswith("{") and '"source"' in stripped:
+        if '"action"' not in stripped and '"command"' not in stripped:
+            return ""
     return line
 
 
