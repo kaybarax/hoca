@@ -229,6 +229,32 @@ def _structured_secret_scan_line(line: str) -> str | None:
     return "\n".join(parts)
 
 
+def _structured_command_scan_line(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict):
+        return None
+    action = event.get("action")
+    if not isinstance(action, dict):
+        return ""
+    command = action.get("command")
+    if isinstance(command, str):
+        return command
+    return ""
+
+
+def command_policy_scan_text(line: str) -> str:
+    structured = _structured_command_scan_line(line)
+    if structured is not None:
+        return structured
+    return line
+
+
 def check_unrelated_directory(
     line: str,
     project_path: str,
@@ -384,13 +410,14 @@ def monitor_process_stream(
                 break
 
             if should_scan_line_for_policy(line):
-                dangerous = check_dangerous_command(line)
+                command_scan_text = command_policy_scan_text(line)
+                dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(line, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
                 if manager_only:
                     _record(
                         events,
@@ -524,13 +551,14 @@ def monitor_process(
                 break
 
             if should_scan_line_for_policy(line):
-                dangerous = check_dangerous_command(line)
+                command_scan_text = command_policy_scan_text(line)
+                dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(events, "dangerous_command", f"Detected: {dangerous} in: {line[:200]}")
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(line, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
                 if manager_only:
                     _record(
                         events,

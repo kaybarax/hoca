@@ -551,6 +551,27 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
 
+    def test_dangerous_text_in_agent_thought_stream_is_ignored(self, tmp_path: Path):
+        import io
+
+        thought = json.dumps(
+            {
+                "kind": "MessageEvent",
+                "source": "agent",
+                "thought": [{"type": "text", "text": "Existing script text mentions rm -rf."}],
+            }
+        )
+        stream = io.StringIO(f"reading\n{thought}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
     def test_dangerous_text_in_action_stream_still_stops(self, tmp_path: Path):
         import io
 
