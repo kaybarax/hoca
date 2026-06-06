@@ -28,6 +28,14 @@ def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
     assert 'RUN_ID="issue-${ISSUE_ID}"' in content
 
 
+def test_run_hoca_task_preserves_shared_runtime_in_fleet_lane_mode() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'if [ -n "${HOCA_LANE_ID:-}" ]; then' in content
+    assert "Fleet lane mode: preserving shared target .hoca-runtime." in content
+    assert 'rm -rf "$PROJECT_PATH/.hoca-runtime"' in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

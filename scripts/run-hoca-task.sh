@@ -385,6 +385,12 @@ archive_and_remove_runtime() {
     echo "Archived HOCA runtime evidence to: $archive_run_dir"
   fi
 
+  if [ -n "${HOCA_LANE_ID:-}" ]; then
+    echo "Fleet lane mode: preserving shared target .hoca-runtime."
+    git -C "$PROJECT_PATH" worktree prune >/dev/null 2>&1 || true
+    return 0
+  fi
+
   echo "Cleaning up target repo .hoca-runtime..."
   rm -rf "$PROJECT_PATH/.hoca-runtime"
   git -C "$PROJECT_PATH" worktree prune >/dev/null 2>&1 || true
