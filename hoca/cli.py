@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 import time
+import json
 
 import click
 
@@ -804,6 +805,27 @@ def fleet_reconcile() -> None:
         click.echo(f"Reconciled {item}")
 
 
+def _fleet_resource_summary_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return ["Resource Summary:", f"- Resource report missing: {path}"]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ["Resource Summary:", f"- Resource report is not valid JSON: {path}"]
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        return ["Resource Summary:", f"- Resource report has no summary: {path}"]
+    return [
+        "Resource Summary:",
+        f"- Samples: {summary.get('sample_count', 0)}",
+        f"- Peak CPU %: {summary.get('peak_cpu_pct', 0)}",
+        f"- Average CPU %: {summary.get('average_cpu_pct', 0)}",
+        f"- Peak RSS MB: {summary.get('peak_rss_mb', 0)}",
+        f"- Average RSS MB: {summary.get('average_rss_mb', 0)}",
+        f"- Peak process count: {summary.get('peak_process_count', 0)}",
+    ]
+
+
 @fleet.command("report")
 @click.option(
     "--output",
@@ -811,7 +833,21 @@ def fleet_reconcile() -> None:
     default=None,
     help="Optional report file path.",
 )
-def fleet_report(output: Path | None) -> None:
+@click.option(
+    "--include-resources",
+    is_flag=True,
+    default=False,
+    help="Include a fleet resource summary when a resource report is available.",
+)
+@click.option(
+    "--resource-report",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Resource report JSON to summarize.",
+)
+def fleet_report(
+    output: Path | None, include_resources: bool, resource_report: Path | None
+) -> None:
     """Write a fleet status report."""
     registry = _registry()
     sync_registry_from_run_artifacts(registry)
@@ -832,6 +868,13 @@ def fleet_report(output: Path | None) -> None:
     lines.append("Lanes:")
     for lane in sorted(registry.list_lanes(), key=lambda item: item.lane_id):
         lines.append(f"- {lane.lane_id} [{lane.status}] ({lane.project_id}/{lane.task_id})")
+    if include_resources:
+        lines.append("")
+        lines.extend(
+            _fleet_resource_summary_lines(
+                resource_report or (registry.paths.root / "fleet-resource-report.json")
+            )
+        )
 
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     click.echo(f"Fleet report written: {target}")

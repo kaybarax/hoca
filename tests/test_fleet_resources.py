@@ -126,3 +126,47 @@ def test_fleet_monitor_resources_command_writes_report(tmp_path: Path, monkeypat
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["summary"]["peak_cpu_pct"] == 7.0
     assert payload["summary"]["peak_rss_mb"] == 3.0
+
+
+def test_fleet_report_can_include_resource_summary(tmp_path: Path) -> None:
+    _registry(tmp_path)
+    resource_report = tmp_path / "resources.json"
+    resource_report.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "sample_count": 2,
+                    "peak_cpu_pct": 20.0,
+                    "average_cpu_pct": 15.0,
+                    "peak_rss_mb": 200.0,
+                    "average_rss_mb": 150.0,
+                    "peak_process_count": 3,
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "fleet.md"
+    env = {"HOCA_CONTROL_ROOT": str(tmp_path / "control")}
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "fleet",
+            "report",
+            "--include-resources",
+            "--resource-report",
+            str(resource_report),
+            "--output",
+            str(output),
+        ],
+        env=env,
+    )
+
+    assert result.exit_code == 0
+    content = output.read_text(encoding="utf-8")
+    assert "Resource Summary:" in content
+    assert "- Samples: 2" in content
+    assert "- Peak CPU %: 20.0" in content
+    assert "- Peak RSS MB: 200.0" in content
