@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from hoca.cli import main
 from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
 from hoca.fleet_registry import FleetRegistry
+from hoca.worktree_pool import WorktreeLeasePool
 
 CLI_COMMANDS = {
     "doctor": "Check local HOCA dependencies",
@@ -426,6 +427,18 @@ def test_fleet_status_report_and_cleanup_use_temp_control_root(tmp_path: Path) -
     stop_result = CliRunner().invoke(main, ["lane", "stop", "lane-task-6-01"], env=env)
     assert stop_result.exit_code == 0
 
+    lease_pool = WorktreeLeasePool(control_root=control_root)
+    lease = lease_pool.create_lease(
+        lane_id="lane-task-6-01",
+        project_id="project-1",
+        task_id="task-1",
+        branch="hoca/lane-task-6-01",
+        base_ref="main",
+        project_path=tmp_path / "repo",
+        lease_id="lane-task-6-01",
+    )
+    assert Path(lease.worktree_path).exists()
+
     status_result = CliRunner().invoke(main, ["fleet", "status"], env=env)
     assert status_result.exit_code == 0
     assert "Projects: 1" in status_result.output
@@ -451,6 +464,8 @@ def test_fleet_status_report_and_cleanup_use_temp_control_root(tmp_path: Path) -
 
     registry = FleetRegistry(control_root=control_root)
     assert registry.get_lane("lane-task-6-01") is None
+    assert lease_pool.get_lease("lane-task-6-01") is None
+    assert not Path(lease.worktree_path).exists()
 
 
 def test_lane_send_helps_command() -> None:

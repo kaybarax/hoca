@@ -21,6 +21,7 @@ from hoca.paths import repo_root
 from hoca.resource_governor import ResourceGovernor
 from hoca.scheduler import FleetScheduler, run_scheduler_loop
 from hoca.tmux_sessions import AdapterCommandError, _sanitize_session_name, send_to_session
+from hoca.worktree_pool import WorktreeLeasePool
 
 
 def run_script(script_name: str, args: list[str]) -> None:
@@ -638,6 +639,22 @@ def _cleanup_cleaned_lanes(*, dry_run: bool) -> list[str]:
     ]
     if dry_run or not cleaned_lane_ids:
         return cleaned_lane_ids
+
+    projects_index = registry._load_index(registry.paths.projects_json)
+    lease_pool = WorktreeLeasePool(control_root=registry.paths.root)
+    for lease in lease_pool.list_leases():
+        if lease.lane_id not in cleaned_lane_ids:
+            continue
+        project = projects_index.get(lease.project_id)
+        if not project:
+            continue
+        repo_path = project.get("repo_path")
+        if not repo_path:
+            continue
+        try:
+            lease_pool.release_lease(lease.lease_id, project_path=Path(str(repo_path)), force=True)
+        except ValueError:
+            continue
 
     remaining_lanes = {
         lane_id: payload
