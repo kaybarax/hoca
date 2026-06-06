@@ -44,6 +44,34 @@ def _run_dir_for_lane(registry: FleetRegistry, lane: HocaLane) -> Path | None:
     return Path(project.repo_path) / raw
 
 
+def _candidate_run_dirs_for_lane(registry: FleetRegistry, lane: HocaLane) -> list[Path]:
+    candidates: list[Path] = []
+    direct = _run_dir_for_lane(registry, lane)
+    if direct is not None:
+        candidates.append(direct)
+
+    project = registry.get_project(lane.project_id)
+    if project is None:
+        return candidates
+    runs_root = Path(project.repo_path) / ".hoca-runtime" / "runs"
+    if not runs_root.is_dir():
+        return candidates
+
+    def sort_key(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    matching = [
+        path
+        for path in runs_root.iterdir()
+        if path.is_dir() and (lane.lane_id in path.name or lane.task_id in path.name)
+    ]
+    candidates.extend(sorted(matching, key=sort_key, reverse=True))
+    return candidates
+
+
 def _lane_status_from_artifacts(run_dir: Path) -> tuple[str | None, dict[str, Any]]:
     status = read_optional_json(run_dir / "status.json")
     status_payload = status if isinstance(status, dict) else {}
@@ -94,10 +122,15 @@ def _stale_lane_from_session(registry: FleetRegistry, lane: HocaLane) -> HocaLan
 
 
 def sync_lane_from_artifacts(registry: FleetRegistry, lane: HocaLane) -> HocaLane | None:
-    run_dir = _run_dir_for_lane(registry, lane)
-    if run_dir is None:
+    run_dirs = _candidate_run_dirs_for_lane(registry, lane)
+    if not run_dirs:
         return _stale_lane_from_session(registry, lane)
-    next_status, artifact = _lane_status_from_artifacts(run_dir)
+    next_status = None
+    artifact: dict[str, Any] = {}
+    for run_dir in run_dirs:
+        next_status, artifact = _lane_status_from_artifacts(run_dir)
+        if next_status is not None:
+            break
     if next_status is None:
         return _stale_lane_from_session(registry, lane)
 

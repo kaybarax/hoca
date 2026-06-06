@@ -104,6 +104,61 @@ def test_sync_registry_from_run_artifacts_marks_pr_created_lane_and_task(tmp_pat
     assert task.metadata["pr_url"] == "https://example.test/pull/1"
 
 
+def test_sync_registry_uses_latest_project_run_when_lane_points_at_adapter_dir(
+    tmp_path: Path, monkeypatch
+) -> None:
+    registry, _ = _seed_running_lane(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    repo = tmp_path / "repo"
+    adapter_dir = repo / ".hoca-runtime" / "fleet-lanes" / "lane-1"
+    adapter_dir.mkdir(parents=True)
+    run_dir = repo / ".hoca-runtime" / "runs" / "run-20260606T000000Z-lane-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "status": "pr_created",
+                "final_state": "pr_opened",
+                "pr_url": "https://example.test/pull/adapter",
+                "ended_at": "2026-06-06T00:04:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    registry.update_lane(
+        "lane-1",
+        HocaLane(
+            **{
+                **lane.to_dict(),
+                "run_dir": str(adapter_dir),
+                "session_id": "session-1",
+            }
+        ),
+    )
+    session = build_session(
+        session_id="session-1",
+        lane_id="lane-1",
+        adapter_id="openhands-hermes",
+        started_at="2026-06-06T00:00:00Z",
+    )
+    write_session(
+        registry.paths.root,
+        type(session)(**{**session.to_dict(), "process_id": 12345}),
+    )
+    monkeypatch.setattr("hoca.fleet_reconcile._process_alive", lambda pid: False)
+
+    changed = sync_registry_from_run_artifacts(registry)
+
+    assert "lane:lane-1:pr_created" in changed
+    assert "task:task-1:completed" in changed
+    synced_lane = registry.get_lane("lane-1")
+    assert synced_lane is not None
+    assert synced_lane.status == "pr_created"
+    assert synced_lane.metadata["pr_url"] == "https://example.test/pull/adapter"
+
+
 def test_lane_and_task_list_sync_before_display(tmp_path: Path) -> None:
     _, run_dir = _seed_running_lane(tmp_path)
     (run_dir / "final-state.json").write_text(
