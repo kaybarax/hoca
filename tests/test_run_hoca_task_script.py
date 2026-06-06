@@ -987,10 +987,7 @@ def test_run_hoca_task_applies_new_file_only_worktree_changes(tmp_path: Path) ->
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
-        openhands_body=(
-            "mkdir -p docs\n"
-            "printf 'new spec\\n' > docs/new-spec.md\n"
-        ),
+        openhands_body=("mkdir -p docs\nprintf 'new spec\\n' > docs/new-spec.md\n"),
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
