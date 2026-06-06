@@ -16,14 +16,18 @@ def test_monitor_lane_classifies_running_and_reads_status(tmp_path: Path) -> Non
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "status.json").write_text(
-        json.dumps({"status": "running", "task": "Build"}), encoding="utf-8"
+        json.dumps({"status": "running", "task": "Build", "project_id": "project-a"}),
+        encoding="utf-8",
     )
 
     snapshot = monitor_lane("lane-1", run_dir, terminal_alive=True)
 
     assert snapshot.state == "running"
     assert snapshot.status == "running"
+    assert snapshot.project_id == "project-a"
     assert snapshot.lane_id == "lane-1"
+    assert snapshot.has_validation_artifacts is False
+    assert snapshot.has_review_artifacts is False
     assert snapshot.should_process is True
 
 

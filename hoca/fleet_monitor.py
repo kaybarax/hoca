@@ -44,6 +44,7 @@ class LaneMonitorSnapshot:
     terminal_alive: bool
     should_process: bool
     run_dir: str
+    project_id: str | None = None
     hermes_worker: dict[str, Any] | None = None
     git_changed_files: int | None = None
     git_diff_files: int | None = None
@@ -104,15 +105,18 @@ def _read_active_hermes_worker_status(
 
 def _snapshot_keys_for_artifacts(run_dir: Path) -> dict[str, bool]:
     validation_matches = any(
-        run_dir.glob(pattern) for pattern in ("validation-report-*.json", "tests-summary.md")
+        path.is_file()
+        for pattern in ("validation-report-*.json", "tests-summary.md")
+        for path in run_dir.glob(pattern)
     )
     review_matches = any(
-        run_dir.glob(pattern)
+        path.is_file()
         for pattern in (
             "openhands-review.txt",
             "review-report-*.json",
             "reviews/review-report-*.json",
         )
+        for path in run_dir.glob(pattern)
     )
     return {
         "has_validation_report": validation_matches,
@@ -307,6 +311,9 @@ def monitor_lane(
     status_reason = payload.get("reason")
     if not isinstance(status_reason, str):
         status_reason = None
+    project_id = payload.get("project_id")
+    if not isinstance(project_id, str):
+        project_id = None
 
     keys = _snapshot_keys_for_artifacts(run_dir)
     changed_files_count: int | None = None
@@ -356,6 +363,7 @@ def monitor_lane(
         hermes_worker=hermes_worker,
         should_process=should_process,
         run_dir=str(run_dir),
+        project_id=project_id,
         git_changed_files=changed_files_count,
         git_diff_files=diff_files_count,
         git_merge_base_ok=merge_base_ok,
