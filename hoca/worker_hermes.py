@@ -307,9 +307,7 @@ def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
             monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
             stop_reason = monitor.get("stop_reason")
             if isinstance(stop_reason, str) and stop_reason and stop_reason != "completed":
-                if stop_reason in {"secret_detected", "dangerous_command", "scope_violation"}:
-                    return "blocked"
-                return "failed"
+                return "blocked"
         except (OSError, ValueError, TypeError):
             pass
 
@@ -335,6 +333,27 @@ def _ensure_worker_attempt_report(
 ) -> Path:
     attempt_path = worker_attempt_path(run_dir, round_number)
     if attempt_path.is_file():
+        if status != "completed":
+            try:
+                import json
+
+                existing = json.loads(attempt_path.read_text(encoding="utf-8"))
+                if existing.get("status") == "completed":
+                    return record_worker_attempt(
+                        run_dir,
+                        round_number=round_number,
+                        status=status,
+                        mode=mode,
+                        project_path=project_path,
+                    )
+            except (OSError, ValueError, TypeError):
+                return record_worker_attempt(
+                    run_dir,
+                    round_number=round_number,
+                    status=status,
+                    mode=mode,
+                    project_path=project_path,
+                )
         return attempt_path
     return record_worker_attempt(
         run_dir,

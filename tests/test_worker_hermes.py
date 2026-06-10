@@ -18,6 +18,7 @@ from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
     build_worker_hermes_prompt,
+    _ensure_worker_attempt_report,
     _infer_worker_status,
     _missing_profile_attempt_status,
     load_task_spec,
@@ -373,6 +374,34 @@ def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path:
     assert report.blocked_reason == "secret_detected"
     assert any("Monitor stop reason: secret_detected" in s for s in report.summary)
     assert any("secret_access" in s for s in report.summary)
+
+
+def test_worker_status_blocks_on_any_monitor_stop(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "monitor-result.json").write_text(
+        json.dumps({"exit_code": 1, "stop_reason": "unrelated_directory"}),
+        encoding="utf-8",
+    )
+
+    assert _infer_worker_status(run_dir, process_exit_code=0) == "blocked"
+
+
+def test_existing_completed_attempt_is_overwritten_by_monitor_block(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    record_worker_attempt(run_dir, round_number=1, status="completed")
+    (run_dir / "monitor-result.json").write_text(
+        json.dumps({"exit_code": 1, "stop_reason": "unrelated_directory"}),
+        encoding="utf-8",
+    )
+    status = _infer_worker_status(run_dir, process_exit_code=0)
+
+    path = _ensure_worker_attempt_report(run_dir, round_number=1, status=status)
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.status == "blocked"
+    assert report.blocked_reason == "unrelated_directory"
 
 
 def test_record_worker_attempt_failed_openhands_produces_report(tmp_path: Path) -> None:
