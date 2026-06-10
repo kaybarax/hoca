@@ -8,6 +8,8 @@ from tests.test_worker_direct import MAC_HOME, sample_task_spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DIRECT_WORKER_PROMPT_CHAR_BUDGET = 2800
+REVIEWER_SCRIPT_CHAR_BUDGET = 9000
 
 
 def test_direct_worker_prompt_is_compact_but_keeps_bindings() -> None:
@@ -23,6 +25,7 @@ def test_direct_worker_prompt_is_compact_but_keeps_bindings() -> None:
     direct_prompt = build_worker_direct_prompt(**kwargs)
     hermes_prompt = build_worker_hermes_prompt(**kwargs)
 
+    assert len(direct_prompt) <= DIRECT_WORKER_PROMPT_CHAR_BUDGET
     assert len(direct_prompt) < int(len(hermes_prompt) * 0.65)
     assert "run_id: run-test" in direct_prompt
     assert "README documents install steps" in direct_prompt
@@ -35,6 +38,9 @@ def test_direct_worker_prompt_is_compact_but_keeps_bindings() -> None:
 def test_direct_reviewer_prompt_keeps_report_rules_without_long_rubric() -> None:
     script = (REPO_ROOT / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
 
+    review_task_start = script.index('REVIEW_TASK="Review the current repository changes')
+    prompt_template = script[review_task_start : script.index('PROMPT_FILE="$REVIEW_DIR')]
+    assert len(prompt_template) <= REVIEWER_SCRIPT_CHAR_BUDGET
     assert "Produce a structured HocaReviewReport" in script
     assert "verdict: LGTM | fix_required | blocked" in script
     assert "Do not implement fixes or edit repository files" in script
