@@ -38,3 +38,29 @@ def test_env_example_explains_safety_and_role_credential_forwarding() -> None:
     assert "LLM_MODEL=" not in content
     assert "LLM_BASE_URL=" not in content
     assert "LLM_API_KEY=" not in content
+
+
+def test_env_example_defaults_all_roles_to_one_model() -> None:
+    content = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    uncommented_model_lines = [
+        line
+        for line in content.splitlines()
+        if line.startswith("HOCA_") and "_MODEL_MODEL=" in line
+    ]
+
+    assert uncommented_model_lines == [
+        "HOCA_MANAGER_MODEL_MODEL=ollama/qwen-14b-pro",
+        "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro",
+        "HOCA_REVIEWER_MODEL_MODEL=ollama/qwen-14b-pro",
+    ]
+    assert "Explicit multi-model opt-in" in content
+
+
+def test_readme_documents_single_model_residency_default() -> None:
+    content = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "documented default is one resident model for all\nroles" in content
+    assert "one `qwen-14b-pro` residency is about 24 GB" in content
+    assert "swap churn" in content
+    assert "Multi-model routing remains supported as an explicit opt-in" in content

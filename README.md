@@ -98,11 +98,12 @@ gateway requires a custom endpoint.
 ### Role Model Pool
 
 HOCA can route manager, worker, and reviewer phases through role-scoped model
-configuration in `.env`:
+configuration in `.env`. The documented default is one resident model for all
+roles:
 
 ```env
 HOCA_MANAGER_MODEL_NAME=manager
-HOCA_MANAGER_MODEL_MODEL=ollama/qwen-7b-pro
+HOCA_MANAGER_MODEL_MODEL=ollama/qwen-14b-pro
 HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:11434
 HOCA_MANAGER_MODEL_API_KEY=ollama
 
@@ -112,18 +113,26 @@ HOCA_WORKER_MODEL_BASE_URL=http://127.0.0.1:11434
 HOCA_WORKER_MODEL_API_KEY=ollama
 
 HOCA_REVIEWER_MODEL_NAME=reviewer
-HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
-HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
-HOCA_REVIEWER_MODEL_API_KEY=local
+HOCA_REVIEWER_MODEL_MODEL=ollama/qwen-14b-pro
+HOCA_REVIEWER_MODEL_BASE_URL=http://127.0.0.1:11434
+HOCA_REVIEWER_MODEL_API_KEY=ollama
 ```
 
-The manager can use a balanced planning model, the worker can use a
-coding-specialized model, and the reviewer can use a stronger reasoning model
-when available. Configure all three roles explicitly; use the same values in
-multiple role blocks when they should share one model. If a role is empty while
-another role is active, HOCA uses the first active role model as the fallback.
-Only the selected role model's credentials are forwarded to that phase, and API
-keys are redacted from reports and logs.
+This keeps memory predictable: one `qwen-14b-pro` residency is about 24 GB, plus
+the Docker VM reservation and sandbox cap. A three-model local split can require
+the sum of every resident model, for example 16 GB for `qwen-7b-pro` plus 24 GB
+for `qwen-14b-pro` plus about 48 GB for a 32B reviewer before Docker overhead.
+When RAM is short, interleaved manager, worker, and reviewer phases force the
+runtime to evict and reload models, so time disappears into swap churn instead
+of useful agent work.
+
+Multi-model routing remains supported as an explicit opt-in. The manager can
+use a balanced planning model, the worker can use a coding-specialized model,
+and the reviewer can use a stronger reasoning model when the hardware or hosted
+provider can absorb the residency cost. Configure all three roles explicitly; if
+a role is empty while another role is active, HOCA uses the first active role
+model as the fallback. Only the selected role model's credentials are forwarded
+to that phase, and API keys are redacted from reports and logs.
 
 ### Local OpenAI-Compatible And Cloud Models
 
