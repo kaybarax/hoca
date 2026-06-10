@@ -33,6 +33,18 @@ sandbox_resolve_network_mode() {
   if [ -n "$run_dir" ]; then
     resolve_args+=(--run-dir "$run_dir")
   fi
+  case "$role" in
+    worker)
+      if [ -n "${HOCA_WORKER_NETWORK_MODE:-}" ]; then
+        resolve_args+=(--mode "$HOCA_WORKER_NETWORK_MODE")
+      fi
+      ;;
+    reviewer)
+      if [ -n "${HOCA_REVIEWER_NETWORK_MODE:-}" ]; then
+        resolve_args+=(--mode "$HOCA_REVIEWER_NETWORK_MODE")
+      fi
+      ;;
+  esac
   if [ -n "${HOCA_NETWORK_MODE:-}" ]; then
     resolve_args+=(--env-mode "$HOCA_NETWORK_MODE")
   fi
@@ -51,7 +63,20 @@ sandbox_docker_network_args() {
 sandbox_record_network_policy() {
   local role="$1"
   local run_dir="$2"
+  local mode_arg=()
+  case "$role" in
+    worker)
+      if [ -n "${HOCA_WORKER_NETWORK_MODE:-}" ]; then
+        mode_arg=(--mode "$HOCA_WORKER_NETWORK_MODE")
+      fi
+      ;;
+    reviewer)
+      if [ -n "${HOCA_REVIEWER_NETWORK_MODE:-}" ]; then
+        mode_arg=(--mode "$HOCA_REVIEWER_NETWORK_MODE")
+      fi
+      ;;
+  esac
   PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
     "${HOCA_PYTHON:-python3}" -m hoca.sandbox_network record --role "$role" --run-dir "$run_dir" \
-    ${HOCA_NETWORK_MODE:+--env-mode "$HOCA_NETWORK_MODE"} >/dev/null
+    "${mode_arg[@]}" ${HOCA_NETWORK_MODE:+--env-mode "$HOCA_NETWORK_MODE"} >/dev/null
 }

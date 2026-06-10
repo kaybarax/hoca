@@ -59,6 +59,8 @@ WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
         "HOCA_ROOT",
         "HOCA_USE_SANDBOX",
         "HOCA_NETWORK_MODE",
+        "HOCA_WORKER_NETWORK_MODE",
+        "HOCA_REVIEWER_NETWORK_MODE",
     }
 )
 

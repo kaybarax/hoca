@@ -88,6 +88,15 @@ class TestWorkerReviewerAllowlist:
         result = filter_env(env, "worker")
         assert result == env
 
+    def test_sandbox_network_controls_are_allowed(self) -> None:
+        env = {
+            "HOCA_NETWORK_MODE": "offline",
+            "HOCA_WORKER_NETWORK_MODE": "package-install",
+            "HOCA_REVIEWER_NETWORK_MODE": "package-install",
+        }
+        result = filter_env(env, "reviewer")
+        assert result == env
+
     def test_worker_and_reviewer_use_same_allowlist(self) -> None:
         assert allowlist_for_phase("worker") is allowlist_for_phase("reviewer")
 
