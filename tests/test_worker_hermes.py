@@ -492,6 +492,7 @@ def test_record_worker_attempt_profile_mode_captures_log_artifacts(tmp_path: Pat
 
     assert "run-worker-hermes.sh" in report.commands_run
     assert "run-openhands-task.sh" in report.commands_run
+    assert report.mode == "hermes"
     assert "worker_hermes_stdout" in report.artifact_paths
     assert "worker_hermes_stderr" in report.artifact_paths
 

@@ -327,6 +327,7 @@ def workflow_fields_from_config(cfg: HocaConfig | None = None) -> dict[str, Any]
     return {
         "workflow_version": WORKFLOW_VERSION,
         "max_total_rounds": cfg.max_total_rounds,
+        "worker_mode": cfg.worker_mode,
         "sandbox_mode": "docker" if cfg.use_sandbox else "host",
         "worktree_mode": cfg.use_worktree_sandbox,
     }

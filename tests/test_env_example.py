@@ -14,6 +14,7 @@ def test_env_example_documents_hermes_upgrade_variables() -> None:
         "HOCA_NETWORK_MODE=offline",
         "HOCA_USE_WORKTREE_SANDBOX=true",
         "HOCA_USE_SANDBOX=true",
+        "HOCA_WORKER_MODE=hermes",
     ]
     for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):

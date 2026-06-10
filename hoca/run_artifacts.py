@@ -264,6 +264,7 @@ def record_worker_attempt(
 ) -> Path:
     ensure_run_layout(run_dir)
     run_id = run_dir.name
+    report_mode = "hermes" if mode == "profile" else mode
 
     changed_files = _read_lines(run_dir / "changed-files-after-openhands.txt")
     if not changed_files:
@@ -329,6 +330,7 @@ def record_worker_attempt(
         run_id=run_id,
         round=round_number,
         role="worker",
+        mode=report_mode,
         status=status,
         changed_files=changed_files,
         summary=auto_summary,
@@ -596,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_parser.add_argument("run_dir")
     worker_parser.add_argument("--round", type=int, required=True)
     worker_parser.add_argument("--status", default="completed")
-    worker_parser.add_argument("--mode", default="profile", choices=["profile"])
+    worker_parser.add_argument("--mode", default="profile", choices=["profile", "hermes", "direct"])
     worker_parser.add_argument("--project-path", default=None)
 
     validation_parser = subparsers.add_parser("record-validation", help="Write validation report.")
