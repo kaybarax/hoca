@@ -1050,6 +1050,7 @@ def fleet_legacy_check(root: Path | None) -> None:
 @click.option("--notify-telegram", is_flag=True, default=False)
 @click.option("--dev-branch", help="Target repository development branch override.")
 @click.option("--timing", is_flag=True, default=False, help="Print the run timing summary at completion.")
+@click.option("--express", is_flag=True, default=False, help="Use the low-risk express lane when eligible.")
 def run(
     project_path: Path,
     task: str,
@@ -1057,6 +1058,7 @@ def run(
     notify_telegram: bool,
     dev_branch: str | None,
     timing: bool,
+    express: bool,
 ) -> None:
     """Run a HOCA task against a target repository."""
     project_path = require_target_repo(project_path)
@@ -1069,6 +1071,8 @@ def run(
         args.extend(["--dev-branch", dev_branch])
     if timing:
         args.append("--timing")
+    if express:
+        args.append("--express")
     run_script("run-hoca-task.sh", args)
 
 

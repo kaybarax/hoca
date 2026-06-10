@@ -83,8 +83,32 @@ def test_run_hoca_task_applies_task_scaled_budget() -> None:
     assert "apply_run_budget()" in content
     assert "-m hoca.run_budget export-shell" in content
     assert "eval \"$budget_exports\"" in content
-    assert "generate_run_task_spec\napply_run_budget 1" in content
+    assert "generate_run_task_spec\napply_express_mode\napply_run_budget 1" in content
     assert 'apply_run_budget "$round_number"' in content
+
+
+def test_run_hoca_task_express_lane_preserves_gates_and_falls_back() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "--express" in content
+    assert "EXPRESS_REQUESTED=\"false\"" in content
+    assert "apply_express_mode()" in content
+    assert '"gates_preserved": [' in content
+    for gate in (
+        "definition_of_ready",
+        "validation",
+        "review",
+        "arbitration",
+        "safe_staging",
+        "manager_owned_pr",
+    ):
+        assert gate in content
+    assert 'spec.risk_level == "low" and expected_area_count <= 1' in content
+    assert 'MAX_TOTAL_ROUNDS=1' in content
+    assert 'export HOCA_WORKER_MODE=direct' in content
+    assert 'export HOCA_REVIEWER_MODE=direct' in content
+    assert 'export HOCA_REVIEW_WARMUP=true' in content
+    assert 'reason = "eligible" if eligible else "ineligible: high risk or wide scope"' in content
 
 
 def test_run_tests_uses_install_cache_for_pnpm() -> None:

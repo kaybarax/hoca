@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
-  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH] [--timing]"
+  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH] [--timing] [--express]"
   exit 1
 fi
 
@@ -14,6 +14,7 @@ ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
 PRINT_TIMING="false"
+EXPRESS_REQUESTED="false"
 if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
   MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
 else
@@ -50,6 +51,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --timing)
       PRINT_TIMING="true"
+      shift
+      ;;
+    --express)
+      EXPRESS_REQUESTED="true"
       shift
       ;;
     --dev-branch)
@@ -320,6 +325,60 @@ apply_run_budget() {
   local budget_exports
   budget_exports="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_budget export-shell "$spec_path" "$RUN_DIR" --round "$round_number")"
   eval "$budget_exports"
+}
+
+apply_express_mode() {
+  if [ "$EXPRESS_REQUESTED" != "true" ]; then
+    return 0
+  fi
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ ! -f "$spec_path" ]; then
+    return 0
+  fi
+  local decision_json
+  decision_json="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - "$spec_path" "$RUN_DIR/express-mode.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from hoca.contracts import HocaTaskSpec
+from hoca.run_state import write_json_atomic
+
+spec = HocaTaskSpec.from_json(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_area_count = len([area for area in spec.expected_areas if area.strip()])
+eligible = spec.risk_level == "low" and expected_area_count <= 1
+reason = "eligible" if eligible else "ineligible: high risk or wide scope"
+payload = {
+    "requested": True,
+    "enabled": eligible,
+    "reason": reason,
+    "risk_level": spec.risk_level,
+    "expected_area_count": expected_area_count,
+    "gates_preserved": [
+        "definition_of_ready",
+        "validation",
+        "review",
+        "arbitration",
+        "safe_staging",
+        "manager_owned_pr",
+    ],
+}
+write_json_atomic(Path(sys.argv[2]), payload)
+print(json.dumps(payload, sort_keys=True))
+PY
+)"
+  if printf '%s' "$decision_json" | grep -q '"enabled": true'; then
+    MAX_TOTAL_ROUNDS=1
+    export HOCA_MAX_TOTAL_ROUNDS=1
+    export HOCA_WORKER_MODE=direct
+    export HOCA_REVIEWER_MODE=direct
+    export HOCA_REVIEW_WARMUP=true
+    WORKER_MODE=direct
+    REVIEWER_MODE=direct
+  fi
 }
 
 read_task_spec_field() {
@@ -859,6 +918,7 @@ record_timing_phase "branch_worktree_setup" "$BRANCH_SETUP_START_EPOCH" "$BRANCH
 
 TASK_SPEC_START_EPOCH="$(hoca_time_epoch)"
 generate_run_task_spec
+apply_express_mode
 apply_run_budget 1
 TASK_SPEC_END_EPOCH="$(hoca_time_epoch)"
 record_timing_phase "task_spec" "$TASK_SPEC_START_EPOCH" "$TASK_SPEC_END_EPOCH"
