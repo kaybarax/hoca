@@ -165,7 +165,7 @@ record_timing_event() {
 
 REVIEW_WARMUP_PID=""
 start_reviewer_warmup() {
-  if [ "${HOCA_REVIEW_WARMUP:-false}" != "true" ] || [ -n "${REVIEW_WARMUP_PID:-}" ]; then
+  if [ "${HOCA_REVIEW_WARMUP:-true}" != "true" ] || [ -n "${REVIEW_WARMUP_PID:-}" ]; then
     return 0
   fi
   mkdir -p "$RUN_DIR/logs"

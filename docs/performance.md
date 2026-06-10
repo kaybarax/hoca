@@ -57,9 +57,10 @@ Install caching records package-manager state and skips dependency installs when
 the lockfile cache is current. Force an install with `HOCA_FORCE_INSTALL=true`
 when validating dependency setup itself.
 
-Reviewer warm-up is controlled by `HOCA_REVIEW_WARMUP=true`. It starts
-best-effort reviewer model/container checks during tests, writes advisory
-artifacts, and never fails the run by itself.
+Reviewer warm-up is enabled by default with `HOCA_REVIEW_WARMUP=true`. Set
+`HOCA_REVIEW_WARMUP=false` to disable it. It starts best-effort reviewer
+model/container checks during tests, writes advisory artifacts, and never fails
+the run by itself.
 
 Fleet memory guardrails use resource budget metadata such as
 `max_resident_models`, `model_residency_mb`, `docker_vm_memory_mb`, and

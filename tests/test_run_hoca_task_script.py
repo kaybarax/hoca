@@ -77,7 +77,7 @@ def test_run_hoca_task_can_skip_pr_creation_after_commit() -> None:
 def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
-    assert 'HOCA_REVIEW_WARMUP:-false' in content
+    assert 'HOCA_REVIEW_WARMUP:-true' in content
     assert 'start_reviewer_warmup' in content
     assert 'wait_for_reviewer_warmup' in content
     assert 'python" -m hoca.reviewer_warmup "$RUN_DIR"' not in content
