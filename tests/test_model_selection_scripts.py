@@ -372,6 +372,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     )
     assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert (run_dir / "review" / "git-diff.patch").is_file()
+    assert (run_dir / "review" / "context-truncation.json").is_file()
     assert (run_dir / "reviews" / "review-report-1.json").is_file()
     prompt = (run_dir / "review" / "openhands-review-prompt.txt").read_text(encoding="utf-8")
     assert "HocaReviewReport" in prompt
@@ -379,6 +380,68 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     assert "Severity rubric:" in prompt
     assert "PR tech debt" in prompt
     assert "structured JSON" in prompt
+    assert "context-truncation.json" in prompt
+    truncation = json.loads((run_dir / "review" / "context-truncation.json").read_text())
+    assert truncation["diff_truncated"] is False
+
+
+def test_review_with_openhands_caps_large_diff_context(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "cat <<'EOF'\n"
+        "```json\n"
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-test",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "LGTM",\n'
+        '  "findings": [],\n'
+        '  "pr_notes": {"summary": ["Looks good."], "known_followups": []}\n'
+        "}\n"
+        "```\n"
+        "LGTM\n"
+        "EOF\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    project.mkdir()
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    run_dir.mkdir(parents=True)
+    (project / "README.md").write_text("\n".join(f"line {i}" for i in range(80)), encoding="utf-8")
+    (run_dir / "tests-summary.md").write_text(
+        "\n".join(f"test line {i}" for i in range(40)), encoding="utf-8"
+    )
+
+    result = run_script(
+        "review-with-openhands.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_USE_SANDBOX": "false",
+            "HOCA_REVIEW_DIFF_MAX_LINES": "12",
+            "HOCA_REVIEW_LOG_TAIL_LINES": "10",
+        },
+        args=[str(project), "Review project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    truncation = json.loads((run_dir / "review" / "context-truncation.json").read_text())
+    assert truncation["diff_truncated"] is True
+    assert truncation["test_summary_truncated"] is True
+    assert (run_dir / "review" / "git-diff.capped.patch").is_file()
+    assert (run_dir / "review" / "tests-summary-tail.md").is_file()
+    prompt = (run_dir / "review" / "openhands-review-prompt.txt").read_text(encoding="utf-8")
+    assert "git-diff.capped.patch" in prompt
+    assert "tests-summary-tail.md" in prompt
 
 
 def test_review_with_openhands_materializes_structured_json_from_output(tmp_path: Path) -> None:

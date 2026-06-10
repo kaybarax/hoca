@@ -65,9 +65,55 @@ STRUCTURED_REPORT_PATH="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
 mkdir -p "$RUN_DIR/reviews"
 
 CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
-DIFF_FILE="$REVIEW_DIR/git-diff.patch"
+FULL_DIFF_FILE="$REVIEW_DIR/git-diff.patch"
+DIFF_FILE="$FULL_DIFF_FILE"
+DIFF_VIEW_FILE="$DIFF_FILE"
+TEST_SUMMARY_FILE="$RUN_DIR/tests-summary.md"
+TEST_SUMMARY_VIEW_FILE="$TEST_SUMMARY_FILE"
+TRUNCATION_FILE="$REVIEW_DIR/context-truncation.json"
+REVIEW_DIFF_MAX_LINES="${HOCA_REVIEW_DIFF_MAX_LINES:-1200}"
+REVIEW_DIFF_CONTEXT_LINES="${HOCA_REVIEW_DIFF_CONTEXT_LINES:-3}"
+REVIEW_LOG_TAIL_LINES="${HOCA_REVIEW_LOG_TAIL_LINES:-200}"
 printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_FILE"
-git diff > "$DIFF_FILE"
+git diff -U"$REVIEW_DIFF_CONTEXT_LINES" > "$FULL_DIFF_FILE"
+
+DIFF_TRUNCATED=false
+DIFF_LINE_COUNT="$(wc -l < "$FULL_DIFF_FILE" | tr -d ' ')"
+if [ "$DIFF_LINE_COUNT" -gt "$REVIEW_DIFF_MAX_LINES" ]; then
+  DIFF_VIEW_FILE="$REVIEW_DIR/git-diff.capped.patch"
+  head -n "$REVIEW_DIFF_MAX_LINES" "$FULL_DIFF_FILE" > "$DIFF_VIEW_FILE"
+  {
+    echo ""
+    echo "[HOCA truncated diff view at ${REVIEW_DIFF_MAX_LINES} of ${DIFF_LINE_COUNT} lines; full diff: ${FULL_DIFF_FILE}]"
+  } >> "$DIFF_VIEW_FILE"
+  DIFF_TRUNCATED=true
+fi
+
+TEST_SUMMARY_TRUNCATED=false
+TEST_SUMMARY_LINE_COUNT=0
+if [ -f "$TEST_SUMMARY_FILE" ]; then
+  TEST_SUMMARY_LINE_COUNT="$(wc -l < "$TEST_SUMMARY_FILE" | tr -d ' ')"
+  if [ "$TEST_SUMMARY_LINE_COUNT" -gt "$REVIEW_LOG_TAIL_LINES" ]; then
+    TEST_SUMMARY_VIEW_FILE="$REVIEW_DIR/tests-summary-tail.md"
+    tail -n "$REVIEW_LOG_TAIL_LINES" "$TEST_SUMMARY_FILE" > "$TEST_SUMMARY_VIEW_FILE"
+    TEST_SUMMARY_TRUNCATED=true
+  fi
+fi
+
+cat > "$TRUNCATION_FILE" <<EOF
+{
+  "diff_truncated": ${DIFF_TRUNCATED},
+  "diff_full_path": "${FULL_DIFF_FILE}",
+  "diff_view_path": "${DIFF_VIEW_FILE}",
+  "diff_line_count": ${DIFF_LINE_COUNT},
+  "diff_line_cap": ${REVIEW_DIFF_MAX_LINES},
+  "test_summary_truncated": ${TEST_SUMMARY_TRUNCATED},
+  "test_summary_full_path": "${TEST_SUMMARY_FILE}",
+  "test_summary_view_path": "${TEST_SUMMARY_VIEW_FILE}",
+  "test_summary_line_count": ${TEST_SUMMARY_LINE_COUNT},
+  "test_summary_line_cap": ${REVIEW_LOG_TAIL_LINES}
+}
+EOF
 
 REVIEW_GOAL="$TASK"
 ACCEPTANCE_BLOCK=""
@@ -97,10 +143,15 @@ REVIEW_TASK="Review the current repository changes for the following task: ${REV
 
 The changed-file list and diff are saved in:
 - ${CHANGED_FILES_FILE}
-- ${DIFF_FILE}
+- ${DIFF_VIEW_FILE}
+
+Test summary view and context truncation metadata:
+- ${TEST_SUMMARY_VIEW_FILE}
+- ${TRUNCATION_FILE}
 
 Inspect those files and the working tree directly. Do not rely on this prompt
-as a complete copy of the diff."
+as a complete copy of the diff. If context-truncation.json says a view was
+capped, mention that limitation in pr_notes.summary."
 
 if [ -n "$ACCEPTANCE_BLOCK" ]; then
   REVIEW_TASK="${REVIEW_TASK}
