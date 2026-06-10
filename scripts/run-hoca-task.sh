@@ -73,6 +73,11 @@ HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
 export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
+DOR_ARTIFACT_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hoca-dor.XXXXXX")"
+cleanup_dor_tmp_dir() {
+  rm -rf "$DOR_ARTIFACT_TMP_DIR"
+}
+trap cleanup_dor_tmp_dir EXIT
 
 hoca_time_epoch() {
   "$PYTHON_BIN" -c 'import time; print(f"{time.time():.6f}")'
@@ -96,7 +101,7 @@ run_definition_of_ready_check() {
 echo "Checking definition of ready..."
 DOR_START_EPOCH="$(hoca_time_epoch)"
 set +e
-DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID")"
+DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$DOR_ARTIFACT_TMP_DIR")"
 DOR_EXIT=$?
 set -e
 DOR_END_EPOCH="$(hoca_time_epoch)"
@@ -348,11 +353,10 @@ mkdir -p "$RUN_DIR"
 printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
 
 echo "Recording definition-of-ready artifact..."
-DOR_ARTIFACT_START_EPOCH="$(hoca_time_epoch)"
-run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$PROJECT_PATH/$RUN_DIR" >/dev/null
-DOR_ARTIFACT_END_EPOCH="$(hoca_time_epoch)"
+if [ -f "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json" ]; then
+  cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json" "$RUN_DIR/definition-of-ready.json"
+fi
 record_timing_phase "definition_of_ready" "$DOR_START_EPOCH" "$DOR_END_EPOCH"
-record_timing_phase "definition_of_ready_artifact" "$DOR_ARTIFACT_START_EPOCH" "$DOR_ARTIFACT_END_EPOCH"
 
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"

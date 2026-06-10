@@ -20,6 +20,13 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
     assert 'export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"' in content
 
 
+def test_run_hoca_task_invokes_definition_of_ready_once() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert content.count('run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID"') == 1
+    assert 'cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json"' in content
+
+
 def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
