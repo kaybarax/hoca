@@ -1233,7 +1233,7 @@ while true; do
   wait_for_reviewer_warmup
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
-  record_timing_event --type "agent_loop" --name "reviewer-hermes" --round "$current_round" --role "reviewer"
+  record_timing_event --type "agent_loop" --name "reviewer-$REVIEWER_MODE" --round "$current_round" --role "reviewer"
   REVIEW_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
