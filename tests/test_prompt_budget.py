@@ -42,6 +42,8 @@ def test_direct_reviewer_prompt_keeps_report_rules_without_long_rubric() -> None
     prompt_template = script[review_task_start : script.index('PROMPT_FILE="$REVIEW_DIR')]
     assert len(prompt_template) <= REVIEWER_SCRIPT_CHAR_BUDGET
     assert "Produce a structured HocaReviewReport" in script
+    assert 'STRUCTURED_REPORT_PATH="$HOCA_REVIEW_REPORT_PATH"' in script
+    assert "Do not create, delete, rename, or inspect alternate report" in script
     assert "verdict: LGTM | fix_required | blocked" in script
     assert "Do not implement fixes or edit repository files" in script
     assert "Severity rubric:" in script

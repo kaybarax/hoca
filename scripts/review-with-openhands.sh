@@ -62,6 +62,9 @@ mkdir -p "$REVIEW_DIR"
 REVIEW_ROUND="${HOCA_REVIEW_ROUND:-1}"
 RUN_ID="$(basename "$RUN_DIR")"
 STRUCTURED_REPORT_PATH="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
+if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
+  STRUCTURED_REPORT_PATH="$HOCA_REVIEW_REPORT_PATH"
+fi
 mkdir -p "$RUN_DIR/reviews"
 
 CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
@@ -192,6 +195,11 @@ Structural quality bar:
 Produce a structured HocaReviewReport as JSON (YAML is acceptable only if JSON is
 not practical). Write the report to:
 - ${STRUCTURED_REPORT_PATH}
+
+This path is exact. Do not create, delete, rename, or inspect alternate report
+directories such as /workspace/hoca-runs. If running inside the sandbox, the
+run directory is mounted and writable at both /hoca-run and the absolute path
+shown above; use the shown path directly.
 
 Include these fields:
 - schema_version: 1
