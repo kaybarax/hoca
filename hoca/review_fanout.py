@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from hoca.run_state import now_iso
 
 REVIEW_FANOUT_ENABLED_ENV = "HOCA_REVIEW_FANOUT_ENABLED"
 REVIEW_ADAPTERS_ENV = "HOCA_REVIEW_ADAPTERS"
+REVIEW_FANOUT_MAX_WORKERS_ENV = "HOCA_REVIEW_FANOUT_MAX_WORKERS"
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,19 @@ def _run_adapter_command(command: str) -> str | None:
     if result.returncode != 0:
         return None
     return None
+
+
+def _max_fanout_workers(source_count: int) -> int:
+    if source_count <= 0:
+        return 1
+    raw = os.environ.get(REVIEW_FANOUT_MAX_WORKERS_ENV, "").strip()
+    if raw:
+        try:
+            configured = int(raw)
+        except ValueError:
+            configured = source_count
+        return max(1, min(source_count, configured))
+    return source_count
 
 
 def _as_verdict(value: Any) -> str:
@@ -429,16 +444,38 @@ def collect_review_signals(
             review_round,
         )
 
-    signals: list[HocaReviewSignal] = []
-    seen: set[tuple[str, str, str]] = set()
-
-    for item in review_sources:
+    def load_source(item: ReviewSignalSource) -> tuple[ReviewSignalSource, str | None]:
         if item.command is None:
             if item.path is None:
-                continue
+                return item, None
             raw = _read_text(item.path)
         else:
             raw = _run_adapter_command(item.command)
+        return item, raw
+
+    loaded: list[tuple[ReviewSignalSource, str | None]]
+    if _fanout_enabled() and len(review_sources) > 1:
+        loaded = []
+        with ThreadPoolExecutor(max_workers=_max_fanout_workers(len(review_sources))) as executor:
+            futures = {executor.submit(load_source, item): item for item in review_sources}
+            for future in as_completed(futures):
+                loaded.append(future.result())
+    else:
+        loaded = [load_source(item) for item in review_sources]
+
+    loaded.sort(
+        key=lambda pair: (
+            pair[0].source,
+            str(pair[0].path or ""),
+            pair[0].command or "",
+            pair[0].review_round,
+        )
+    )
+
+    signals: list[HocaReviewSignal] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for item, raw in loaded:
         if raw is None:
             continue
         batch = normalize_review_output(
@@ -450,7 +487,16 @@ def collect_review_signals(
                 seen.add(key)
                 signals.append(signal)
 
-    return signals
+    return sorted(
+        signals,
+        key=lambda signal: (
+            signal.verdict,
+            signal.source,
+            signal.finding_id or "",
+            signal.summary,
+            signal.signal_id,
+        ),
+    )
 
 
 def aggregate_review_signals(signals: list[HocaReviewSignal]) -> dict[str, list[HocaReviewSignal]]:
