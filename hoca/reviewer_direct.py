@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from hoca.review_gate import ReviewGateError, evaluate_review_gate
+from hoca.review_report_parser import try_extract_structured_report
 from hoca.run_layout import ensure_run_layout, review_report_path
 from hoca.subprocess_utils import CommandResult
 from hoca.reviewer_hermes import (
@@ -27,6 +28,20 @@ def _structured_report_ready(path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(loaded, dict) and loaded.get("verdict") in {"LGTM", "fix_required", "blocked"}
+
+
+def _recover_structured_report_from_log(log_path: Path, report_path: Path) -> bool:
+    if not log_path.is_file():
+        return False
+    try:
+        report = try_extract_structured_report(log_path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    if report is None:
+        return False
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report.to_json(), encoding="utf-8")
+    return True
 
 
 def _invoke_openhands_review_direct(
@@ -66,7 +81,9 @@ def _invoke_openhands_review_direct(
             text=True,
         )
         while process.poll() is None:
-            if _structured_report_ready(report_path):
+            if _structured_report_ready(report_path) or _recover_structured_report_from_log(
+                stderr_path, report_path
+            ):
                 try:
                     process.terminate()
                     process.wait(timeout=5)

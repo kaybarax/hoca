@@ -50,6 +50,34 @@ class FakeReviewProcess:
         self.returncode = -9
 
 
+class FakeNoisyReviewProcess:
+    def __init__(self, command, *, stderr_path: Path):
+        self.command = tuple(command)
+        self.returncode: int | None = None
+        stderr_path.write_text(
+            "InternalServerError around final message\n"
+            "```json\n"
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Recovered."],'
+            '"known_followups":[]}}\n'
+            "```\n",
+            encoding="utf-8",
+        )
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        self.returncode = 0
+        return 0
+
+    def terminate(self):
+        self.returncode = -15
+
+    def kill(self):
+        self.returncode = -9
+
+
 def test_run_reviewer_direct_invokes_review_wrapper_and_uses_gate(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -108,3 +136,33 @@ def test_run_reviewer_direct_fix_required_returns_repair_exit(
 
     assert result.exit_code == 2
     assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "fix_required"
+
+
+def test_run_reviewer_direct_recovers_fenced_report_from_stderr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+
+    def fake_popen(command, **kwargs):
+        return FakeNoisyReviewProcess(
+            command,
+            stderr_path=run_dir / "logs" / "reviewer-direct-stderr.txt",
+        )
+
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
+
+    result = run_reviewer_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.exit_code == 0
+    assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "LGTM"
