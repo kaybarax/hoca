@@ -75,6 +75,44 @@ def test_openhands_wrapper_does_not_embed_api_key_in_python_command() -> None:
     assert "env_override['LLM_MODEL'] = '${MODEL}'" not in content
 
 
+def test_openhands_wrapper_fails_closed_when_sandbox_required_without_docker(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    init_repo(repo)
+    run_dir = tmp_path / "run"
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOCA_SKIP_ROLE_MODEL_RESOLUTION": "true",
+            "HOCA_USE_SANDBOX": "true",
+            "LLM_MODEL": "ollama/test",
+            "LLM_BASE_URL": "http://127.0.0.1:11434",
+            "LLM_API_KEY": "ollama",
+            "PATH": "/usr/bin:/bin",
+        }
+    )
+
+    result = subprocess.run(
+        [
+            str(Path(__file__).resolve().parents[1] / "scripts" / "run-openhands-task.sh"),
+            str(repo),
+            "Update README",
+            str(run_dir),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert "Refusing to fall back to host execution" in result.stderr
+    assert (run_dir / "sandbox-required-error.txt").exists()
+    assert not (run_dir / "host-execution-warning.txt").exists()
+
+
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
     env["HOCA_DOCTOR_SCRIPT"] = "true"
@@ -1061,7 +1099,9 @@ def test_run_hoca_task_fails_when_worker_reports_changes_but_git_is_clean(
     result = run_hoca_task_with_env(tmp_path, "Update CONTRIBUTING", env)
 
     assert result.returncode != 0
-    assert "Worker reported changed files, but the task worktree has no Git changes" in result.stderr
+    assert (
+        "Worker reported changed files, but the task worktree has no Git changes" in result.stderr
+    )
     assert '"status": "failed"' in latest_status(tmp_path)
     assert '"reason": "worker_report_mismatch"' in latest_status(tmp_path)
 

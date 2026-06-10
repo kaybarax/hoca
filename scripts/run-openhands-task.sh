@@ -102,6 +102,16 @@ warn_host_execution() {
   } | tee -a "$RUN_DIR/host-execution-warning.txt" >&2
 }
 
+fail_sandbox_execution() {
+  local reason="$1"
+  {
+    echo "[FAIL] HOCA sandbox execution required: $reason"
+    echo "[FAIL] Refusing to fall back to host execution while HOCA_USE_SANDBOX=true."
+    echo "[FAIL] Start Docker or set HOCA_USE_SANDBOX=false explicitly for host-local execution."
+  } | tee "$RUN_DIR/sandbox-required-error.txt" >&2
+  exit 1
+}
+
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
 echo "  BASE_URL=$BASE_URL"
@@ -138,11 +148,11 @@ if [ "$USE_SANDBOX" = "true" ]; then
     if [ -x "$SANDBOX_SCRIPT" ]; then
       exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
     fi
-    warn_host_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh was not found or is not executable."
   elif ! command -v docker >/dev/null 2>&1; then
-    warn_host_execution "HOCA_USE_SANDBOX=true but docker is not installed; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but docker is not installed."
   else
-    warn_host_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running."
   fi
 else
   warn_host_execution "HOCA_USE_SANDBOX is not enabled (explicit host-local opt-in)."
