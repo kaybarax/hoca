@@ -98,6 +98,7 @@ def test_run_codex_worker_records_standard_attempt(tmp_path: Path, monkeypatch) 
     fake_bin = make_fake_cli(
         tmp_path,
         "codex",
+        "[[ \"$*\" == *'--sandbox workspace-write'* ]] || { echo 'missing workspace-write' >&2; exit 2; }\n"
         "printf 'updated by codex\\n' > README.md\n"
         "echo 'Codex completed implementation.'\n",
     )

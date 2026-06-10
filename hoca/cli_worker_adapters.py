@@ -43,7 +43,7 @@ def claude_worker_adapter_spec() -> CliWorkerAdapterSpec:
 def codex_worker_adapter_spec() -> CliWorkerAdapterSpec:
     return CliWorkerAdapterSpec(
         engine="codex",
-        command=("codex", "exec"),
+        command=("codex", "exec", "--sandbox", "workspace-write"),
         missing_cli_name="codex CLI",
     )
 
