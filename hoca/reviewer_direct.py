@@ -19,6 +19,19 @@ from hoca.reviewer_hermes import (
     _write_blocked_report,
 )
 
+DEFAULT_DIRECT_REVIEW_TIMEOUT_SECONDS = 600
+
+
+def _direct_review_timeout_seconds(env: dict[str, str]) -> int:
+    raw = env.get("HOCA_OPENHANDS_TIMEOUT", str(DEFAULT_DIRECT_REVIEW_TIMEOUT_SECONDS))
+    try:
+        timeout = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"HOCA_OPENHANDS_TIMEOUT must be an integer, got: {raw!r}") from exc
+    if timeout <= 0:
+        raise ValueError("HOCA_OPENHANDS_TIMEOUT must be greater than 0")
+    return timeout
+
 
 def _structured_report_ready(path: Path) -> bool:
     if not path.is_file():
@@ -69,6 +82,8 @@ def _invoke_openhands_review_direct(
     env["HOCA_REVIEW_ROUND"] = str(round_number)
     env["HOCA_REVIEW_REPORT_PATH"] = str(report_path)
     env.setdefault("HOCA_PYTHON", sys.executable)
+    timeout_seconds = _direct_review_timeout_seconds(env)
+    deadline = time.monotonic() + timeout_seconds
     with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
         "w", encoding="utf-8"
     ) as stderr_file:
@@ -95,6 +110,23 @@ def _invoke_openhands_review_direct(
                     0,
                     stdout_path.read_text(encoding="utf-8", errors="replace"),
                     stderr_path.read_text(encoding="utf-8", errors="replace"),
+                )
+            if time.monotonic() >= deadline:
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                timeout_message = (
+                    f"\nDirect reviewer timed out after {timeout_seconds}s waiting for a "
+                    "structured HocaReviewReport.\n"
+                )
+                return CommandResult(
+                    tuple(command),
+                    124,
+                    stdout_path.read_text(encoding="utf-8", errors="replace"),
+                    stderr_path.read_text(encoding="utf-8", errors="replace") + timeout_message,
                 )
             time.sleep(0.5)
         returncode = process.returncode if process.returncode is not None else 1
