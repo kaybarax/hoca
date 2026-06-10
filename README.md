@@ -574,6 +574,11 @@ also copies the OpenHands and PR templates for you when they are missing.
 .venv/bin/ruff format --check .
 ```
 
+The standard pytest suite includes structural performance budget checks in
+`tests/test_performance_budgets.py`. These tests catch regressions such as extra
+definition-of-ready executions, stale direct-mode Hermes timing labels, disabled
+install-cache skips, and prompt templates growing past the v1.1 budget.
+
 ## Known Limitations
 
 - HOCA currently targets macOS. Linux support is possible but untested.
