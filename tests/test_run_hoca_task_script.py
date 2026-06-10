@@ -27,6 +27,14 @@ def test_run_hoca_task_invokes_definition_of_ready_once() -> None:
     assert 'cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json"' in content
 
 
+def test_run_hoca_task_doctor_cache_can_be_disabled() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"' in content
+    assert "if ttl <= 0" in content
+    assert '[ "$HOCA_DOCTOR_CACHE_SECONDS" -gt 0 ]' in content
+
+
 def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
@@ -879,6 +887,41 @@ def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None
     assert "HOCA doctor failed" in result.stderr
     assert '"reason": "doctor_failed"' in latest_status(tmp_path)
     assert "type=failed" in latest_notification_result(tmp_path)
+
+
+def test_run_hoca_task_reuses_successful_doctor_cache(tmp_path: Path) -> None:
+    repo_one = tmp_path / "repo-one"
+    repo_two = tmp_path / "repo-two"
+    init_repo(repo_one)
+    init_repo(repo_two)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(repo_one))
+    doctor_count = tmp_path / "doctor-count.txt"
+    doctor_script = tmp_path / "doctor.sh"
+    write_executable(
+        doctor_script,
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f'count_file="{doctor_count}"\n'
+        'count="0"\n'
+        '[ -f "$count_file" ] && count="$(cat "$count_file")"\n'
+        'count="$((count + 1))"\n'
+        'printf "%s\\n" "$count" > "$count_file"\n'
+        'echo "[OK] fake doctor"\n',
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DOCTOR_SCRIPT"] = str(doctor_script)
+    env["HOCA_DOCTOR_CACHE_DIR"] = str(tmp_path / "doctor-cache")
+    env["HOCA_DOCTOR_CACHE_SECONDS"] = "3600"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    first = run_hoca_task_with_env(repo_one, "Update README", env)
+    second = run_hoca_task_with_env(repo_two, "Update README", env)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert doctor_count.read_text(encoding="utf-8") == "1\n"
+    assert "Using cached HOCA doctor preflight." in second.stdout
 
 
 def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) -> None:

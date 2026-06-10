@@ -73,6 +73,8 @@ HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
 export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
+HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"
+HOCA_DOCTOR_CACHE_DIR="${HOCA_DOCTOR_CACHE_DIR:-${HOME:-/tmp}/.hoca/doctor-cache}"
 DOR_ARTIFACT_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hoca-dor.XXXXXX")"
 cleanup_dor_tmp_dir() {
   rm -rf "$DOR_ARTIFACT_TMP_DIR"
@@ -151,6 +153,122 @@ record_timing_event() {
     return 0
   fi
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
+}
+
+doctor_cache_key() {
+  "$PYTHON_BIN" - "$HOCA_DOCTOR_SCRIPT" "$HOCA_DOTENV_PATH" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+script = Path(sys.argv[1])
+dotenv = Path(sys.argv[2])
+names = (
+    "HOCA_USE_SANDBOX",
+    "HOCA_SANDBOX_NETWORK",
+    "HOCA_AGENT_ADAPTER",
+    "HOCA_WORKER_MODE",
+    "HOCA_REVIEWER_MODE",
+    "HOCA_MODEL_POOL",
+    "LLM_MODEL",
+    "LLM_BASE_URL",
+    "OLLAMA_MODEL",
+    "OPENHANDS_CONTAINER_IMAGE",
+    "PATH",
+)
+parts = [f"doctor={script.resolve()}"]
+for path in (script, dotenv):
+    try:
+        stat = path.stat()
+    except OSError:
+        parts.append(f"{path}=missing")
+    else:
+        parts.append(f"{path.resolve()}={stat.st_mtime_ns}:{stat.st_size}")
+for name in names:
+    parts.append(f"{name}={os.environ.get(name, '')}")
+print(hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest())
+PY
+}
+
+doctor_cache_valid() {
+  local metadata_file="$1"
+  local ttl_seconds="$2"
+  "$PYTHON_BIN" - "$metadata_file" "$ttl_seconds" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+ttl = int(sys.argv[2])
+if ttl <= 0 or not path.is_file():
+    raise SystemExit(1)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+created = float(payload.get("created_at_epoch", 0))
+exit_code = int(payload.get("exit_code", 1))
+if exit_code == 0 and time.time() - created <= ttl:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+run_doctor_preflight() {
+  local cache_key cache_entry metadata_file cached_stdout cached_stderr
+  cache_key="$(doctor_cache_key)"
+  cache_entry="$HOCA_DOCTOR_CACHE_DIR/$cache_key"
+  metadata_file="$cache_entry/metadata.json"
+  cached_stdout="$cache_entry/doctor-output.log"
+  cached_stderr="$cache_entry/doctor-stderr.log"
+
+  if doctor_cache_valid "$metadata_file" "$HOCA_DOCTOR_CACHE_SECONDS"; then
+    echo "Using cached HOCA doctor preflight."
+    cp "$cached_stdout" "$RUN_DIR/doctor-output.log"
+    cp "$cached_stderr" "$RUN_DIR/doctor-stderr.log"
+    printf '%s\n' "$cache_key" > "$RUN_DIR/doctor-cache-key.txt"
+    return 0
+  fi
+
+  set +e
+  "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"
+  local doctor_exit=$?
+  set -e
+  if [ "$doctor_exit" -eq 0 ] && [ "$HOCA_DOCTOR_CACHE_SECONDS" -gt 0 ]; then
+    mkdir -p "$cache_entry"
+    cp "$RUN_DIR/doctor-output.log" "$cached_stdout"
+    cp "$RUN_DIR/doctor-stderr.log" "$cached_stderr"
+    "$PYTHON_BIN" - "$metadata_file" "$cache_key" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps(
+        {
+            "schema_version": 1,
+            "cache_key": sys.argv[2],
+            "created_at_epoch": time.time(),
+            "exit_code": 0,
+        },
+        indent=2,
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
+  return "$doctor_exit"
 }
 
 print_timing_report_if_requested() {
@@ -582,7 +700,7 @@ echo "HOCA run started: $RUN_ID"
 
 echo "Running HOCA doctor preflight..."
 DOCTOR_START_EPOCH="$(hoca_time_epoch)"
-if ! "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
+if ! run_doctor_preflight; then
   DOCTOR_END_EPOCH="$(hoca_time_epoch)"
   record_timing_phase "doctor" "$DOCTOR_START_EPOCH" "$DOCTOR_END_EPOCH" --status "failed"
   cat "$RUN_DIR/doctor-output.log"
