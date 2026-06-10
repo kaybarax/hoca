@@ -207,3 +207,25 @@ def test_template_avoids_secret_like_paths(
         assert fragment not in content, (
             f"{filename} must not include secret-like example content: {fragment!r}"
         )
+
+
+def test_fleet_task_template_documents_worker_engine_policy() -> None:
+    content = (TEMPLATES_DIR / "HocaFleetTask.yaml").read_text(encoding="utf-8")
+
+    assert "worker_engine: openhands" in content
+    assert "worker_engine_policy: project-allowlist-required" in content
+
+
+def test_security_docs_cover_native_cli_worker_posture() -> None:
+    root = TEMPLATES_DIR.parent
+    security = (root / "docs" / "security-model.md").read_text(encoding="utf-8")
+    fleet = (root / "docs" / "fleet-orchestration.md").read_text(encoding="utf-8")
+
+    assert "HOCA_WORKER_ENGINE=openhands" in security
+    assert "HOCA_WORKER_ENGINE=claude-code" in security
+    assert "HOCA_WORKER_ENGINE=codex" in security
+    assert "host-native execution" in security
+    assert "not OpenHands Docker-sandboxed execution" in security
+    assert "agent_policy.worker_engine" in fleet
+    assert "metadata.worker_engine" in fleet
+    assert "OpenHands-sandboxed lanes from host-native CLI lanes" in fleet

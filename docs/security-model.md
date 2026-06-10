@@ -117,6 +117,26 @@ worker/reviewer process runs with the same filesystem access as the current
 user. Use it only for controlled repositories where that tradeoff is acceptable,
 and prefer a disposable checkout with no local credential stores nearby.
 
+### Native CLI Worker Engines
+
+`HOCA_WORKER_ENGINE=openhands` remains the default worker engine. OpenHands uses
+the sandbox posture above when `HOCA_USE_SANDBOX=true`.
+
+`HOCA_WORKER_ENGINE=claude-code` and `HOCA_WORKER_ENGINE=codex` run native host
+CLI tools through one-shot adapters. These adapters keep HOCA's deterministic
+controls: the worker prompt is generated from the same task spec, the worker
+environment is filtered through the role allowlist, output is supervised by the
+same monitor policy, worker attempts are written in the standard schema, and Git
+lifecycle actions remain manager-owned. They do not place the native CLI inside
+the OpenHands Docker sandbox. Treat them as host execution even when
+`HOCA_USE_SANDBOX=true` is configured for OpenHands.
+
+Use native CLI engines only for repos and fleet tasks whose policy explicitly
+allows host-native execution. Prefer a disposable worktree, short-lived
+credentials, no adjacent credential stores, and offline or least-needed network
+access. If a task requires a hard filesystem or network boundary, keep
+`HOCA_WORKER_ENGINE=openhands`.
+
 ### Network Modes
 
 Network mode is controlled by `HOCA_NETWORK_MODE` or by a task spec sandbox
@@ -157,6 +177,10 @@ HOCA uses code-level gates in addition to prompts.
   egress filtering by themselves.
 - Host execution is not a sandbox. If enabled, filesystem isolation depends on
   the user-provided checkout and operating-system permissions.
+- Native CLI worker engines (`claude-code`, `codex`) are host-native execution,
+  not OpenHands Docker-sandboxed execution. Their mitigations are prompt
+  scoping, env allowlisting, monitoring, standard artifacts, worktree isolation,
+  and manager-owned Git lifecycle gates.
 - A mounted task worktree is writable by design. HOCA limits scope with
   worktrees, monitoring, staging checks, and review, not by making the worktree
   read-only.
@@ -207,6 +231,8 @@ Before treating a HOCA run as safe to publish, verify:
 
 - Sandbox execution was enabled, or host execution was an explicit reviewed
   choice.
+- If `worker_engine` is `claude-code` or `codex`, host-native execution was
+  allowed by the project/task policy for this run.
 - The worker/reviewer received only the intended role model credentials.
 - No GitHub token was forwarded to worker/reviewer phases.
 - Network mode was appropriate for the task.
