@@ -26,6 +26,8 @@ HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/sandbox-docker-env.sh"
 
 SANDBOX_IMAGE="${HOCA_SANDBOX_IMAGE:-hoca-sandbox:latest}"
+PNPM_STORE_VOLUME="${HOCA_PNPM_STORE_VOLUME:-hoca-pnpm-store}"
+PNPM_STORE_DIR="${HOCA_PNPM_STORE_DIR:-/hoca-pnpm-store}"
 RUN_ID="$(basename "$RUN_DIR")"
 CONTAINER_NAME="hoca-worker-${RUN_ID}"
 
@@ -74,6 +76,7 @@ if [ "$NETWORK_MODE" != "offline" ]; then
   record_timing_event --type dependency_install --name sandbox-setup --role "$AGENT_ROLE"
   cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
+  pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}" >/dev/null 2>&1 || true
   pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
 elif [ -f yarn.lock ] && command -v yarn >/dev/null 2>&1; then
   yarn install --frozen-lockfile 2>/dev/null || yarn install --immutable 2>/dev/null || yarn install 2>/dev/null || true
@@ -113,6 +116,8 @@ DOCKER_RUN_ARGS=(
   -v "${RUN_DIR}:/hoca-run"
   -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
+  -v "${PNPM_STORE_VOLUME}:${PNPM_STORE_DIR}"
+  -e "PNPM_STORE_DIR=${PNPM_STORE_DIR}"
   -e "OPENHANDS_SUPPRESS_BANNER=1"
   -e "HOME=/home/hoca-sandbox"
   --security-opt=no-new-privileges
@@ -154,6 +159,7 @@ docker exec \
   -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
   -e "LLM_API_KEY=${API_KEY}" \
   -e "HOCA_AGENT_ROLE=${AGENT_ROLE}" \
+  -e "PNPM_STORE_DIR=${PNPM_STORE_DIR}" \
   -e "OPENHANDS_SUPPRESS_BANNER=1" \
   -e "HOME=/home/hoca-sandbox" \
   "$CONTAINER_NAME" \

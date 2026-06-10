@@ -83,6 +83,17 @@ def test_sandbox_wrapper_checks_image_once_per_run() -> None:
     assert 'printf \'%s\\n\' "$SANDBOX_IMAGE" > "$IMAGE_READY_FILE"' in script
 
 
+def test_sandbox_wrapper_mounts_shared_pnpm_store_volume() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert 'PNPM_STORE_VOLUME="${HOCA_PNPM_STORE_VOLUME:-hoca-pnpm-store}"' in script
+    assert 'PNPM_STORE_DIR="${HOCA_PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
+    assert '-v "${PNPM_STORE_VOLUME}:${PNPM_STORE_DIR}"' in script
+    assert '-e "PNPM_STORE_DIR=${PNPM_STORE_DIR}"' in script
+    assert 'pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
+    assert "/workspace/.pnpm-store" not in script
+
+
 def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
