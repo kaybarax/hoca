@@ -184,6 +184,9 @@ Review-only constraints:
 - Do not modify, stage, commit, push, merge, or open pull requests.
 - Do not implement fixes or edit repository files during this review pass.
 - Inspect the changed files, diff, and working tree only to judge the submitted work.
+- Use the provided test summary as the primary validation evidence. Do not rerun
+  build, lint, or test commands unless the summary is missing, failed, or clearly
+  inconsistent with the diff.
 
 Structural quality bar:
 - Block correctness, security, scope, test, and material maintainability regressions.
