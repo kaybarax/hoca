@@ -738,7 +738,7 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
 
     run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 2)" in result.stdout
+    assert "Running worker profile (repair round 2 of 2" in result.stdout
     assert (run_dir / "repair-attempt-1.md").is_file()
     assert (run_dir / "attempts" / "worker-attempt-2.json").is_file()
     assert (run_dir / "logs" / "worker-hermes-invoked-round-2.txt").is_file()
@@ -1158,7 +1158,7 @@ def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> Non
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 2)" in result.stdout
+    assert "Running worker profile (repair round 2 of 2" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "fixed\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
@@ -1349,7 +1349,7 @@ def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 3)" in result.stdout
+    assert "Running worker profile (repair round 2 of 3" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert review_count_file.read_text(encoding="utf-8") == "2\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)

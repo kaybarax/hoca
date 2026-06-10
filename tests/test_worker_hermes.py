@@ -616,6 +616,31 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
     assert report.blocked_reason == "Hermes worker did not write a structured attempt report."
 
 
+def test_missing_profile_attempt_with_file_editor_argument_error_is_failed(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-output.jsonl").write_text(
+        '{"observation":{"content":[{"text":"Parameter `new_str` is required for command: insert."}]}}\n',
+        encoding="utf-8",
+    )
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+    )
+    path = record_worker_attempt(run_dir, round_number=1, status=status, mode="direct")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert status == "failed"
+    assert report.status == "failed"
+    assert (
+        report.blocked_reason
+        == "OpenHands file_editor insert omitted required new_str and produced no changes."
+    )
+
+
 def test_missing_profile_attempt_report_uses_hermes_log_failure_detail(
     tmp_path: Path,
 ) -> None:

@@ -126,6 +126,21 @@ def _profile_failure_log_excerpt(run_dir: Path) -> str | None:
     return None
 
 
+def _openhands_edit_tool_failure(run_dir: Path) -> str | None:
+    output_path = run_dir / "openhands-output.jsonl"
+    if not output_path.is_file():
+        return None
+    try:
+        text = output_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "Parameter `new_str` is required for command: insert." in text:
+        return "OpenHands file_editor insert omitted required new_str and produced no changes."
+    if "Parameter `old_str` is required" in text or "Parameter `new_str` is required" in text:
+        return "OpenHands file_editor omitted a required edit argument and produced no changes."
+    return None
+
+
 def _git_changed_files(project_path: Path) -> list[str]:
     try:
         result = subprocess.run(
@@ -307,7 +322,10 @@ def record_worker_attempt(
 
     blocked_reason = None
     if status != "completed":
-        if monitor.get("stop_reason"):
+        edit_tool_failure = _openhands_edit_tool_failure(run_dir)
+        if edit_tool_failure:
+            blocked_reason = edit_tool_failure
+        elif monitor.get("stop_reason") and monitor.get("stop_reason") != "completed":
             blocked_reason = str(monitor["stop_reason"])
         elif (run_dir / "openhands-error.txt").is_file():
             blocked_reason = (run_dir / "openhands-error.txt").read_text(encoding="utf-8").strip()

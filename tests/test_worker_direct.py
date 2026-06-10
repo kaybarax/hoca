@@ -189,3 +189,37 @@ def test_run_worker_direct_monitor_stop_records_blocked(
     report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
     assert report["status"] == "blocked"
     assert report["blocked_reason"] == "secret_access"
+
+
+def test_run_worker_direct_tolerates_finalization_stall_after_diff(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    real_run = subprocess.run
+
+    def fake_run(command, **kwargs):
+        if command and command[0] == "git":
+            return real_run(command, **kwargs)
+        (project / "README.md").write_text("changed\n", encoding="utf-8")
+        (run_dir / "openhands-output.jsonl").write_text("{}\n", encoding="utf-8")
+        (run_dir / "monitor-result.json").write_text('{"stop_reason":"stall"}\n', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="finalization stalled\n")
+
+    monkeypatch.setattr("hoca.worker_direct.subprocess.run", fake_run)
+
+    result = run_worker_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+    report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
+
+    assert result.exit_code == 0
+    assert report["status"] == "completed"
+    assert report["changed_files"] == ["README.md"]

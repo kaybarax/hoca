@@ -13,6 +13,7 @@ from hoca.subprocess_utils import CommandResult
 from hoca.worker_hermes import (
     WorkerRunResult,
     _ensure_worker_attempt_report,
+    _completed_despite_finalization_stall,
     _infer_worker_status,
     _missing_profile_attempt_status,
     _redact_secret_like_lines,
@@ -205,11 +206,18 @@ def run_worker_direct(
         prompt_path=prompt_path,
         run_dir=run_dir,
     )
-    status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
+    exit_code = result.returncode
+    if _completed_despite_finalization_stall(
+        run_dir, process_exit_code=result.returncode, project_path=project_path
+    ):
+        status = "completed"
+        exit_code = 0
+    else:
+        status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
     status = _missing_profile_attempt_status(
         run_dir,
         round_number=round_number,
-        process_exit_code=result.returncode,
+        process_exit_code=exit_code,
         inferred_status=status,
         project_path=project_path,
     )
@@ -222,7 +230,7 @@ def run_worker_direct(
     )
     return WorkerRunResult(
         mode="direct",
-        exit_code=result.returncode,
+        exit_code=exit_code,
         worker_attempt_path=attempt_path,
         hermes_stdout_path=None,
         hermes_stderr_path=None,

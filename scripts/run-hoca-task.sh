@@ -1119,6 +1119,36 @@ latest_worker_reported_changed_files_count() {
   jq -r '(.changed_files // []) | length' "$latest_attempt" 2>/dev/null || printf '0\n'
 }
 
+repair_failed_worker_attempt() {
+  local worker_failure_detail="${1:-}"
+  if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
+    return 1
+  fi
+  local next_round=$((current_round + 1))
+  local repair_path="$RUN_DIR/repair-attempt-${next_round}.md"
+  mkdir -p "$RUN_DIR/decisions"
+  {
+    printf '%s\n\n' "Continue this HOCA task by fixing the current repository changes; do not start over."
+    printf 'Repair reason: worker_failed\n'
+    printf 'Round: %s of %s\n\n' "$next_round" "$MAX_TOTAL_ROUNDS"
+    printf '%s\n' "The previous worker attempt exited without producing repository changes."
+    if [ -n "$worker_failure_detail" ]; then
+      printf 'Worker failure detail: %s\n' "$worker_failure_detail"
+    fi
+    printf '%s\n' "Make the smallest scoped edit required by the task, then verify git diff."
+    printf '%s\n' "If an editing tool rejected a partial call, retry with every required edit argument in one call or use a safe shell edit."
+  } > "$repair_path"
+  cat > "$RUN_DIR/decisions/worker-repair-decision-${current_round}.json" <<EOF
+{"schema_version":1,"round":$current_round,"decision":"repair_required","next_round":$next_round,"repair_brief_path":"$repair_path","reason":"worker_failed"}
+EOF
+  current_round="$next_round"
+  update_status "repairing" "worker_failed_round_${current_round}"
+  run_openhands_phase "worker repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$repair_path"
+  restore_worker_commits_to_worktree
+  check_openhands_changed_files
+  return 0
+}
+
 stop_if_worker_attempt_blocked() {
   local worker_status
   worker_status="$(latest_worker_attempt_status)"
@@ -1133,6 +1163,9 @@ stop_if_worker_attempt_blocked() {
       block_run "worker_blocked" "$blocked_message"
       ;;
     failed)
+      if repair_failed_worker_attempt "$worker_failure_detail"; then
+        return 0
+      fi
       local failed_message="Worker attempt failed; see $RUN_DIR/attempts for details."
       if [ -n "$worker_failure_detail" ]; then
         failed_message="$failed_message Worker failure: $worker_failure_detail"

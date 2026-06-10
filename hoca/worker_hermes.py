@@ -323,6 +323,45 @@ def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
     return "failed"
 
 
+def _monitor_stop_reason(run_dir: Path) -> str | None:
+    monitor_path = run_dir / "monitor-result.json"
+    if not monitor_path.is_file():
+        return None
+    try:
+        import json
+
+        monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    stop_reason = monitor.get("stop_reason")
+    return stop_reason if isinstance(stop_reason, str) and stop_reason else None
+
+
+def _completed_despite_finalization_stall(
+    run_dir: Path, *, process_exit_code: int, project_path: Path
+) -> bool:
+    return (
+        process_exit_code != 0
+        and _monitor_stop_reason(run_dir) == "stall"
+        and _project_has_changes(project_path)
+    )
+
+
+def _openhands_edit_tool_failure(run_dir: Path) -> str | None:
+    output_path = run_dir / "openhands-output.jsonl"
+    if not output_path.is_file():
+        return None
+    try:
+        text = output_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "Parameter `new_str` is required for command: insert." in text:
+        return "OpenHands file_editor insert omitted required new_str and produced no changes."
+    if "Parameter `old_str` is required" in text or "Parameter `new_str` is required" in text:
+        return "OpenHands file_editor omitted a required edit argument and produced no changes."
+    return None
+
+
 def _ensure_worker_attempt_report(
     run_dir: Path,
     *,
@@ -378,6 +417,8 @@ def _missing_profile_attempt_status(
         return inferred_status
     if project_path is not None and _project_has_changes(project_path):
         return inferred_status
+    if _openhands_edit_tool_failure(run_dir):
+        return "failed"
     return "blocked"
 
 
