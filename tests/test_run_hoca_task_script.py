@@ -1263,6 +1263,22 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     assert "HOCA run completed through pull request creation." in result.stdout
     assert '"status": "pr_created"' in latest_status(tmp_path)
     assert '"reason": "pull_request_created"' in latest_status(tmp_path)
+    timings = json.loads((latest_run_dir(tmp_path) / "timings.json").read_text(encoding="utf-8"))
+    phase_names = {phase["name"] for phase in timings["phases"]}
+    assert {
+        "definition_of_ready",
+        "doctor",
+        "branch_worktree_setup",
+        "task_spec",
+        "worker_attempt",
+        "test_run",
+        "review_pass",
+        "arbitration",
+        "staging",
+        "commit",
+        "pr_creation",
+    }.issubset(phase_names)
+    assert timings["counters"]["agent_loops"] >= 2
 
 
 def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:

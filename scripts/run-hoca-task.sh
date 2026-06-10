@@ -69,6 +69,10 @@ PYTHON_BIN="${HOCA_PYTHON:-python3}"
 export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 
+hoca_time_epoch() {
+  "$PYTHON_BIN" -c 'import time; print(f"{time.time():.6f}")'
+}
+
 run_definition_of_ready_check() {
   local dor_args=(
     "$SCRIPT_DIR/check-definition-of-ready.sh"
@@ -85,10 +89,12 @@ run_definition_of_ready_check() {
 }
 
 echo "Checking definition of ready..."
+DOR_START_EPOCH="$(hoca_time_epoch)"
 set +e
 DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID")"
 DOR_EXIT=$?
 set -e
+DOR_END_EPOCH="$(hoca_time_epoch)"
 printf '%s\n' "$DOR_OUTPUT"
 if [ "$DOR_EXIT" -ne 0 ]; then
   if [ "$DOR_EXIT" -eq 2 ]; then
@@ -103,6 +109,38 @@ PROJECT_PATH="$(cd "$RAW_PROJECT_PATH" && pwd)"
 
 record_run_artifact() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_artifacts "$@"
+}
+
+record_timing_phase() {
+  local name="$1"
+  local started_at_epoch="$2"
+  local ended_at_epoch="${3:-}"
+  if [ "$#" -ge 3 ]; then
+    shift 3
+  else
+    shift "$#"
+  fi
+  if [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  local args=(
+    -m hoca.run_timing
+    phase
+    "$RUN_DIR"
+    --name "$name"
+    --started-at-epoch "$started_at_epoch"
+  )
+  if [ -n "$ended_at_epoch" ]; then
+    args+=(--ended-at-epoch "$ended_at_epoch")
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" "${args[@]}" "$@" >/dev/null 2>&1 || true
+}
+
+record_timing_event() {
+  if [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
 }
 
 task_spec_path_for_run() {
@@ -298,7 +336,11 @@ mkdir -p "$RUN_DIR"
 printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
 
 echo "Recording definition-of-ready artifact..."
+DOR_ARTIFACT_START_EPOCH="$(hoca_time_epoch)"
 run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$PROJECT_PATH/$RUN_DIR" >/dev/null
+DOR_ARTIFACT_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "definition_of_ready" "$DOR_START_EPOCH" "$DOR_END_EPOCH"
+record_timing_phase "definition_of_ready_artifact" "$DOR_ARTIFACT_START_EPOCH" "$DOR_ARTIFACT_END_EPOCH"
 
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
@@ -370,6 +412,8 @@ archive_and_remove_runtime() {
   if [ ! -d "$PROJECT_PATH/.hoca-runtime" ]; then
     return 0
   fi
+  local archive_started_epoch
+  archive_started_epoch="$(hoca_time_epoch)"
 
   local archive_root="${HOCA_RUNTIME_ARCHIVE_ROOT:-${HOME:-/tmp}/.hoca/runtime-archives}"
   local repo_slug
@@ -378,6 +422,9 @@ archive_and_remove_runtime() {
   archive_run_dir="$archive_root/$repo_slug/$RUN_ID"
 
   if [ -d "$RUN_DIR" ]; then
+    local archive_record_epoch
+    archive_record_epoch="$(hoca_time_epoch)"
+    record_timing_phase "archive_cleanup" "$archive_started_epoch" "$archive_record_epoch"
     rm -rf "$archive_run_dir"
     mkdir -p "$archive_run_dir"
     cp -R "$RUN_DIR/." "$archive_run_dir/"
@@ -516,11 +563,16 @@ echo "HOCA run started: $RUN_ID"
 } > "$RUN_DIR/workspace-validation.txt"
 
 echo "Running HOCA doctor preflight..."
+DOCTOR_START_EPOCH="$(hoca_time_epoch)"
 if ! "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
+  DOCTOR_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "doctor" "$DOCTOR_START_EPOCH" "$DOCTOR_END_EPOCH" --status "failed"
   cat "$RUN_DIR/doctor-output.log"
   cat "$RUN_DIR/doctor-stderr.log" >&2
   fail_run "doctor_failed" "HOCA doctor failed. Stop and follow the install guidance above before running this task again."
 fi
+DOCTOR_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "doctor" "$DOCTOR_START_EPOCH" "$DOCTOR_END_EPOCH"
 
 if [ "${HOCA_RUN_INIT_PROJECT:-false}" = "true" ]; then
   "$SCRIPT_DIR/init-project.sh" "$PROJECT_PATH" 2>/dev/null || true
@@ -618,6 +670,7 @@ remove_worktree(Path(sys.argv[1]), sys.argv[2])
   fi
 }
 
+BRANCH_SETUP_START_EPOCH="$(hoca_time_epoch)"
 if worktree_enabled; then
   USE_WORKTREE_SANDBOX="true"
   create_task_branch_from_base "$BRANCH" "$TASK_BASE_REF"
@@ -626,8 +679,13 @@ else
   echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
   git checkout -b "$BRANCH" "$TASK_BASE_REF"
 fi
+BRANCH_SETUP_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "branch_worktree_setup" "$BRANCH_SETUP_START_EPOCH" "$BRANCH_SETUP_END_EPOCH"
 
+TASK_SPEC_START_EPOCH="$(hoca_time_epoch)"
 generate_run_task_spec
+TASK_SPEC_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "task_spec" "$TASK_SPEC_START_EPOCH" "$TASK_SPEC_END_EPOCH"
 
 INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
@@ -715,6 +773,9 @@ run_openhands_phase() {
   echo "Running worker profile ($phase_label)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
+  record_timing_event --type "agent_loop" --name "worker-hermes" --round "$round_number" --role "worker"
+  local worker_started_epoch
+  worker_started_epoch="$(hoca_time_epoch)"
   set +e
   local worker_cmd=(
     "$SCRIPT_DIR/run-worker-hermes.sh"
@@ -729,6 +790,13 @@ run_openhands_phase() {
   "${worker_cmd[@]}"
   openhands_exit=$?
   set -e
+  local worker_ended_epoch
+  worker_ended_epoch="$(hoca_time_epoch)"
+  if [ "$openhands_exit" -eq 0 ]; then
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "hermes" --model "${HOCA_WORKER_MODEL_NAME:-worker}"
+  else
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "hermes" --model "${HOCA_WORKER_MODEL_NAME:-worker}" --status "failed"
+  fi
   if [ "$openhands_exit" -ne 0 ]; then
     local failure_status="failed"
     if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
@@ -840,10 +908,17 @@ while true; do
   fi
 
   echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  TEST_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
+  TEST_END_EPOCH="$(hoca_time_epoch)"
+  if [ "$TESTS_EXIT" -eq 0 ]; then
+    record_timing_phase "test_run" "$TEST_START_EPOCH" "$TEST_END_EPOCH" --round "$current_round"
+  else
+    record_timing_phase "test_run" "$TEST_START_EPOCH" "$TEST_END_EPOCH" --round "$current_round" --status "failed"
+  fi
   record_validation_artifact "$current_round"
   sync_run_status
   if [ "$TESTS_EXIT" -ne 0 ]; then
@@ -877,16 +952,27 @@ while true; do
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+  record_timing_event --type "agent_loop" --name "reviewer-hermes" --round "$current_round" --role "reviewer"
+  REVIEW_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
+  REVIEW_END_EPOCH="$(hoca_time_epoch)"
+  if [ "$REVIEW_EXIT" -eq 0 ]; then
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "hermes" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}"
+  else
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "hermes" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}" --status "failed"
+  fi
   sync_run_status
   ARBITRATION_DECISION_JSON=""
+  ARBITRATION_START_EPOCH="$(hoca_time_epoch)"
   set +e
   ARBITRATION_DECISION_JSON="$(resolve_round_loop after-arbitration "$current_round")"
   ARBITRATION_LOOP_EXIT=$?
   set -e
+  ARBITRATION_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "arbitration" "$ARBITRATION_START_EPOCH" "$ARBITRATION_END_EPOCH" --round "$current_round"
   if [ -z "$ARBITRATION_DECISION_JSON" ]; then
     if [ "$REVIEW_EXIT" -eq 4 ]; then
       block_run "review_blocked" "OpenHands review reported a blocked verdict. Human intervention is needed; see $RUN_DIR/openhands-review.txt."
@@ -970,10 +1056,15 @@ fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."
+  STAGING_START_EPOCH="$(hoca_time_epoch)"
   if HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+    STAGING_END_EPOCH="$(hoca_time_epoch)"
+    record_timing_phase "staging" "$STAGING_START_EPOCH" "$STAGING_END_EPOCH"
     update_status "staged" "safe_staging_completed"
   else
     STAGING_EXIT=$?
+    STAGING_END_EPOCH="$(hoca_time_epoch)"
+    record_timing_phase "staging" "$STAGING_START_EPOCH" "$STAGING_END_EPOCH" --status "failed"
     update_status "needs_human_staging" "safe_staging_failed"
     exit "$STAGING_EXIT"
   fi
@@ -989,15 +1080,19 @@ record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
 
 if [ -s "$RUN_DIR/staged-files.txt" ]; then
   echo "Creating commit from safely staged files..."
+  COMMIT_START_EPOCH="$(hoca_time_epoch)"
   COMMIT_ARGS=()
   if [ -n "$ISSUE_ID" ]; then
     COMMIT_ARGS=(--issue-id "$ISSUE_ID")
   fi
   COMMIT_ARGS+=(--run-id "$RUN_ID")
   "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${COMMIT_ARGS[@]}"
+  COMMIT_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "commit" "$COMMIT_START_EPOCH" "$COMMIT_END_EPOCH"
   update_status "committed" "commit_created"
 
   echo "Creating pull request..."
+  PR_START_EPOCH="$(hoca_time_epoch)"
   PR_ARGS=()
   if [ -n "$ISSUE_ID" ]; then
     PR_ARGS+=(--issue-id "$ISSUE_ID")
@@ -1006,6 +1101,8 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
     PR_ARGS+=(--base-branch "$TASK_BASE_REF")
   fi
   HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  PR_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "pr_creation" "$PR_START_EPOCH" "$PR_END_EPOCH"
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true

@@ -48,6 +48,10 @@ SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
 SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
 NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
 sandbox_record_network_policy "$AGENT_ROLE" "$RUN_DIR"
+record_timing_event() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    "${HOCA_PYTHON:-python3}" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
+}
 SANDBOX_NETWORK_ARGS=()
 while IFS= read -r _network_flag; do
   [ -n "$_network_flag" ] || continue
@@ -62,6 +66,7 @@ set -euo pipefail
 
 SETUP_EOF
 if [ "$NETWORK_MODE" != "offline" ]; then
+  record_timing_event --type dependency_install --name sandbox-setup --role "$AGENT_ROLE"
   cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
   pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
@@ -125,6 +130,8 @@ else
 fi
 
 set +e
+record_timing_event --type agent_loop --name openhands --role "$AGENT_ROLE"
+record_timing_event --type container_start --name docker-run --role "$AGENT_ROLE"
 docker run \
   "${DOCKER_RUN_ARGS[@]}" \
   "$SANDBOX_IMAGE" \
