@@ -211,6 +211,8 @@ def infer_test_commands(repo_root: Path) -> list[str]:
         scripts = pkg.get("scripts") or {}
         if (repo_root / "pnpm-lock.yaml").is_file():
             runner = "pnpm"
+        elif (repo_root / "yarn.lock").is_file():
+            runner = "yarn"
         elif (repo_root / "package-lock.json").is_file():
             runner = "npm"
         else:

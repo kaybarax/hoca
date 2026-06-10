@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,11 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert '"kind": "ConversationErrorEvent"' in script
     assert "monitor_process_stream(" in script
     assert "actor_role=actor_role" in script
+
+
+def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert "elif [ -f yarn.lock ]" in script
+    assert "yarn install --frozen-lockfile" in script
+    assert re.search(r"(^|\s)npm\s+install\b", script) is None

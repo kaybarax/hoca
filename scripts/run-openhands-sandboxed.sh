@@ -65,6 +65,8 @@ if [ "$NETWORK_MODE" != "offline" ]; then
   cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
   pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
+elif [ -f yarn.lock ] && command -v yarn >/dev/null 2>&1; then
+  yarn install --frozen-lockfile 2>/dev/null || yarn install --immutable 2>/dev/null || yarn install 2>/dev/null || true
 fi
 
 SETUP_EOF
@@ -74,6 +76,7 @@ echo "Sandbox setup complete."
 echo "  bun: $(command -v bun 2>/dev/null && bun --version || echo 'not available')"
 echo "  node: $(command -v node 2>/dev/null && node --version || echo 'not available')"
 echo "  pnpm: $(command -v pnpm 2>/dev/null && pnpm --version || echo 'not available')"
+echo "  yarn: $(command -v yarn 2>/dev/null && yarn --version || echo 'not available')"
 echo "  openhands: $(command -v openhands 2>/dev/null && openhands --version 2>/dev/null || echo 'not available')"
 SETUP_EOF
 chmod +x "$SETUP_SCRIPT"
