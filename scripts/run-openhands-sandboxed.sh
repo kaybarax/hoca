@@ -180,7 +180,18 @@ docker exec \
     if [ ! -x \"\$OPENHANDS_PYTHON\" ]; then
       OPENHANDS_PYTHON=python3
     fi
-    \"\$OPENHANDS_PYTHON\" - \"${MODEL}\" \"${CONTAINER_BASE_URL}\" \"${API_KEY}\" \"\$OPENHANDS_PERSISTENCE_DIR/agent_settings.json\" <<'PY'
+    SETTINGS_PATH=\"\$OPENHANDS_PERSISTENCE_DIR/agent_settings.json\"
+    SETTINGS_FINGERPRINT_PATH=\"\$OPENHANDS_PERSISTENCE_DIR/agent_settings.fingerprint\"
+    SETTINGS_FINGERPRINT=\$(\"\$OPENHANDS_PYTHON\" - \"${MODEL}\" \"${CONTAINER_BASE_URL}\" \"${API_KEY}\" <<'PY'
+import hashlib
+import sys
+
+payload = \"\0\".join(sys.argv[1:4]).encode(\"utf-8\", \"surrogateescape\")
+print(hashlib.sha256(payload).hexdigest())
+PY
+)
+    if [ ! -f \"\$SETTINGS_PATH\" ] || [ \"\$(cat \"\$SETTINGS_FINGERPRINT_PATH\" 2>/dev/null || true)\" != \"\$SETTINGS_FINGERPRINT\" ]; then
+      \"\$OPENHANDS_PYTHON\" - \"${MODEL}\" \"${CONTAINER_BASE_URL}\" \"${API_KEY}\" \"\$SETTINGS_PATH\" <<'PY'
 import sys
 from pathlib import Path
 
@@ -201,6 +212,8 @@ llm = LLM(
 agent = get_default_cli_agent(llm)
 Path(settings_path).write_text(agent.model_dump_json(), encoding=\"utf-8\")
 PY
+      printf '%s\n' \"\$SETTINGS_FINGERPRINT\" > \"\$SETTINGS_FINGERPRINT_PATH\"
+    fi
     echo \"Using isolated OpenHands config: \$OPENHANDS_PERSISTENCE_DIR\"
 
     TASK_CONTENT=\$(cat /hoca-run/task-input.txt)

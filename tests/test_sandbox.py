@@ -94,6 +94,22 @@ def test_sandbox_wrapper_mounts_shared_pnpm_store_volume() -> None:
     assert "/workspace/.pnpm-store" not in script
 
 
+def test_sandbox_wrapper_caches_openhands_settings_by_model_inputs() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert 'SETTINGS_PATH=\\"\\$OPENHANDS_PERSISTENCE_DIR/agent_settings.json\\"' in script
+    assert (
+        'SETTINGS_FINGERPRINT_PATH=\\"\\$OPENHANDS_PERSISTENCE_DIR/agent_settings.fingerprint\\"'
+        in script
+    )
+    assert "hashlib.sha256(payload).hexdigest()" in script
+    assert (
+        '[ ! -f \\"\\$SETTINGS_PATH\\" ] || [ \\"\\$(cat \\"\\$SETTINGS_FINGERPRINT_PATH\\" 2>/dev/null || true)\\" != \\"\\$SETTINGS_FINGERPRINT\\" ]'
+        in script
+    )
+    assert 'printf \'%s\\n\' \\"\\$SETTINGS_FINGERPRINT\\" > \\"\\$SETTINGS_FINGERPRINT_PATH\\"' in script
+
+
 def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
