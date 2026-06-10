@@ -685,6 +685,14 @@ cleanup() {
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
   if [ -n "${RUN_ID:-}" ] && command -v docker >/dev/null 2>&1; then
+    if [ -d "$RUN_DIR" ]; then
+      find "$RUN_DIR" -name sandbox-container-name.txt -type f -print0 2>/dev/null |
+        while IFS= read -r -d '' container_file; do
+          container_name="$(cat "$container_file" 2>/dev/null || true)"
+          [ -n "$container_name" ] || continue
+          docker rm -f "$container_name" >/dev/null 2>&1 || true
+        done
+    fi
     docker rm -f "hoca-worker-${RUN_ID}" >/dev/null 2>&1 || true
   fi
   remove_disposable_worktree 2>/dev/null || true

@@ -54,6 +54,8 @@ def test_run_hoca_task_preserves_shared_runtime_in_fleet_lane_mode() -> None:
 def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
+    assert 'find "$RUN_DIR" -name sandbox-container-name.txt -type f -print0' in content
+    assert 'docker rm -f "$container_name"' in content
     assert 'docker rm -f "hoca-worker-${RUN_ID}"' in content
     assert "trap cleanup EXIT" in content
     assert "trap 'cleanup; exit 129' HUP" in content

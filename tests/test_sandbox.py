@@ -64,7 +64,8 @@ def test_sandbox_wrapper_keeps_container_hardened() -> None:
 def test_sandbox_wrapper_uses_run_scoped_container_with_exec_env() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
-    assert 'CONTAINER_NAME="hoca-worker-${RUN_ID}"' in script
+    assert 'RUN_DIR_HASH="$(printf \'%s\' "$RUN_DIR" | shasum -a 256' in script
+    assert 'CONTAINER_NAME="hoca-${SAFE_AGENT_ROLE}-${SAFE_RUN_ID}-${RUN_DIR_HASH}"' in script
     assert 'CONTAINER_NAME_FILE="$RUN_DIR/sandbox-container-name.txt"' in script
     assert "docker run -d \\" in script
     assert "sleep infinity >/dev/null" in script
