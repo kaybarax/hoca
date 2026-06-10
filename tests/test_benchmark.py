@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hoca.benchmark import (
+    _artifact_audit,
     render_benchmark_comparison,
     render_benchmark_table,
     summarize_benchmark_runs,
@@ -54,3 +55,34 @@ def test_render_benchmark_comparison_reports_delta() -> None:
     table = render_benchmark_comparison(baseline, candidate)
 
     assert "| PB-DOC-C | 100.00 | 75.00 | -25.00 | -25.00% |" in table
+
+
+def test_artifact_audit_reports_gate_artifacts(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    attempts = run_dir / "attempts"
+    attempts.mkdir(parents=True)
+    (attempts / "worker-attempt-1.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "status.json").write_text('{"status":"reviewing","reason":"ok"}\n', encoding="utf-8")
+    (run_dir / "tests-summary.md").write_text("passed\n", encoding="utf-8")
+    (run_dir / "review-report.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "final-state.json").write_text(
+        '{"status":"pr_opened"}\n',
+        encoding="utf-8",
+    )
+
+    audit = _artifact_audit(run_dir)
+
+    assert audit == {
+        "available": True,
+        "status": "reviewing",
+        "reason": "ok",
+        "has_worker_attempt": True,
+        "has_tests_summary": True,
+        "has_review": True,
+        "has_final_state": True,
+        "final_status": "pr_opened",
+    }
+
+
+def test_artifact_audit_handles_missing_run_dir() -> None:
+    assert _artifact_audit(None) == {"available": False}

@@ -74,6 +74,41 @@ def _phase_totals(timings: dict[str, Any]) -> dict[str, float]:
     return totals
 
 
+def _artifact_audit(run_dir: Path | None) -> dict[str, Any]:
+    if run_dir is None:
+        return {"available": False}
+    status_path = run_dir / "status.json"
+    final_path = run_dir / "final-state.json"
+    status: dict[str, Any] = {}
+    final_state: dict[str, Any] = {}
+    if status_path.is_file():
+        try:
+            loaded = json.loads(status_path.read_text(encoding="utf-8"))
+            status = loaded if isinstance(loaded, dict) else {}
+        except json.JSONDecodeError:
+            status = {}
+    if final_path.is_file():
+        try:
+            loaded = json.loads(final_path.read_text(encoding="utf-8"))
+            final_state = loaded if isinstance(loaded, dict) else {}
+        except json.JSONDecodeError:
+            final_state = {}
+    attempts_dir = run_dir / "attempts"
+    return {
+        "available": True,
+        "status": status.get("status", ""),
+        "reason": status.get("reason", ""),
+        "has_worker_attempt": bool(list(attempts_dir.glob("worker-attempt-*.json")))
+        if attempts_dir.is_dir()
+        else False,
+        "has_tests_summary": (run_dir / "tests-summary.md").is_file(),
+        "has_review": (run_dir / "review-report.json").is_file()
+        or (run_dir / "openhands-review.txt").is_file(),
+        "has_final_state": final_path.is_file(),
+        "final_status": final_state.get("status", ""),
+    }
+
+
 def summarize_benchmark_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
     wall_times = [float(run["wall_time_seconds"]) for run in runs]
     phase_names = sorted({name for run in runs for name in run.get("phase_totals", {})})
@@ -150,7 +185,9 @@ def run_benchmark(
     run_records: list[dict[str, Any]] = []
     resource_records: list[dict[str, Any]] = []
 
-    with tempfile.TemporaryDirectory(prefix="hoca-bench-") as temp_root:
+    scratch_root = output.parent / "scratch"
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="hoca-bench-", dir=scratch_root) as temp_root:
         root = Path(temp_root)
         for index in range(1, runs + 1):
             clone = root / f"{benchmark_id.lower()}-{index}"
@@ -164,7 +201,7 @@ def run_benchmark(
                 env={
                     **os.environ,
                     "HOCA_RUNTIME_ARCHIVE_ROOT": str(archive_root),
-                    "HOCA_KEEP_RUNTIME": "true",
+                    "HOCA_KEEP_RUNTIME": "false",
                 },
             )
             ended = time.monotonic()
@@ -189,6 +226,7 @@ def run_benchmark(
                     "container_starts": int(counters.get("container_starts", 0) or 0),
                     "dependency_installs": int(counters.get("dependency_installs", 0) or 0),
                     "phase_totals": _phase_totals(timings),
+                    "artifact_audit": _artifact_audit(run_dir),
                 }
             )
 
