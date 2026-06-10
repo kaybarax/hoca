@@ -21,6 +21,7 @@ from hoca.monitor import (
     save_events,
     save_stop_reason,
     should_scan_line_for_policy,
+    watchdog_check_interval,
 )
 
 
@@ -424,6 +425,26 @@ class TestMonitorProcess:
         )
         assert result.stop_reason == "timeout"
         assert any(e.kind == "timeout" for e in result.events)
+
+    def test_short_stall_window_stops_silent_process(self, tmp_path: Path):
+        assert watchdog_check_interval(1) <= 1
+        proc = subprocess.Popen(
+            ["bash", "-c", "sleep 5"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        started = time.perf_counter()
+        result = monitor_process(
+            proc,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=1,
+        )
+        elapsed = time.perf_counter() - started
+        assert result.stop_reason == "stall"
+        assert elapsed < 2.5
 
     def test_worker_git_add_stops(self, tmp_path: Path):
         proc = subprocess.Popen(

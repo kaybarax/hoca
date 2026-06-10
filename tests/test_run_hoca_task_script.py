@@ -122,6 +122,20 @@ def test_run_tests_uses_install_cache_for_pnpm() -> None:
     assert "CI=true pnpm install --no-frozen-lockfile" in content
 
 
+def test_openhands_wrapper_uses_tighter_direct_mode_stall_defaults() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-openhands-task.sh").read_text(encoding="utf-8")
+
+    assert 'DIRECT_MODE=false' in content
+    assert 'HOCA_WORKER_MODE:-hermes' in content
+    assert 'HOCA_REVIEWER_MODE:-hermes' in content
+    assert 'HOCA_DIRECT_OPENHANDS_TIMEOUT:-420' in content
+    assert 'HOCA_DIRECT_OPENHANDS_STALL:-120' in content
+    assert 'TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"' in content
+    assert 'STALL="${HOCA_OPENHANDS_STALL:-300}"' in content
+    assert 'echo "  DIRECT_MODE=$DIRECT_MODE"' in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

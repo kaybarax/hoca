@@ -93,6 +93,10 @@ DEFAULT_STALL_SECONDS = 300
 STALL_CHECK_INTERVAL = 30
 
 
+def watchdog_check_interval(stall_seconds: int) -> float:
+    return max(0.1, min(float(STALL_CHECK_INTERVAL), max(1.0, float(stall_seconds))))
+
+
 @dataclass
 class MonitorEvent:
     timestamp: float
@@ -376,10 +380,11 @@ def monitor_process_stream(
     )
 
     _cancel = cancel_event or threading.Event()
+    check_interval = watchdog_check_interval(stall_seconds)
 
     def _watchdog() -> None:
         while not _cancel.is_set():
-            _cancel.wait(STALL_CHECK_INTERVAL)
+            _cancel.wait(check_interval)
             if _cancel.is_set():
                 break
             elapsed = _now() - start_time
@@ -521,6 +526,7 @@ def monitor_process(
     watchdog_reason: list[str] = []
     lock = threading.Lock()
     watchdog_stop = threading.Event()
+    check_interval = watchdog_check_interval(stall_seconds)
 
     _record(
         events,
@@ -530,7 +536,7 @@ def monitor_process(
 
     def _watchdog() -> None:
         while process.poll() is None and not watchdog_stop.is_set():
-            if watchdog_stop.wait(STALL_CHECK_INTERVAL):
+            if watchdog_stop.wait(check_interval):
                 break
             if process.poll() is not None:
                 break

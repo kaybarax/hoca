@@ -88,8 +88,17 @@ case "${LLM_MODEL:-}" in
     ;;
 esac
 
-TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
-STALL="${HOCA_OPENHANDS_STALL:-300}"
+DIRECT_MODE=false
+if { [ "$AGENT_ROLE" = "worker" ] && [ "${HOCA_WORKER_MODE:-hermes}" = "direct" ]; } || { [ "$AGENT_ROLE" = "reviewer" ] && [ "${HOCA_REVIEWER_MODE:-hermes}" = "direct" ]; }; then
+  DIRECT_MODE=true
+fi
+if [ "$DIRECT_MODE" = "true" ]; then
+  TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-${HOCA_DIRECT_OPENHANDS_TIMEOUT:-420}}"
+  STALL="${HOCA_OPENHANDS_STALL:-${HOCA_DIRECT_OPENHANDS_STALL:-120}}"
+else
+  TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
+  STALL="${HOCA_OPENHANDS_STALL:-300}"
+fi
 USE_SANDBOX="${HOCA_USE_SANDBOX:-true}"
 
 warn_host_execution() {
@@ -120,6 +129,7 @@ echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
 echo "  SANDBOX=$USE_SANDBOX"
 echo "  ROLE=$AGENT_ROLE"
+echo "  DIRECT_MODE=$DIRECT_MODE"
 if [ "$USE_SANDBOX" = "true" ] && [ -x "$SCRIPT_DIR/run-openhands-sandboxed.sh" ]; then
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     # shellcheck source=scripts/sandbox-docker-env.sh
