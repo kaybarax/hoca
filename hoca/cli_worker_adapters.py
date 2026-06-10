@@ -13,8 +13,12 @@ from hoca.monitor import monitor_process
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout
 from hoca.worker_direct import build_worker_direct_prompt
-from hoca.worker_hermes import WorkerRunResult, _missing_profile_attempt_status, load_task_spec
-from hoca.worker_hermes import _infer_worker_status
+from hoca.worker_hermes import (
+    WorkerRunResult,
+    _infer_worker_status,
+    _missing_profile_attempt_status,
+    load_task_spec,
+)
 
 
 class CliWorkerAdapterUnavailable(RuntimeError):
@@ -25,10 +29,23 @@ class CliWorkerAdapterUnavailable(RuntimeError):
 class CliWorkerAdapterSpec:
     engine: str
     command: tuple[str, ...]
+    missing_cli_name: str
 
 
 def claude_worker_adapter_spec() -> CliWorkerAdapterSpec:
-    return CliWorkerAdapterSpec(engine="claude-code", command=("claude", "-p"))
+    return CliWorkerAdapterSpec(
+        engine="claude-code",
+        command=("claude", "-p"),
+        missing_cli_name="claude CLI",
+    )
+
+
+def codex_worker_adapter_spec() -> CliWorkerAdapterSpec:
+    return CliWorkerAdapterSpec(
+        engine="codex",
+        command=("codex", "exec"),
+        missing_cli_name="codex CLI",
+    )
 
 
 def _write_monitor_result(run_dir: Path, result) -> None:
@@ -39,18 +56,18 @@ def _write_monitor_result(run_dir: Path, result) -> None:
     (run_dir / "openhands-exit-code.txt").write_text(str(result.exit_code) + "\n", encoding="utf-8")
 
 
-def run_claude_worker(
+def run_cli_worker_adapter(
     *,
+    spec: CliWorkerAdapterSpec,
     project_path: Path,
     task_spec_path: Path,
     run_dir: Path,
     round_number: int,
     repair_brief: str | None = None,
 ) -> WorkerRunResult:
-    spec = claude_worker_adapter_spec()
     binary = spec.command[0]
     if shutil.which(binary) is None:
-        raise CliWorkerAdapterUnavailable("claude CLI is not installed or not on PATH")
+        raise CliWorkerAdapterUnavailable(f"{spec.missing_cli_name} is not installed or not on PATH")
 
     project_path = project_path.resolve()
     task_spec_path = task_spec_path.resolve()
@@ -122,4 +139,40 @@ def run_claude_worker(
         worker_attempt_path=attempt_path,
         hermes_stdout_path=None,
         hermes_stderr_path=None,
+    )
+
+
+def run_claude_worker(
+    *,
+    project_path: Path,
+    task_spec_path: Path,
+    run_dir: Path,
+    round_number: int,
+    repair_brief: str | None = None,
+) -> WorkerRunResult:
+    return run_cli_worker_adapter(
+        spec=claude_worker_adapter_spec(),
+        project_path=project_path,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=round_number,
+        repair_brief=repair_brief,
+    )
+
+
+def run_codex_worker(
+    *,
+    project_path: Path,
+    task_spec_path: Path,
+    run_dir: Path,
+    round_number: int,
+    repair_brief: str | None = None,
+) -> WorkerRunResult:
+    return run_cli_worker_adapter(
+        spec=codex_worker_adapter_spec(),
+        project_path=project_path,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=round_number,
+        repair_brief=repair_brief,
     )
