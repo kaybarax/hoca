@@ -88,6 +88,8 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "[redacted: possible secret]" in prompt
     assert "run-openhands-task.sh" in prompt
     assert "HOCA_LOCK_ROLE_MODEL=true" in prompt
+    assert 'HOCA_USE_SANDBOX="true"' in prompt
+    assert 'HOCA_NETWORK_MODE="offline"' in prompt
     assert "HOCA_PYTHON=" in prompt
     assert "HOCA_DOTENV_PATH=" in prompt
     assert "Do not set or override HOCA_REQUESTED_MODEL" in prompt
@@ -109,6 +111,21 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
     assert "- repo_root: /tmp/project" not in prompt
     assert "rewrite validation commands to run from project_path" in prompt
+
+
+def test_build_worker_hermes_prompt_preserves_docker_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKER_CONTEXT", "colima")
+    prompt = build_worker_hermes_prompt(
+        spec=sample_task_spec(),
+        project_path=Path(f"{MAC_HOME}/project"),
+        run_dir=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test"),
+        round_number=1,
+        task_spec_path=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test/task-spec.json"),
+    )
+
+    assert 'DOCKER_CONTEXT="colima"' in prompt
 
 
 def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:

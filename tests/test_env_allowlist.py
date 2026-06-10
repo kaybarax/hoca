@@ -58,6 +58,14 @@ class TestWorkerReviewerAllowlist:
         result = filter_env(env, "reviewer")
         assert result == {"LLM_MODEL": "test"}
 
+    def test_docker_context_is_allowed_without_docker_host(self) -> None:
+        env = {
+            "DOCKER_CONTEXT": "colima",
+            "DOCKER_HOST": "tcp://localhost:2375",
+        }
+        result = filter_env(env, "worker")
+        assert result == {"DOCKER_CONTEXT": "colima"}
+
     def test_openhands_suppress_banner_allowed(self) -> None:
         env = {"OPENHANDS_SUPPRESS_BANNER": "1"}
         result = filter_env(env, "worker")

@@ -119,6 +119,9 @@ def build_worker_hermes_prompt(
 ) -> str:
     hoca_root = repo_root()
     hoca_python = sys.executable
+    use_sandbox = os.environ.get("HOCA_USE_SANDBOX", "true")
+    network_mode = os.environ.get("HOCA_NETWORK_MODE", "offline")
+    docker_context = os.environ.get("DOCKER_CONTEXT", "")
     hoca_dotenv = Path(os.environ.get("HOCA_DOTENV_PATH", hoca_root / ".env")).expanduser()
     if not hoca_dotenv.is_absolute():
         hoca_dotenv = (hoca_root / hoca_dotenv).resolve()
@@ -149,7 +152,10 @@ def build_worker_hermes_prompt(
         "or test_commands mention a different repo_root, rewrite validation commands to "
         "run from project_path and do not cd to the original checkout.\n"
         "3. Run implementation only through:\n"
-        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_PYTHON="{hoca_python}" '
+        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_USE_SANDBOX="{use_sandbox}" '
+        f'HOCA_NETWORK_MODE="{network_mode}" '
+        f"{f'DOCKER_CONTEXT="{docker_context}" ' if docker_context else ''}"
+        f'HOCA_PYTHON="{hoca_python}" '
         f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
         f"{hoca_root / 'scripts' / 'run-openhands-task.sh'} "
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
