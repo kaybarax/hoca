@@ -83,6 +83,8 @@ def test_build_worker_direct_prompt_contains_every_task_spec_binding() -> None:
     ):
         assert expected in prompt
     assert "Do not cd to repo_root_reference_only" in prompt
+    assert "send every required argument in one call" in prompt
+    assert "Verify repository diff after edits" in prompt
     assert "hermes" not in prompt.lower()
 
 
