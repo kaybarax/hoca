@@ -76,6 +76,25 @@ def test_infer_test_commands_for_python_repo(tmp_path: Path) -> None:
     assert "pytest" in infer_test_commands(tmp_path)
 
 
+def test_infer_test_commands_uses_npm_run_for_package_scripts(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"test": "vitest", "lint": "eslint ."}}),
+        encoding="utf-8",
+    )
+
+    assert infer_test_commands(tmp_path) == ["npm run test", "npm run lint"]
+
+
+def test_infer_test_commands_keeps_pnpm_script_shortcut(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"lint": "eslint .", "typecheck": "tsc --noEmit"}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+
+    assert infer_test_commands(tmp_path) == ["pnpm lint", "pnpm typecheck"]
+
+
 def test_extract_explicit_test_commands_from_validation_section() -> None:
     task = """Implement the thing.
 

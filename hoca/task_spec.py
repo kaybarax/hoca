@@ -216,11 +216,11 @@ def infer_test_commands(repo_root: Path) -> list[str]:
         else:
             runner = "npm"
         if "test" in scripts:
-            commands.append(f"{runner} test")
+            commands.append(_package_script_command(runner, "test"))
         if "lint" in scripts:
-            commands.append(f"{runner} lint")
+            commands.append(_package_script_command(runner, "lint"))
         if "typecheck" in scripts:
-            commands.append(f"{runner} typecheck")
+            commands.append(_package_script_command(runner, "typecheck"))
 
     if (repo_root / "pyproject.toml").is_file() or (repo_root / "requirements.txt").is_file():
         commands.append("pytest")
@@ -271,6 +271,12 @@ def extract_explicit_test_commands(task: str) -> list[str]:
         if command and not is_secret_like_path(command) and command not in commands:
             commands.append(command)
     return commands
+
+
+def _package_script_command(runner: str, script_name: str) -> str:
+    if runner == "npm":
+        return f"npm run {script_name}"
+    return f"{runner} {script_name}"
 
 
 def infer_expected_areas(task: str, repo_root: Path) -> list[str]:
