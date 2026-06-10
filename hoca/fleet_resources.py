@@ -6,7 +6,18 @@ import time
 from pathlib import Path
 from typing import Any
 
+from hoca.fleet_contracts import HocaResourceBudget
 from hoca.fleet_registry import FleetRegistry
+from hoca.resource_governor import ResourceGovernor
+
+
+def _metadata_int(metadata: dict[str, Any] | None, key: str, default: int = 0) -> int:
+    if not metadata:
+        return default
+    try:
+        return int(metadata.get(key, default))
+    except (TypeError, ValueError):
+        return default
 
 
 def _process_rows() -> list[dict[str, Any]]:
@@ -92,6 +103,43 @@ def summarize_resource_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "peak_rss_mb": round(max(rss_values), 3),
         "average_rss_mb": round(sum(rss_values) / len(rss_values), 3),
         "peak_process_count": max(process_values),
+    }
+
+
+def model_residency_summary(
+    registry: FleetRegistry,
+    *,
+    budget: HocaResourceBudget,
+) -> dict[str, Any]:
+    lanes = registry.list_lanes()
+    governor = ResourceGovernor(budget=budget)
+    active_lanes = governor.active_lanes(lanes)
+    resident_models = sorted(governor.resident_models_for_lanes(active_lanes))
+    metadata = budget.metadata or {}
+    per_model_mb = _metadata_int(metadata, "model_residency_mb", 0)
+    docker_vm_mb = _metadata_int(metadata, "docker_vm_memory_mb", 0)
+    sandbox_cap_mb = _metadata_int(metadata, "sandbox_memory_mb", 0)
+    model_residency_mb = len(resident_models) * per_model_mb
+    sandbox_total_mb = len(active_lanes) * sandbox_cap_mb
+    total_estimated_mb = model_residency_mb + docker_vm_mb + sandbox_total_mb
+    resident_limit = governor.resident_model_limit()
+    binding_reason = ""
+    if resident_limit > 0 and len(resident_models) >= resident_limit:
+        binding_reason = f"model residency cap reached ({len(resident_models)}/{resident_limit})"
+    elif budget.memory_limit_mb > 0 and total_estimated_mb >= budget.memory_limit_mb:
+        binding_reason = f"memory estimate reached ({total_estimated_mb}/{budget.memory_limit_mb}mb)"
+    return {
+        "resident_models": resident_models,
+        "resident_model_count": len(resident_models),
+        "max_resident_models": resident_limit,
+        "model_residency_mb": model_residency_mb,
+        "docker_vm_memory_mb": docker_vm_mb,
+        "sandbox_memory_mb": sandbox_cap_mb,
+        "active_lane_count": len(active_lanes),
+        "sandbox_total_mb": sandbox_total_mb,
+        "total_estimated_mb": total_estimated_mb,
+        "memory_limit_mb": budget.memory_limit_mb,
+        "binding_reason": binding_reason,
     }
 
 

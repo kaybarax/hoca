@@ -20,7 +20,7 @@ from hoca.fleet_contracts import (
 )
 from hoca.fleet_registry import FleetRegistry
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
-from hoca.fleet_resources import write_resource_monitor_report
+from hoca.fleet_resources import model_residency_summary, write_resource_monitor_report
 from hoca.legacy_tools import scan_removed_tool_references
 from hoca.paths import repo_root
 from hoca.redaction import redact_public_evidence_lines
@@ -526,7 +526,12 @@ def _default_resource_budget() -> HocaResourceBudget:
         cpu_limit_percent=0,
         created_at=timestamp,
         updated_at=timestamp,
-        metadata={},
+        metadata={
+            "model_residency_mb": 0,
+            "docker_vm_memory_mb": 0,
+            "sandbox_memory_mb": 0,
+            "max_resident_models": 0,
+        },
     )
 
 
@@ -563,13 +568,42 @@ def _fleet_state_summary() -> list[str]:
     ]
     blocked_lanes = [lane for lane in lanes if lane.status == "blocked"]
     ready_prs = [lane for lane in lanes if lane.status in {"pr_created", "ready_for_human"}]
-    return [
+    lines = [
         f"Projects: {len(projects)}",
         f"Queued Tasks: {len(queued_tasks)}",
         f"Running Lanes: {len(running_lanes)}",
         f"Blocked Lanes: {len(blocked_lanes)}",
         f"Ready PRs: {len(ready_prs)}",
     ]
+    lines.extend(_fleet_memory_budget_lines(registry, _default_resource_budget()))
+    return lines
+
+
+def _fleet_memory_budget_lines(
+    registry: FleetRegistry,
+    budget: HocaResourceBudget,
+) -> list[str]:
+    summary = model_residency_summary(registry, budget=budget)
+    resident_models = summary["resident_models"]
+    resident_label = ", ".join(resident_models) if resident_models else "none"
+    limit = summary["max_resident_models"] or "unlimited"
+    lines = [
+        "Memory Budget:",
+        f"- Resident models: {summary['resident_model_count']}/{limit} ({resident_label})",
+        f"- Estimated model residency MB: {summary['model_residency_mb']}",
+        f"- Docker VM reservation MB: {summary['docker_vm_memory_mb']}",
+        (
+            f"- Per-lane sandbox cap MB: {summary['sandbox_memory_mb']} "
+            f"x {summary['active_lane_count']} = {summary['sandbox_total_mb']}"
+        ),
+        (
+            f"- Total estimated MB: {summary['total_estimated_mb']}"
+            f" / {summary['memory_limit_mb'] or 'unlimited'}"
+        ),
+    ]
+    if summary["binding_reason"]:
+        lines.append(f"- Binding limit: {summary['binding_reason']}")
+    return lines
 
 
 @main.group()
