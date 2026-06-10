@@ -1445,6 +1445,64 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     assert timings["counters"]["agent_loops"] >= 2
 
 
+def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")"\n'
+            'cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],'
+            '"pr_notes":{"summary":["Direct reviewer completed"],"known_followups":[]}}\n'
+            "EOF\n"
+            "echo 'Review complete.'\n"
+            "echo 'LGTM'\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
+
+    run_dir = latest_run_dir(tmp_path)
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    worker_phase = next(phase for phase in timings["phases"] if phase["name"] == "worker_attempt")
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
+    agent_loop_names = {event["name"] for event in timings["events"] if event["type"] == "agent_loop"}
+
+    assert result.returncode == 0, result.stderr
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert '"status": "pr_created"' in latest_status(tmp_path)
+    assert '"reason": "pull_request_created"' in latest_status(tmp_path)
+    assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    assert (run_dir / "decisions" / "manager-decision-1.json").is_file()
+    assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (run_dir / "commit-hash.txt").is_file()
+    assert (run_dir / "pr-url.txt").read_text(encoding="utf-8").strip() == (
+        "https://github.com/example/repo/pull/1"
+    )
+    assert (run_dir / "prompts" / "worker-direct-prompt-1.txt").is_file()
+    assert (run_dir / "logs" / "worker-direct-stdout.txt").is_file()
+    assert (run_dir / "logs" / "reviewer-direct-stdout.txt").is_file()
+    assert not (run_dir / "worker-hermes-prompt-round-1.txt").exists()
+    assert not (run_dir / "logs" / "worker-hermes-invoked-round-1.txt").exists()
+    assert not (run_dir / "logs" / "reviewer-hermes-invoked-round-1.txt").exists()
+    assert worker_phase["mode"] == "openhands"
+    assert review_phase["mode"] == "direct"
+    assert "worker-openhands" in agent_loop_names
+    assert "reviewer-direct" in agent_loop_names
+    assert "reviewer-hermes" not in agent_loop_names
+
+
 def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:
     init_repo(tmp_path)
     subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
