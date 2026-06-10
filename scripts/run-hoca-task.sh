@@ -310,6 +310,18 @@ task_spec_path_for_run() {
   printf '%s\n' "$RUN_DIR/task-spec.json"
 }
 
+apply_run_budget() {
+  local round_number="${1:-1}"
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ ! -f "$spec_path" ]; then
+    return 0
+  fi
+  local budget_exports
+  budget_exports="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_budget export-shell "$spec_path" "$RUN_DIR" --round "$round_number")"
+  eval "$budget_exports"
+}
+
 read_task_spec_field() {
   local field="$1"
   local fallback="$2"
@@ -847,6 +859,7 @@ record_timing_phase "branch_worktree_setup" "$BRANCH_SETUP_START_EPOCH" "$BRANCH
 
 TASK_SPEC_START_EPOCH="$(hoca_time_epoch)"
 generate_run_task_spec
+apply_run_budget 1
 TASK_SPEC_END_EPOCH="$(hoca_time_epoch)"
 record_timing_phase "task_spec" "$TASK_SPEC_START_EPOCH" "$TASK_SPEC_END_EPOCH"
 
@@ -933,6 +946,7 @@ run_openhands_phase() {
   local repair_brief_path="${3:-}"
   local openhands_exit=0
 
+  apply_run_budget "$round_number"
   echo "Running worker profile ($phase_label)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" worker

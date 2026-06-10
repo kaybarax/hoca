@@ -77,6 +77,16 @@ def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None
     )
 
 
+def test_run_hoca_task_applies_task_scaled_budget() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "apply_run_budget()" in content
+    assert "-m hoca.run_budget export-shell" in content
+    assert "eval \"$budget_exports\"" in content
+    assert "generate_run_task_spec\napply_run_budget 1" in content
+    assert 'apply_run_budget "$round_number"' in content
+
+
 def test_run_tests_uses_install_cache_for_pnpm() -> None:
     root = Path(__file__).resolve().parents[1]
     content = (root / "scripts" / "run-tests.sh").read_text(encoding="utf-8")
