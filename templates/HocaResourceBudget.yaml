@@ -14,3 +14,4 @@ created_at: 2026-06-01T10:00:00Z
 updated_at: 2026-06-01T10:00:00Z
 metadata:
   queue_timeout_seconds: 120
+  max_resident_models: 2
