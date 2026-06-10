@@ -51,6 +51,16 @@ def test_run_hoca_task_preserves_shared_runtime_in_fleet_lane_mode() -> None:
     assert 'rm -rf "$PROJECT_PATH/.hoca-runtime"' in content
 
 
+def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'docker rm -f "hoca-worker-${RUN_ID}"' in content
+    assert "trap cleanup EXIT" in content
+    assert "trap 'cleanup; exit 129' HUP" in content
+    assert "trap 'cleanup; exit 130' INT" in content
+    assert "trap 'cleanup; exit 143' TERM" in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

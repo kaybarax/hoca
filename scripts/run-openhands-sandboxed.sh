@@ -29,19 +29,24 @@ SANDBOX_IMAGE="${HOCA_SANDBOX_IMAGE:-hoca-sandbox:latest}"
 RUN_ID="$(basename "$RUN_DIR")"
 CONTAINER_NAME="hoca-worker-${RUN_ID}"
 
-# Ensure sandbox image exists
-if ! docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
+mkdir -p "$RUN_DIR"
+RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
+CONTAINER_NAME_FILE="$RUN_DIR/sandbox-container-name.txt"
+IMAGE_READY_FILE="$RUN_DIR/sandbox-image-ready.txt"
+
+# Ensure sandbox image exists once per run.
+if [ ! -f "$IMAGE_READY_FILE" ] && ! docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
   echo "Building sandbox image..."
   docker build -t "$SANDBOX_IMAGE" -f "$HOCA_ROOT/docker/Dockerfile.sandbox" "$HOCA_ROOT/docker"
 fi
+printf '%s\n' "$SANDBOX_IMAGE" > "$IMAGE_READY_FILE"
 
 # Remap localhost URLs to host.docker.internal for container access to host-local
 # LLM servers such as Ollama, LM Studio, llama.cpp, MLX, LocalAI, or vLLM.
 CONTAINER_BASE_URL="${BASE_URL//127.0.0.1/host.docker.internal}"
 CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 
-PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
-RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
 SANDBOX_TASK="${TASK//$PROJECT_PATH/\/workspace}"
 SANDBOX_TASK="${SANDBOX_TASK//$RUN_DIR/\/hoca-run}"
 SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
@@ -90,19 +95,15 @@ chmod +x "$SETUP_SCRIPT"
 TASK_FILE="$RUN_DIR/task-input.txt"
 printf '%s' "$SANDBOX_TASK" > "$TASK_FILE"
 
-# Cleanup on exit
-cleanup_container() {
-  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-}
-trap cleanup_container EXIT
-
 echo "Starting sandboxed OpenHands execution..."
 echo "  Container: $CONTAINER_NAME"
 echo "  Image: $SANDBOX_IMAGE"
 echo "  User: $SANDBOX_USER"
 echo "  Network mode: $NETWORK_MODE"
 
-# Run the container with the project mounted (non-root; worktree owner uid:gid by default).
+# Start one run-scoped container with the project mounted (non-root; worktree
+# owner uid:gid by default), then execute each phase via docker exec with fresh
+# role/model env injection.
 # Only allowlisted env vars are forwarded via explicit -e flags (see hoca/env_allowlist.py).
 DOCKER_RUN_ARGS=(
   --name "$CONTAINER_NAME"
@@ -112,9 +113,6 @@ DOCKER_RUN_ARGS=(
   -v "${RUN_DIR}:/hoca-run"
   -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
-  -e "LLM_MODEL=${MODEL}"
-  -e "LLM_BASE_URL=${CONTAINER_BASE_URL}"
-  -e "LLM_API_KEY=${API_KEY}"
   -e "OPENHANDS_SUPPRESS_BANNER=1"
   -e "HOME=/home/hoca-sandbox"
   --security-opt=no-new-privileges
@@ -131,10 +129,34 @@ fi
 
 set +e
 record_timing_event --type agent_loop --name openhands --role "$AGENT_ROLE"
-record_timing_event --type container_start --name docker-run --role "$AGENT_ROLE"
-docker run \
-  "${DOCKER_RUN_ARGS[@]}" \
-  "$SANDBOX_IMAGE" \
+if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+  record_timing_event --type container_start --name docker-run --role "$AGENT_ROLE"
+  docker run -d \
+    "${DOCKER_RUN_ARGS[@]}" \
+    "$SANDBOX_IMAGE" \
+    sleep infinity >/dev/null
+  printf '%s\n' "$CONTAINER_NAME" > "$CONTAINER_NAME_FILE"
+elif [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)" != "true" ]; then
+  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  record_timing_event --type container_start --name docker-run --role "$AGENT_ROLE"
+  docker run -d \
+    "${DOCKER_RUN_ARGS[@]}" \
+    "$SANDBOX_IMAGE" \
+    sleep infinity >/dev/null
+  printf '%s\n' "$CONTAINER_NAME" > "$CONTAINER_NAME_FILE"
+else
+  printf '%s\n' "$CONTAINER_NAME" > "$CONTAINER_NAME_FILE"
+fi
+
+docker exec \
+  -w /workspace \
+  -e "LLM_MODEL=${MODEL}" \
+  -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
+  -e "LLM_API_KEY=${API_KEY}" \
+  -e "HOCA_AGENT_ROLE=${AGENT_ROLE}" \
+  -e "OPENHANDS_SUPPRESS_BANNER=1" \
+  -e "HOME=/home/hoca-sandbox" \
+  "$CONTAINER_NAME" \
   bash -c "
     set -euo pipefail
 

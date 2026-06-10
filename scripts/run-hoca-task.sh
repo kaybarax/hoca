@@ -586,6 +586,9 @@ cleanup() {
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   fi
+  if [ -n "${RUN_ID:-}" ] && command -v docker >/dev/null 2>&1; then
+    docker rm -f "hoca-worker-${RUN_ID}" >/dev/null 2>&1 || true
+  fi
   remove_disposable_worktree 2>/dev/null || true
   restore_dev_branch_after_run
   cleanup_unpublished_task_branch

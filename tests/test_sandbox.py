@@ -61,6 +61,28 @@ def test_sandbox_wrapper_keeps_container_hardened() -> None:
     assert '--pids-limit="${HOCA_SANDBOX_PIDS:-512}"' in script
 
 
+def test_sandbox_wrapper_uses_run_scoped_container_with_exec_env() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert 'CONTAINER_NAME="hoca-worker-${RUN_ID}"' in script
+    assert 'CONTAINER_NAME_FILE="$RUN_DIR/sandbox-container-name.txt"' in script
+    assert "docker run -d \\" in script
+    assert "sleep infinity >/dev/null" in script
+    assert "docker exec \\" in script
+    assert '-e "LLM_MODEL=${MODEL}"' in script
+    assert '-e "LLM_BASE_URL=${CONTAINER_BASE_URL}"' in script
+    assert '-e "LLM_API_KEY=${API_KEY}"' in script
+    assert '-e "HOCA_AGENT_ROLE=${AGENT_ROLE}"' in script
+
+
+def test_sandbox_wrapper_checks_image_once_per_run() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert 'IMAGE_READY_FILE="$RUN_DIR/sandbox-image-ready.txt"' in script
+    assert '[ ! -f "$IMAGE_READY_FILE" ] && ! docker image inspect "$SANDBOX_IMAGE"' in script
+    assert 'printf \'%s\\n\' "$SANDBOX_IMAGE" > "$IMAGE_READY_FILE"' in script
+
+
 def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
