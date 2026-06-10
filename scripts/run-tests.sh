@@ -185,6 +185,9 @@ if [ -f "package.json" ]; then
   if [ "$runner" = "pnpm" ] && [ -f "pnpm-lock.yaml" ]; then
     echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
     CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
+  elif [ "$runner" = "yarn" ] && [ -f "yarn.lock" ]; then
+    echo "Running: yarn install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
+    CI=true yarn install --frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
   fi
   # Capture task-spec commands once so we can check coverage below.
   _spec_commands="$(load_task_spec_commands 2>/dev/null || true)"

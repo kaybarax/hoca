@@ -165,6 +165,39 @@ def test_run_tests_prefers_task_spec_commands_over_root_scripts(tmp_path: Path) 
     assert "root lint" not in output
 
 
+def test_run_tests_syncs_yarn_dependencies_before_task_spec_commands(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = project / ".hoca-runtime" / "runs" / "run-tests"
+    fake_bin = tmp_path / "bin"
+    project.mkdir()
+    run_dir.mkdir(parents=True)
+    fake_bin.mkdir()
+    (project / "package.json").write_text(
+        '{"scripts": {"lint": "echo lint", "build": "echo build"}}\n',
+        encoding="utf-8",
+    )
+    (project / "yarn.lock").write_text("# yarn lockfile\n", encoding="utf-8")
+    (run_dir / "task-spec.json").write_text(
+        '{"repo_root": "/original/repo", "test_commands": ["yarn lint", "yarn build"]}\n',
+        encoding="utf-8",
+    )
+    write_executable(
+        fake_bin / "yarn",
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "install" ]]; then echo yarn install "$@"; exit 0; fi\n'
+        'echo yarn "$@"\n',
+    )
+
+    result = run_tests(project, run_dir, fake_bin)
+
+    assert result.returncode == 0, result.stderr
+    output = (run_dir / "tests-output.log").read_text(encoding="utf-8")
+    assert "Running: yarn install (pre-test dependency sync)" in output
+    assert "yarn install install --frozen-lockfile" in output
+    assert "yarn lint" in output
+    assert "yarn build" in output
+
+
 def test_run_tests_rewrites_task_spec_repo_root_to_project_path(tmp_path: Path) -> None:
     project = tmp_path / "project"
     run_dir = project / ".hoca-runtime" / "runs" / "run-tests"
