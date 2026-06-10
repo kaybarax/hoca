@@ -419,6 +419,17 @@ def run_worker_hermes(
     ensure_run_layout(run_dir)
 
     spec = load_task_spec(task_spec_path)
+    cfg = load_config()
+    if cfg.worker_mode == "direct":
+        from hoca.worker_direct import run_worker_direct
+
+        return run_worker_direct(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
     verify_profile_prerequisites(hermes_home=hermes_home)
     prompt = build_worker_hermes_prompt(
         spec=spec,

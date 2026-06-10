@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from hoca.contracts import HocaTaskSpec
 from hoca.run_layout import ensure_run_layout
+from hoca.subprocess_utils import CommandResult
 from hoca.worker_hermes import (
     ITERATIVE_WORKER_RUBRIC,
     PSTACK_WORKER_PRINCIPLES,
+    WorkerRunResult,
+    _ensure_worker_attempt_report,
+    _infer_worker_status,
+    _missing_profile_attempt_status,
     _redact_secret_like_lines,
+    load_task_spec,
 )
 
 
@@ -121,3 +130,97 @@ def write_worker_direct_prompt(
     path = prompt_dir / f"worker-direct-prompt-{round_number}.txt"
     path.write_text(prompt, encoding="utf-8")
     return path
+
+
+def _invoke_openhands_direct(
+    *,
+    project_path: Path,
+    prompt_path: Path,
+    run_dir: Path,
+) -> CommandResult:
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = logs_dir / "worker-direct-stdout.txt"
+    stderr_path = logs_dir / "worker-direct-stderr.txt"
+    hoca_root = Path(__file__).resolve().parents[1]
+    command = [
+        str(hoca_root / "scripts" / "run-openhands-task.sh"),
+        str(project_path),
+        str(prompt_path),
+        str(run_dir),
+    ]
+    env = os.environ.copy()
+    env["HOCA_AGENT_ROLE"] = "worker"
+    env["HOCA_LOCK_ROLE_MODEL"] = "true"
+    env.setdefault("HOCA_PYTHON", sys.executable)
+
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=run_dir,
+    )
+    stdout_path.write_text(completed.stdout, encoding="utf-8")
+    stderr_path.write_text(completed.stderr, encoding="utf-8")
+    return CommandResult(
+        command=tuple(command),
+        returncode=completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+
+
+def run_worker_direct(
+    *,
+    project_path: Path,
+    task_spec_path: Path,
+    run_dir: Path,
+    round_number: int,
+    repair_brief: str | None = None,
+) -> WorkerRunResult:
+    if round_number < 1:
+        raise ValueError("round must be greater than or equal to 1")
+
+    project_path = project_path.resolve()
+    run_dir = run_dir.resolve()
+    task_spec_path = task_spec_path.resolve()
+    ensure_run_layout(run_dir)
+    spec = load_task_spec(task_spec_path)
+    prompt_path = write_worker_direct_prompt(
+        spec=spec,
+        project_path=project_path,
+        run_dir=run_dir,
+        round_number=round_number,
+        task_spec_path=task_spec_path,
+        repair_brief=repair_brief,
+    )
+
+    result = _invoke_openhands_direct(
+        project_path=project_path,
+        prompt_path=prompt_path,
+        run_dir=run_dir,
+    )
+    status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=round_number,
+        process_exit_code=result.returncode,
+        inferred_status=status,
+        project_path=project_path,
+    )
+    attempt_path = _ensure_worker_attempt_report(
+        run_dir,
+        round_number=round_number,
+        status=status,
+        mode="direct",
+        project_path=project_path,
+    )
+    return WorkerRunResult(
+        mode="direct",
+        exit_code=result.returncode,
+        worker_attempt_path=attempt_path,
+        hermes_stdout_path=None,
+        hermes_stderr_path=None,
+    )

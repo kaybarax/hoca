@@ -318,7 +318,11 @@ def record_worker_attempt(
         if blocked_reason:
             blocked_reason = _redact_secret_like_values(blocked_reason)
 
-    commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
+    commands_run = (
+        ["run-openhands-task.sh"]
+        if report_mode == "direct"
+        else ["run-worker-hermes.sh", "run-openhands-task.sh"]
+    )
 
     auto_summary = summary or [f"Worker attempt {round_number} recorded with status {status}."]
     monitor_lines = _build_monitor_summary(monitor)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 from hoca.contracts import HocaRoleModelSelection, HocaSandboxPolicy, HocaTaskSpec
-from hoca.worker_direct import build_worker_direct_prompt, write_worker_direct_prompt
+from hoca.run_layout import ensure_run_layout, worker_attempt_path
+from hoca.worker_direct import build_worker_direct_prompt, run_worker_direct, write_worker_direct_prompt
 
 MAC_HOME = "/" + "Users/example"
 
@@ -35,6 +38,16 @@ def sample_task_spec(**overrides: object) -> HocaTaskSpec:
     data = base.to_dict()
     data.update(overrides)
     return HocaTaskSpec.from_dict(data)
+
+
+def init_repo(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=path, check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=path, check=True)
+    (path / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
 
 
 def test_build_worker_direct_prompt_contains_every_task_spec_binding() -> None:
@@ -103,3 +116,74 @@ def test_write_worker_direct_prompt_writes_audit_file(tmp_path: Path) -> None:
     assert "Execute one bounded HOCA worker attempt directly in OpenHands" in path.read_text(
         encoding="utf-8"
     )
+
+
+def test_run_worker_direct_invokes_openhands_without_hermes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(tuple(command))
+        (project / "README.md").write_text("changed\n", encoding="utf-8")
+        (run_dir / "openhands-output.jsonl").write_text("{}\n", encoding="utf-8")
+        (run_dir / "monitor-result.json").write_text('{"stop_reason":"completed"}\n', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr("hoca.worker_direct.subprocess.run", fake_run)
+
+    result = run_worker_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "direct"
+    assert result.exit_code == 0
+    assert result.worker_attempt_path == worker_attempt_path(run_dir, 1)
+    assert calls and calls[0][0].endswith("run-openhands-task.sh")
+    assert all("hermes" not in part.lower() for part in calls[0])
+    report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
+    assert report["mode"] == "direct"
+    assert report["status"] == "completed"
+    assert report["commands_run"] == ["run-openhands-task.sh"]
+    assert (run_dir / "prompts" / "worker-direct-prompt-1.txt").is_file()
+
+
+def test_run_worker_direct_monitor_stop_records_blocked(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        (run_dir / "openhands-output.jsonl").write_text("{}\n", encoding="utf-8")
+        (run_dir / "monitor-result.json").write_text(
+            '{"stop_reason":"secret_access"}\n',
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("hoca.worker_direct.subprocess.run", fake_run)
+
+    result = run_worker_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
+    assert report["status"] == "blocked"
+    assert report["blocked_reason"] == "secret_access"
