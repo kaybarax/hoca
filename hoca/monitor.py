@@ -293,6 +293,8 @@ def check_unrelated_directory(
 def should_scan_line_for_policy(line: str) -> bool:
     """Skip passive OpenHands observations; scan agent actions and plain output."""
     stripped = line.strip()
+    if re.match(r'^"(?:text|thought|reasoning_content|llm_message|extended_content)"\s*:', stripped):
+        return False
     if not stripped.startswith("{"):
         return True
     try:

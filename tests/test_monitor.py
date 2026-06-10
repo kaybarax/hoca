@@ -280,6 +280,14 @@ class TestShouldScanLineForPolicy:
         )
         assert should_scan_line_for_policy(line) is False
 
+    def test_pretty_printed_message_text_fragment_is_not_scanned(self):
+        line = '"text": "Safety prompt says never run gh pr merge."'
+        assert should_scan_line_for_policy(line) is False
+
+    def test_pretty_printed_command_fragment_is_still_scanned(self):
+        line = '"command": "rm -rf /"'
+        assert should_scan_line_for_policy(line) is True
+
 
 class TestMonitorEvent:
     def test_to_dict(self):
@@ -583,6 +591,26 @@ class TestMonitorProcessStream:
             }
         )
         stream = io.StringIO(f"reading\n{thought}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_message_fragment_is_ignored(
+        self, tmp_path: Path
+    ):
+        import io
+
+        stream = io.StringIO(
+            'working\n'
+            '        "text": "HOCA safety prompt says do NOT run gh pr merge."\n'
+            "done\n"
+        )
         result = monitor_process_stream(
             stream,
             project_path="/tmp/test",
