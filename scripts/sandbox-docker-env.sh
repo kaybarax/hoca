@@ -37,14 +37,14 @@ sandbox_resolve_network_mode() {
     resolve_args+=(--env-mode "$HOCA_NETWORK_MODE")
   fi
   PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m hoca.sandbox_network resolve "${resolve_args[@]}"
+    "${HOCA_PYTHON:-python3}" -m hoca.sandbox_network resolve "${resolve_args[@]}"
 }
 
 # Print docker run network flags for a resolved mode.
 sandbox_docker_network_args() {
   local mode="$1"
   PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m hoca.sandbox_network docker-args --mode "$mode"
+    "${HOCA_PYTHON:-python3}" -m hoca.sandbox_network docker-args --mode "$mode"
 }
 
 # Record effective network policy into sandbox-policy.json for the run.
@@ -52,6 +52,6 @@ sandbox_record_network_policy() {
   local role="$1"
   local run_dir="$2"
   PYTHONPATH="${HOCA_ROOT:?HOCA_ROOT must be set}${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m hoca.sandbox_network record --role "$role" --run-dir "$run_dir" \
+    "${HOCA_PYTHON:-python3}" -m hoca.sandbox_network record --role "$role" --run-dir "$run_dir" \
     ${HOCA_NETWORK_MODE:+--env-mode "$HOCA_NETWORK_MODE"} >/dev/null
 }

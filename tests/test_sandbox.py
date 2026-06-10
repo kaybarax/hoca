@@ -11,6 +11,7 @@ from hoca.sandbox_network import docker_run_network_args, package_install_allowe
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SANDBOX_WRAPPER = REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh"
+SANDBOX_DOCKER_ENV = REPO_ROOT / "scripts" / "sandbox-docker-env.sh"
 
 
 def test_sandbox_policy_defaults_to_enabled_offline() -> None:
@@ -91,3 +92,11 @@ def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:
     assert "elif [ -f yarn.lock ]" in script
     assert "yarn install --frozen-lockfile" in script
     assert re.search(r"(^|\s)npm\s+install\b", script) is None
+
+
+def test_sandbox_network_helpers_respect_hoca_python() -> None:
+    script = SANDBOX_DOCKER_ENV.read_text(encoding="utf-8")
+
+    assert '"${HOCA_PYTHON:-python3}" -m hoca.sandbox_network resolve' in script
+    assert '"${HOCA_PYTHON:-python3}" -m hoca.sandbox_network docker-args' in script
+    assert '"${HOCA_PYTHON:-python3}" -m hoca.sandbox_network record' in script
