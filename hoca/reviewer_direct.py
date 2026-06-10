@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from hoca.review_gate import ReviewGateError, evaluate_review_gate
@@ -15,6 +17,16 @@ from hoca.reviewer_hermes import (
     _normalize_profile_review_report,
     _write_blocked_report,
 )
+
+
+def _structured_report_ready(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(loaded, dict) and loaded.get("verdict") in {"LGTM", "fix_required", "blocked"}
 
 
 def _invoke_openhands_review_direct(
@@ -28,6 +40,7 @@ def _invoke_openhands_review_direct(
     logs_dir.mkdir(parents=True, exist_ok=True)
     stdout_path = logs_dir / "reviewer-direct-stdout.txt"
     stderr_path = logs_dir / "reviewer-direct-stderr.txt"
+    report_path = review_report_path(run_dir, round_number)
     hoca_root = Path(__file__).resolve().parents[1]
     command = [
         str(hoca_root / "scripts" / "review-with-openhands.sh"),
@@ -39,19 +52,41 @@ def _invoke_openhands_review_direct(
     env["HOCA_AGENT_ROLE"] = "reviewer"
     env["HOCA_LOCK_ROLE_MODEL"] = "true"
     env["HOCA_REVIEW_ROUND"] = str(round_number)
-    env["HOCA_REVIEW_REPORT_PATH"] = str(review_report_path(run_dir, round_number))
+    env["HOCA_REVIEW_REPORT_PATH"] = str(report_path)
     env.setdefault("HOCA_PYTHON", sys.executable)
-    completed = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=run_dir,
-        env=env,
+    with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
+        "w", encoding="utf-8"
+    ) as stderr_file:
+        process = subprocess.Popen(
+            command,
+            cwd=run_dir,
+            env=env,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+        )
+        while process.poll() is None:
+            if _structured_report_ready(report_path):
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                return CommandResult(
+                    tuple(command),
+                    0,
+                    stdout_path.read_text(encoding="utf-8", errors="replace"),
+                    stderr_path.read_text(encoding="utf-8", errors="replace"),
+                )
+            time.sleep(0.5)
+        returncode = process.returncode if process.returncode is not None else 1
+    return CommandResult(
+        tuple(command),
+        returncode,
+        stdout_path.read_text(encoding="utf-8", errors="replace"),
+        stderr_path.read_text(encoding="utf-8", errors="replace"),
     )
-    stdout_path.write_text(completed.stdout, encoding="utf-8")
-    stderr_path.write_text(completed.stderr, encoding="utf-8")
-    return CommandResult(tuple(command), completed.returncode, completed.stdout, completed.stderr)
 
 
 def _evaluate_direct_report(

@@ -9,6 +9,47 @@ from hoca.run_layout import ensure_run_layout, review_report_path
 from tests.test_worker_hermes import init_repo, sample_task_spec
 
 
+class FakeReviewProcess:
+    def __init__(self, command, *, run_dir: Path, round_number: int, verdict: str):
+        self.command = tuple(command)
+        self.returncode: int | None = None
+        (run_dir / "openhands-review.txt").write_text(
+            "LGTM\n" if verdict == "LGTM" else "Needs tests\n",
+            encoding="utf-8",
+        )
+        if verdict == "LGTM":
+            findings = "[]"
+        else:
+            findings = (
+                '[{"id":"F1","severity":"medium","category":"test","file":"README.md",'
+                '"summary":"Missing validation","required_fix":"Add validation evidence"}]'
+            )
+        review_report_path(run_dir, round_number).parent.mkdir(parents=True, exist_ok=True)
+        review_report_path(run_dir, round_number).write_text(
+            '{"schema_version":1,"run_id":"run-test","round":'
+            f"{round_number}"
+            ',"role":"reviewer","verdict":"'
+            f"{verdict}"
+            '","findings":'
+            f"{findings}"
+            ',"pr_notes":{"summary":["Looks good."],"known_followups":[]}}\n',
+            encoding="utf-8",
+        )
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        self.returncode = 0
+        return 0
+
+    def terminate(self):
+        self.returncode = -15
+
+    def kill(self):
+        self.returncode = -9
+
+
 def test_run_reviewer_direct_invokes_review_wrapper_and_uses_gate(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -21,19 +62,11 @@ def test_run_reviewer_direct_invokes_review_wrapper_and_uses_gate(
     task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
     calls: list[tuple[str, ...]] = []
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         calls.append(tuple(command))
-        (run_dir / "openhands-review.txt").write_text("LGTM\n", encoding="utf-8")
-        review_report_path(run_dir, 1).parent.mkdir(parents=True, exist_ok=True)
-        review_report_path(run_dir, 1).write_text(
-            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
-            '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
-            '"known_followups":[]}}\n',
-            encoding="utf-8",
-        )
-        return subprocess.CompletedProcess(command, 0, stdout="review ok\n", stderr="")
+        return FakeReviewProcess(command, run_dir=run_dir, round_number=1, verdict="LGTM")
 
-    monkeypatch.setattr("hoca.reviewer_direct.subprocess.run", fake_run)
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
 
     result = run_reviewer_direct(
         project_path=project,
@@ -61,20 +94,10 @@ def test_run_reviewer_direct_fix_required_returns_repair_exit(
     task_spec_path = run_dir / "task-spec.json"
     task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
 
-    def fake_run(command, **kwargs):
-        (run_dir / "openhands-review.txt").write_text("Needs tests\n", encoding="utf-8")
-        review_report_path(run_dir, 1).parent.mkdir(parents=True, exist_ok=True)
-        review_report_path(run_dir, 1).write_text(
-            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
-            '"verdict":"fix_required","findings":[{"id":"F1","severity":"medium",'
-            '"category":"test","file":"README.md","summary":"Missing validation",'
-            '"required_fix":"Add validation evidence"}],"pr_notes":{"summary":["Needs tests."],'
-            '"known_followups":[]}}\n',
-            encoding="utf-8",
-        )
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    def fake_popen(command, **kwargs):
+        return FakeReviewProcess(command, run_dir=run_dir, round_number=1, verdict="fix_required")
 
-    monkeypatch.setattr("hoca.reviewer_direct.subprocess.run", fake_run)
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
 
     result = run_reviewer_direct(
         project_path=project,
