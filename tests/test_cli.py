@@ -1389,6 +1389,8 @@ def test_bench_run_invokes_harness(monkeypatch, tmp_path: Path) -> None:
             str(output),
             "--resource-samples",
             "2",
+            "--hoca-arg",
+            "--express",
         ],
     )
 
@@ -1399,6 +1401,7 @@ def test_bench_run_invokes_harness(monkeypatch, tmp_path: Path) -> None:
     assert calls[0]["runs"] == 3
     assert calls[0]["output"] == output
     assert calls[0]["resource_samples"] == 2
+    assert calls[0]["hoca_args"] == ("--express",)
 
 
 def test_bench_compare_renders_delta(tmp_path: Path) -> None:

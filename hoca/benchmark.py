@@ -213,6 +213,7 @@ def run_benchmark(
     output: Path,
     hoca_script: Path,
     resource_samples: int = 0,
+    hoca_args: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     benchmark = BENCHMARK_TASKS[benchmark_id]
     archive_root = output.parent / "runtime-archives"
@@ -228,7 +229,7 @@ def run_benchmark(
             subprocess.run(["git", "clone", "--quiet", str(repo), str(clone)], check=True)
             started = time.monotonic()
             completed, samples = _run_hoca_task_with_resource_samples(
-                [str(hoca_script), str(clone), benchmark.task, "--timing"],
+                [str(hoca_script), str(clone), benchmark.task, "--timing", *hoca_args],
                 env={
                     **os.environ,
                     "HOCA_RUNTIME_ARCHIVE_ROOT": str(archive_root),

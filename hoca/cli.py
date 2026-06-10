@@ -1199,12 +1199,19 @@ def bench() -> None:
     type=click.IntRange(min=0),
     help="Resource samples to collect with the fleet resource sampler.",
 )
+@click.option(
+    "--hoca-arg",
+    "hoca_args",
+    multiple=True,
+    help="Additional argument to pass to run-hoca-task.sh, e.g. --express.",
+)
 def bench_run(
     benchmark_id: str,
     repo_path: Path,
     run_count: int,
     output: Path,
     resource_samples: int,
+    hoca_args: tuple[str, ...],
 ) -> None:
     """Run a canonical benchmark against disposable repository clones."""
     from hoca.benchmark import BENCHMARK_TASKS, render_benchmark_table, run_benchmark
@@ -1220,6 +1227,7 @@ def bench_run(
         output=output,
         hoca_script=repo_root() / "scripts" / "run-hoca-task.sh",
         resource_samples=resource_samples,
+        hoca_args=hoca_args,
     )
     click.echo(f"Benchmark result written: {output}")
     click.echo(render_benchmark_table(result), nl=False)
