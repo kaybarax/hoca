@@ -89,11 +89,17 @@ def _dedupe_candidates(candidates: list[str]) -> list[str]:
 
 
 def _json_candidates(text: str) -> list[str]:
+    openhands_messages = _openhands_message_text_candidates(text)
     return _dedupe_candidates(
         [
             *_fenced_code_blocks(text, ("json",)),
             text.strip(),
-            *_openhands_message_text_candidates(text),
+            *[
+                block
+                for message_text in openhands_messages
+                for block in _fenced_code_blocks(message_text, ("json",))
+            ],
+            *openhands_messages,
             *_json_object_candidates(text),
         ]
     )

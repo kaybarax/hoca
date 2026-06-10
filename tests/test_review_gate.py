@@ -286,6 +286,23 @@ def test_try_extract_structured_report_from_openhands_message_event() -> None:
     assert report.findings[0].id == "F1"
 
 
+def test_try_extract_structured_report_from_openhands_fenced_message_event() -> None:
+    review_text = (
+        '{"kind":"MessageEvent","source":"agent","llm_message":{"content":[{"text":'
+        '"```json\\n{\\n  \\"schema_version\\": 1,\\n  \\"run_id\\": \\"run-1\\",'
+        '\\n  \\"round\\": 1,\\n  \\"role\\": \\"reviewer\\",'
+        '\\n  \\"verdict\\": \\"LGTM\\",\\n  \\"findings\\": [],'
+        '\\n  \\"pr_notes\\": {\\n    \\"summary\\": \\"Looks good.\\",'
+        '\\n    \\"known_followups\\": []\\n  }\\n}\\n```"}]}}\n'
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "LGTM"
+    assert report.pr_notes["summary"] == ["Looks good."]
+
+
 def test_try_extract_structured_report_from_dependency_free_yaml() -> None:
     review_text = (
         "Review complete.\n"
