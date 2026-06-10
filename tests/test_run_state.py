@@ -530,6 +530,7 @@ def test_workflow_fields_from_config_defaults() -> None:
         "workflow_version": WORKFLOW_VERSION,
         "max_total_rounds": 3,
         "worker_mode": "hermes",
+        "worker_engine": "openhands",
         "reviewer_mode": "hermes",
         "sandbox_mode": "docker",
         "worktree_mode": True,

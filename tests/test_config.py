@@ -71,6 +71,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
             "HOCA_WORKER_MODE",
+            "HOCA_WORKER_ENGINE",
             "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
             "HOCA_WORKSPACE_ROOT",
@@ -97,6 +98,7 @@ class TestLoadConfigDefaults:
         assert cfg.network_mode == "offline"
         assert cfg.max_total_rounds == 3
         assert cfg.worker_mode == "hermes"
+        assert cfg.worker_engine == "openhands"
         assert cfg.reviewer_mode == "hermes"
         assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
@@ -129,6 +131,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX=false\n"
             "HOCA_MAX_TOTAL_ROUNDS=5\n"
             "HOCA_WORKER_MODE=direct\n"
+            "HOCA_WORKER_ENGINE=codex\n"
             "HOCA_REVIEWER_MODE=hermes\n"
         )
         for key in [
@@ -144,6 +147,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
             "HOCA_WORKER_MODE",
+            "HOCA_WORKER_ENGINE",
             "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
         ]:
@@ -164,6 +168,7 @@ class TestLoadConfigDefaults:
         assert cfg.use_worktree_sandbox is False
         assert cfg.max_total_rounds == 5
         assert cfg.worker_mode == "direct"
+        assert cfg.worker_engine == "codex"
         assert cfg.reviewer_mode == "hermes"
 
     def test_invalid_worker_mode_fails_clearly(self, tmp_path: Path) -> None:
@@ -171,6 +176,13 @@ class TestLoadConfigDefaults:
         env_file.write_text("HOCA_WORKER_MODE=fast\n", encoding="utf-8")
 
         with pytest.raises(ValueError, match="HOCA_WORKER_MODE must be one of"):
+            load_config(dotenv_path=env_file)
+
+    def test_invalid_worker_engine_fails_clearly(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_WORKER_ENGINE=fast\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="HOCA_WORKER_ENGINE must be one of"):
             load_config(dotenv_path=env_file)
 
     def test_invalid_reviewer_mode_fails_clearly(self, tmp_path: Path) -> None:

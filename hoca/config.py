@@ -18,6 +18,8 @@ _SECRET_PATTERN = re.compile(r"(token|secret|password|api_key|private_key)", re.
 RoleName = Literal["manager", "worker", "reviewer", "fallback"]
 WorkerMode = Literal["hermes", "direct"]
 VALID_WORKER_MODES: frozenset[str] = frozenset(("hermes", "direct"))
+WorkerEngine = Literal["openhands", "claude-code", "codex"]
+VALID_WORKER_ENGINES: frozenset[str] = frozenset(("openhands", "claude-code", "codex"))
 ReviewerMode = Literal["hermes", "direct"]
 VALID_REVIEWER_MODES: frozenset[str] = frozenset(("hermes", "direct"))
 
@@ -157,6 +159,7 @@ class HocaConfig:
     network_mode: str = "offline"
     max_total_rounds: int = 3
     worker_mode: WorkerMode = "hermes"
+    worker_engine: WorkerEngine = "openhands"
     reviewer_mode: ReviewerMode = "hermes"
 
     auto_merge: bool = False
@@ -230,6 +233,15 @@ def _resolve_worker_mode(value: str) -> WorkerMode:
     return normalized  # type: ignore[return-value]
 
 
+def _resolve_worker_engine(value: str) -> WorkerEngine:
+    normalized = value.strip().lower()
+    if normalized not in VALID_WORKER_ENGINES:
+        raise ValueError(
+            f"HOCA_WORKER_ENGINE must be one of {sorted(VALID_WORKER_ENGINES)}, got: {value!r}"
+        )
+    return normalized  # type: ignore[return-value]
+
+
 def _resolve_reviewer_mode(value: str) -> ReviewerMode:
     normalized = value.strip().lower()
     if normalized not in VALID_REVIEWER_MODES:
@@ -267,6 +279,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         network_mode=config_value("HOCA_NETWORK_MODE", "offline"),
         max_total_rounds=_resolve_max_total_rounds(config_value),
         worker_mode=_resolve_worker_mode(config_value("HOCA_WORKER_MODE", "hermes")),
+        worker_engine=_resolve_worker_engine(config_value("HOCA_WORKER_ENGINE", "openhands")),
         reviewer_mode=_resolve_reviewer_mode(config_value("HOCA_REVIEWER_MODE", "hermes")),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),

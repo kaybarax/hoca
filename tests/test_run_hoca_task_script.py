@@ -87,6 +87,15 @@ def test_run_hoca_task_applies_task_scaled_budget() -> None:
     assert 'apply_run_budget "$round_number"' in content
 
 
+def test_run_hoca_task_records_worker_engine_for_timing() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "print(load_config().worker_engine)" in content
+    assert 'worker-$WORKER_ENGINE' in content
+    assert '--mode "$WORKER_ENGINE"' in content
+    assert 'engine: $WORKER_ENGINE' in content
+
+
 def test_run_hoca_task_express_lane_preserves_gates_and_falls_back() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 

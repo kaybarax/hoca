@@ -420,6 +420,26 @@ def run_worker_hermes(
 
     spec = load_task_spec(task_spec_path)
     cfg = load_config()
+    if cfg.worker_engine == "claude-code":
+        from hoca.cli_worker_adapters import run_claude_worker
+
+        return run_claude_worker(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
+    if cfg.worker_engine == "codex":
+        from hoca.cli_worker_adapters import run_codex_worker
+
+        return run_codex_worker(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
     if cfg.worker_mode == "direct":
         from hoca.worker_direct import run_worker_direct
 

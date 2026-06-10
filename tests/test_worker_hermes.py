@@ -17,6 +17,7 @@ from hoca.contracts import (
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
+    WorkerRunResult,
     build_worker_hermes_prompt,
     _ensure_worker_attempt_report,
     _infer_worker_status,
@@ -391,6 +392,46 @@ def test_run_worker_hermes_dispatches_direct_mode_without_hermes(
 
     assert result.mode == "direct"
     assert result.worker_attempt_path == attempt_path
+
+
+def test_run_worker_hermes_dispatches_codex_engine_without_hermes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    attempt_path = worker_attempt_path(run_dir, 1)
+    captured: dict[str, object] = {}
+
+    def fake_run_codex_worker(**kwargs):
+        captured.update(kwargs)
+        return WorkerRunResult(
+            mode="codex",
+            exit_code=0,
+            worker_attempt_path=attempt_path,
+            hermes_stdout_path=None,
+            hermes_stderr_path=None,
+        )
+
+    monkeypatch.setenv("HOCA_DOTENV_PATH", os.devnull)
+    monkeypatch.setenv("HOCA_WORKER_ENGINE", "codex")
+    monkeypatch.setattr("hoca.cli_worker_adapters.run_codex_worker", fake_run_codex_worker)
+
+    result = run_worker_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "codex"
+    assert result.worker_attempt_path == attempt_path
+    assert captured["project_path"] == project.resolve()
+    assert captured["task_spec_path"] == task_spec_path.resolve()
+    assert captured["run_dir"] == run_dir.resolve()
 
 
 def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path: Path) -> None:

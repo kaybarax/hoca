@@ -44,6 +44,7 @@ WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
         "DOCKER_CONTEXT",
         "PYTHONPATH",
         "HOCA_AGENT_ROLE",
+        "HOCA_WORKER_ENGINE",
         "HOCA_SELECTED_MODEL_SLOT",
         "HOCA_REQUESTED_MODEL",
         "HOCA_HERMES_TIMEOUT",

@@ -81,6 +81,7 @@ HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"
 HOCA_DOCTOR_CACHE_DIR="${HOCA_DOCTOR_CACHE_DIR:-${HOME:-/tmp}/.hoca/doctor-cache}"
 WORKER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().worker_mode)')"
+WORKER_ENGINE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().worker_engine)')"
 REVIEWER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().reviewer_mode)')"
 DOR_ARTIFACT_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hoca-dor.XXXXXX")"
 cleanup_dor_tmp_dir() {
@@ -1007,10 +1008,10 @@ run_openhands_phase() {
   local openhands_exit=0
 
   apply_run_budget "$round_number"
-  echo "Running worker profile ($phase_label)..."
+  echo "Running worker profile ($phase_label, engine: $WORKER_ENGINE)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
-  record_timing_event --type "agent_loop" --name "worker-hermes" --round "$round_number" --role "worker"
+  record_timing_event --type "agent_loop" --name "worker-$WORKER_ENGINE" --round "$round_number" --role "worker"
   local worker_started_epoch
   worker_started_epoch="$(hoca_time_epoch)"
   set +e
@@ -1030,9 +1031,9 @@ run_openhands_phase() {
   local worker_ended_epoch
   worker_ended_epoch="$(hoca_time_epoch)"
   if [ "$openhands_exit" -eq 0 ]; then
-    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_MODE" --model "${HOCA_WORKER_MODEL_NAME:-worker}"
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_ENGINE" --model "${HOCA_WORKER_MODEL_NAME:-worker}"
   else
-    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_MODE" --model "${HOCA_WORKER_MODEL_NAME:-worker}" --status "failed"
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_ENGINE" --model "${HOCA_WORKER_MODEL_NAME:-worker}" --status "failed"
   fi
   if [ "$openhands_exit" -ne 0 ]; then
     local failure_status="failed"
