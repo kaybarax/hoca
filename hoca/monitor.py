@@ -284,6 +284,7 @@ def check_unrelated_directory(
     allowed_roots.extend(("/workspace", "/hoca-run"))
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
+        ref = ref.rstrip('"\',]}')
         ref_resolved = os.path.realpath(ref)
         if not any(
             ref_resolved == root or ref_resolved.startswith(root + "/") for root in allowed_roots
