@@ -419,6 +419,16 @@ def run_reviewer_hermes(
     task_spec_path = task_spec_path.resolve()
     ensure_run_layout(run_dir)
     spec = load_task_spec(task_spec_path)
+    cfg = load_config()
+    if cfg.reviewer_mode == "direct":
+        from hoca.reviewer_direct import run_reviewer_direct
+
+        return run_reviewer_direct(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+        )
     inputs = prepare_reviewer_inputs(
         project_path=project_path, run_dir=run_dir, round_number=round_number
     )

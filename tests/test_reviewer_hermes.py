@@ -152,6 +152,44 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     )
 
 
+def test_run_reviewer_hermes_dispatches_direct_mode_without_hermes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    report_path = review_report_path(run_dir, 1)
+
+    def fake_run_reviewer_direct(**kwargs):
+        return type(
+            "Result",
+            (),
+            {
+                "mode": "direct",
+                "exit_code": 0,
+                "review_report_path": report_path,
+                "hermes_stdout_path": None,
+                "hermes_stderr_path": None,
+            },
+        )()
+
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "direct")
+    monkeypatch.setattr("hoca.reviewer_direct.run_reviewer_direct", fake_run_reviewer_direct)
+
+    result = run_reviewer_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "direct"
+    assert result.review_report_path == report_path
+
+
 def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
