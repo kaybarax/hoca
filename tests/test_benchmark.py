@@ -86,6 +86,19 @@ def test_artifact_audit_reports_gate_artifacts(tmp_path) -> None:
     }
 
 
+def test_artifact_audit_recognizes_current_structured_review_path(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    (run_dir / "attempts").mkdir(parents=True)
+    (run_dir / "attempts" / "worker-attempt-1.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "reviews").mkdir()
+    (run_dir / "reviews" / "review-report-1.json").write_text("{}\n", encoding="utf-8")
+
+    audit = _artifact_audit(run_dir)
+
+    assert audit["has_worker_attempt"] is True
+    assert audit["has_review"] is True
+
+
 def test_artifact_audit_handles_missing_run_dir() -> None:
     assert _artifact_audit(None) == {"available": False}
 

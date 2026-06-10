@@ -54,6 +54,36 @@ def _matches_lane(row: dict[str, Any], lane_id: str, run_dir: str) -> bool:
     return bool(lane_id and lane_id in command) or bool(run_dir and run_dir in command)
 
 
+def collect_process_tree_resource_sample(root_pid: int) -> dict[str, Any]:
+    rows = _process_rows()
+    children_by_parent: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        children_by_parent.setdefault(int(row["ppid"]), []).append(row)
+
+    selected: list[dict[str, Any]] = []
+    pending = [root_pid]
+    seen: set[int] = set()
+    while pending:
+        pid = pending.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        row = next((candidate for candidate in rows if int(candidate["pid"]) == pid), None)
+        if row is not None:
+            selected.append(row)
+        pending.extend(int(child["pid"]) for child in children_by_parent.get(pid, []))
+
+    return {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "aggregate": {
+            "process_count": len(selected),
+            "cpu_pct": round(sum(float(row["cpu_pct"]) for row in selected), 3),
+            "rss_mb": round(sum(int(row["rss_kb"]) for row in selected) / 1024, 3),
+        },
+        "root_pid": root_pid,
+    }
+
+
 def collect_resource_sample(registry: FleetRegistry) -> dict[str, Any]:
     rows = _process_rows()
     lanes = registry.list_lanes()

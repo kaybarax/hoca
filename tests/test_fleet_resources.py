@@ -10,6 +10,7 @@ from hoca.cli import main
 from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget
 import hoca.fleet_resources as fleet_resources
 from hoca.fleet_resources import (
+    collect_process_tree_resource_sample,
     collect_resource_sample,
     model_residency_summary,
     summarize_resource_samples,
@@ -89,6 +90,26 @@ def test_collect_resource_sample_groups_processes_by_lane(tmp_path: Path, monkey
     assert sample["aggregate"]["cpu_pct"] == 10.0
     assert sample["aggregate"]["rss_mb"] == 1.0
     assert sample["lanes"]["lane-1"]["process_count"] == 1
+
+
+def test_collect_process_tree_resource_sample_aggregates_descendants(monkeypatch) -> None:
+    monkeypatch.setattr(
+        fleet_resources,
+        "_process_rows",
+        lambda: [
+            {"pid": 10, "ppid": 1, "cpu_pct": 1.0, "rss_kb": 1024, "command": "parent"},
+            {"pid": 11, "ppid": 10, "cpu_pct": 2.0, "rss_kb": 2048, "command": "child"},
+            {"pid": 12, "ppid": 11, "cpu_pct": 3.0, "rss_kb": 3072, "command": "grandchild"},
+            {"pid": 99, "ppid": 1, "cpu_pct": 50.0, "rss_kb": 9999, "command": "other"},
+        ],
+    )
+
+    sample = collect_process_tree_resource_sample(10)
+
+    assert sample["root_pid"] == 10
+    assert sample["aggregate"]["process_count"] == 3
+    assert sample["aggregate"]["cpu_pct"] == 6.0
+    assert sample["aggregate"]["rss_mb"] == 6.0
 
 
 def test_summarize_resource_samples_reports_peak_and_average() -> None:

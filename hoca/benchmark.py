@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from hoca.fleet_registry import FleetRegistry
-from hoca.fleet_resources import collect_resource_sample, summarize_resource_samples
+from hoca.fleet_resources import (
+    collect_process_tree_resource_sample,
+    summarize_resource_samples,
+)
 from hoca.run_timing import load_timings
 
 
@@ -94,6 +96,10 @@ def _artifact_audit(run_dir: Path | None) -> dict[str, Any]:
         except json.JSONDecodeError:
             final_state = {}
     attempts_dir = run_dir / "attempts"
+    reviews_dir = run_dir / "reviews"
+    has_structured_review = reviews_dir.is_dir() and bool(
+        list(reviews_dir.glob("review-report-*.json"))
+    )
     return {
         "available": True,
         "status": status.get("status", ""),
@@ -103,7 +109,8 @@ def _artifact_audit(run_dir: Path | None) -> dict[str, Any]:
         else False,
         "has_tests_summary": (run_dir / "tests-summary.md").is_file(),
         "has_review": (run_dir / "review-report.json").is_file()
-        or (run_dir / "openhands-review.txt").is_file(),
+        or (run_dir / "openhands-review.txt").is_file()
+        or has_structured_review,
         "has_final_state": final_path.is_file(),
         "final_status": final_state.get("status", ""),
     }
@@ -171,6 +178,33 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _run_hoca_task_with_resource_samples(
+    command: list[str],
+    *,
+    env: dict[str, str],
+    resource_samples: int,
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, Any]]]:
+    process = subprocess.Popen(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    samples: list[dict[str, Any]] = []
+    while process.poll() is None:
+        if len(samples) < resource_samples:
+            samples.append(collect_process_tree_resource_sample(process.pid))
+        if resource_samples and len(samples) >= resource_samples:
+            break
+        time.sleep(1)
+    stdout, stderr = process.communicate()
+    return (
+        subprocess.CompletedProcess(command, process.returncode or 0, stdout=stdout, stderr=stderr),
+        samples,
+    )
+
+
 def run_benchmark(
     *,
     benchmark_id: str,
@@ -193,21 +227,18 @@ def run_benchmark(
             clone = root / f"{benchmark_id.lower()}-{index}"
             subprocess.run(["git", "clone", "--quiet", str(repo), str(clone)], check=True)
             started = time.monotonic()
-            completed = subprocess.run(
+            completed, samples = _run_hoca_task_with_resource_samples(
                 [str(hoca_script), str(clone), benchmark.task, "--timing"],
-                check=False,
-                text=True,
-                capture_output=True,
                 env={
                     **os.environ,
                     "HOCA_RUNTIME_ARCHIVE_ROOT": str(archive_root),
                     "HOCA_KEEP_RUNTIME": "false",
                     "HOCA_SKIP_PR_CREATION": "true",
                 },
+                resource_samples=resource_samples,
             )
             ended = time.monotonic()
-            for _ in range(resource_samples):
-                resource_records.append(collect_resource_sample(FleetRegistry()))
+            resource_records.extend(samples)
             run_dir = _latest_run_dir(clone, archive_root)
             timings = load_timings(run_dir) if run_dir is not None else {}
             counters = timings.get("counters") if isinstance(timings.get("counters"), dict) else {}
