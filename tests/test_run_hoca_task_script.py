@@ -61,6 +61,22 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
     assert "trap 'cleanup; exit 143' TERM" in content
 
 
+def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'HOCA_REVIEW_WARMUP:-false' in content
+    assert 'start_reviewer_warmup' in content
+    assert 'wait_for_reviewer_warmup' in content
+    assert 'python" -m hoca.reviewer_warmup "$RUN_DIR"' not in content
+    assert '-m hoca.reviewer_warmup "$RUN_DIR"' in content
+    assert '2> "$RUN_DIR/logs/reviewer-warmup-stderr.txt" || true' in content
+    assert 'wait "$REVIEW_WARMUP_PID" || true' in content
+    assert content.index("start_reviewer_warmup") < content.index('"$SCRIPT_DIR/run-tests.sh"')
+    assert content.index("wait_for_reviewer_warmup") < content.index(
+        '"$SCRIPT_DIR/run-reviewer-hermes.sh"'
+    )
+
+
 def test_run_tests_uses_install_cache_for_pnpm() -> None:
     root = Path(__file__).resolve().parents[1]
     content = (root / "scripts" / "run-tests.sh").read_text(encoding="utf-8")

@@ -157,6 +157,32 @@ record_timing_event() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
 }
 
+REVIEW_WARMUP_PID=""
+start_reviewer_warmup() {
+  if [ "${HOCA_REVIEW_WARMUP:-false}" != "true" ] || [ -n "${REVIEW_WARMUP_PID:-}" ]; then
+    return 0
+  fi
+  mkdir -p "$RUN_DIR/logs"
+  (
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+    record_timing_event --type "review_warmup" --name "reviewer-warmup" --round "$current_round" --role "reviewer"
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.reviewer_warmup "$RUN_DIR" \
+      > "$RUN_DIR/logs/reviewer-warmup-stdout.txt" \
+      2> "$RUN_DIR/logs/reviewer-warmup-stderr.txt" || true
+  ) &
+  REVIEW_WARMUP_PID="$!"
+  printf '%s\n' "$REVIEW_WARMUP_PID" > "$RUN_DIR/reviewer-warmup.pid"
+}
+
+wait_for_reviewer_warmup() {
+  if [ -z "${REVIEW_WARMUP_PID:-}" ]; then
+    return 0
+  fi
+  wait "$REVIEW_WARMUP_PID" || true
+  REVIEW_WARMUP_PID=""
+}
+
 doctor_cache_key() {
   "$PYTHON_BIN" - "$HOCA_DOCTOR_SCRIPT" "$HOCA_DOTENV_PATH" <<'PY'
 from __future__ import annotations
@@ -1045,6 +1071,7 @@ while true; do
   fi
 
   echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  start_reviewer_warmup
   TEST_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
@@ -1087,6 +1114,7 @@ while true; do
   fi
 
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  wait_for_reviewer_warmup
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
   record_timing_event --type "agent_loop" --name "reviewer-hermes" --round "$current_round" --role "reviewer"
