@@ -97,9 +97,9 @@ class TestLoadConfigDefaults:
         assert cfg.use_worktree_sandbox is True
         assert cfg.network_mode == "offline"
         assert cfg.max_total_rounds == 3
-        assert cfg.worker_mode == "hermes"
+        assert cfg.worker_mode == "direct"
         assert cfg.worker_engine == "openhands"
-        assert cfg.reviewer_mode == "hermes"
+        assert cfg.reviewer_mode == "direct"
         assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
         assert cfg.require_tests is True

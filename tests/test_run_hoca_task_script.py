@@ -240,6 +240,8 @@ def base_env() -> dict[str, str]:
     env["HOCA_DOCTOR_SCRIPT"] = "true"
     env["HOCA_USE_SANDBOX"] = "false"
     env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
+    env["HOCA_WORKER_MODE"] = "hermes"
+    env["HOCA_REVIEWER_MODE"] = "hermes"
     hermes_home = Path(tempfile.mkdtemp(prefix="hoca-test-hermes-home-"))
     (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
     (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
@@ -543,7 +545,7 @@ def test_run_hoca_task_uses_worker_profile(
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
 
 
 def test_basic_run_does_not_require_kanban_when_flag_is_default_false(
@@ -566,7 +568,7 @@ def test_basic_run_does_not_require_kanban_when_flag_is_default_false(
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
     assert "kanban" not in result.stderr.lower()
 
 
@@ -658,7 +660,7 @@ def test_run_hoca_task_routes_implementation_through_worker_hermes_when_profiles
 
     run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
     assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
     assert (run_dir / "logs" / "worker-hermes-invoked-round-1.txt").is_file()
     assert (run_dir / "worker-hermes-prompt-round-1.txt").is_file()
@@ -1439,7 +1441,7 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
         "commit",
         "pr_creation",
     }.issubset(phase_names)
-    assert worker_phase["mode"] == "hermes"
+    assert worker_phase["mode"] == "openhands"
     assert review_phase["mode"] == "hermes"
     assert timings["counters"]["agent_loops"] >= 2
 

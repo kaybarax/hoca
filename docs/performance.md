@@ -26,16 +26,16 @@ safety gates intact while giving each part a clearer budget or faster path.
 
 ## Modes And Knobs
 
-`HOCA_WORKER_MODE=hermes` is the conservative default. The worker uses the
-Hermes profile and the standard OpenHands worker path.
-
-`HOCA_WORKER_MODE=direct` skips the Hermes worker profile and sends the worker
-prompt directly to OpenHands. Use it when the task is well-scoped and the
-existing gates are enough. Direct mode keeps monitor policy, worktree handling,
+`HOCA_WORKER_MODE=direct` is the default fast path. The worker prompt is sent
+directly to OpenHands while preserving HOCA's monitor policy, worktree handling,
 attempt reports, tests, review, staging, and PR gates.
 
-`HOCA_REVIEWER_MODE=hermes` is the default review path. `HOCA_REVIEWER_MODE=direct`
-uses the direct reviewer path while preserving review artifacts and gates.
+`HOCA_WORKER_MODE=hermes` remains selectable as an opt-in compatibility path
+when the Hermes worker profile is preferred.
+
+`HOCA_REVIEWER_MODE=direct` is the default review path. `HOCA_REVIEWER_MODE=hermes`
+remains selectable and uses the Hermes reviewer profile while preserving review
+artifacts and gates.
 
 `HOCA_WORKER_ENGINE=openhands` is the default engine. `claude-code` and `codex`
 use native one-shot CLI adapters with the same prompt composition, env allowlist,
