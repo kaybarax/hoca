@@ -116,6 +116,20 @@ class TestLoadConfigDefaults:
         assert cfg.webhook_secret == ""
         assert cfg.notify_telegram is False
 
+    def test_fast_defaults_keep_openhands_worker_engine(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty_env = tmp_path / ".env"
+        empty_env.write_text("")
+        for key in ("HOCA_WORKER_MODE", "HOCA_WORKER_ENGINE", "HOCA_REVIEWER_MODE"):
+            monkeypatch.delenv(key, raising=False)
+
+        cfg = load_config(dotenv_path=empty_env)
+
+        assert cfg.worker_mode == "direct"
+        assert cfg.worker_engine == "openhands"
+        assert cfg.reviewer_mode == "direct"
+
     def test_loads_from_dotenv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(

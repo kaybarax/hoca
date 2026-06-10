@@ -1434,7 +1434,6 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
         "branch_worktree_setup",
         "task_spec",
         "worker_attempt",
-        "test_run",
         "review_pass",
         "arbitration",
         "staging",
