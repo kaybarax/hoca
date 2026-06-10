@@ -1503,6 +1503,92 @@ def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
     assert "reviewer-hermes" not in agent_loop_names
 
 
+def test_run_hoca_task_direct_mode_preserves_gate_artifact_parity_with_hermes(
+    tmp_path: Path,
+) -> None:
+    direct_repo = tmp_path / "direct"
+    hermes_repo = tmp_path / "hermes"
+    common_artifacts = {
+        "attempts/worker-attempt-1.json",
+        "reviews/review-report-1.json",
+        "decisions/manager-decision-1.json",
+        "staged-files.txt",
+        "commit-hash.txt",
+        "pr-url.txt",
+        "status.json",
+        "timings.json",
+    }
+    required_phases = {
+        "definition_of_ready",
+        "doctor",
+        "branch_worktree_setup",
+        "task_spec",
+        "worker_attempt",
+        "review_pass",
+        "arbitration",
+        "staging",
+        "commit",
+        "pr_creation",
+    }
+
+    def run_pipeline(repo: Path, *, worker_mode: str, reviewer_mode: str) -> Path:
+        init_repo(repo)
+        prepare_pr_ready_repo(repo)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(repo),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+            review_body=(
+                'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:-$PWD/review.json}")"\n'
+                'if [[ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]]; then\n'
+                '  cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+                '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+                '"verdict":"LGTM","findings":[],'
+                '"pr_notes":{"summary":["Reviewer completed"],"known_followups":[]}}\n'
+                "EOF\n"
+                "fi\n"
+                "echo 'Review complete.'\n"
+                "echo 'LGTM'\n"
+            ),
+        )
+        env = base_env()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_WORKER_MODE"] = worker_mode
+        env["HOCA_REVIEWER_MODE"] = reviewer_mode
+        env["HOCA_KEEP_RUNTIME"] = "true"
+        if worker_mode == "hermes" or reviewer_mode == "hermes":
+            hermes_home = repo / "hermes-home"
+            setup_fake_hermes_worker(fake_bin, hermes_home)
+            env["HERMES_HOME"] = str(hermes_home)
+            env["HERMES_TEST_PROJECT"] = str(repo)
+
+        result = run_hoca_task_with_env(repo, "Update README", env, "--timing")
+
+        assert result.returncode == 0, result.stderr
+        assert '"status": "pr_created"' in latest_status(repo)
+        assert '"reason": "pull_request_created"' in latest_status(repo)
+        return latest_run_dir(repo)
+
+    direct_run = run_pipeline(direct_repo, worker_mode="direct", reviewer_mode="direct")
+    hermes_run = run_pipeline(hermes_repo, worker_mode="hermes", reviewer_mode="hermes")
+
+    direct_artifacts = {path for path in common_artifacts if (direct_run / path).is_file()}
+    hermes_artifacts = {path for path in common_artifacts if (hermes_run / path).is_file()}
+    direct_timings = json.loads((direct_run / "timings.json").read_text(encoding="utf-8"))
+    hermes_timings = json.loads((hermes_run / "timings.json").read_text(encoding="utf-8"))
+    direct_phase_names = {phase["name"] for phase in direct_timings["phases"]}
+    hermes_phase_names = {phase["name"] for phase in hermes_timings["phases"]}
+
+    assert direct_artifacts == common_artifacts
+    assert hermes_artifacts == common_artifacts
+    assert required_phases.issubset(direct_phase_names)
+    assert required_phases.issubset(hermes_phase_names)
+    assert (direct_run / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (hermes_run / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (direct_run / "pr-url.txt").read_text(encoding="utf-8") == (
+        hermes_run / "pr-url.txt"
+    ).read_text(encoding="utf-8")
+
+
 def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:
     init_repo(tmp_path)
     subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
