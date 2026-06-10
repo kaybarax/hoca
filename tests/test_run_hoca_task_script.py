@@ -1256,11 +1256,13 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
-    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
 
     assert result.returncode == 0, result.stderr
     assert "Generating manager intended-file list from reviewed changed files" in result.stdout
     assert "HOCA run completed through pull request creation." in result.stdout
+    assert "HOCA Timing Report" in result.stdout
+    assert "Agent loops:" in result.stdout
     assert '"status": "pr_created"' in latest_status(tmp_path)
     assert '"reason": "pull_request_created"' in latest_status(tmp_path)
     timings = json.loads((latest_run_dir(tmp_path) / "timings.json").read_text(encoding="utf-8"))

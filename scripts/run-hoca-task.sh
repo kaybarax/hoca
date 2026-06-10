@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
-  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH]"
+  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH] [--timing]"
   exit 1
 fi
 
@@ -13,6 +13,7 @@ shift 2
 ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
+PRINT_TIMING="false"
 if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
   MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
 else
@@ -45,6 +46,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --notify-telegram)
       NOTIFY_TELEGRAM="true"
+      shift
+      ;;
+    --timing)
+      PRINT_TIMING="true"
       shift
       ;;
     --dev-branch)
@@ -141,6 +146,13 @@ record_timing_event() {
     return 0
   fi
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
+}
+
+print_timing_report_if_requested() {
+  if [ "$PRINT_TIMING" != "true" ] || [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.timing_report "$RUN_DIR" || true
 }
 
 task_spec_path_for_run() {
@@ -524,6 +536,7 @@ fail_run() {
   echo "$message" >&2
   write_failure_reason "$reason" "$message"
   update_status "failed" "$reason"
+  print_timing_report_if_requested
   exit 1
 }
 
@@ -533,6 +546,7 @@ block_run() {
   echo "$message" >&2
   write_failure_reason "$reason" "$message"
   update_status "blocked" "$reason"
+  print_timing_report_if_requested
   exit 1
 }
 
@@ -1109,7 +1123,9 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   SHOULD_RESTORE_DEV_BRANCH="true"
   restore_dev_branch_after_run
   echo "HOCA run completed through pull request creation."
+  print_timing_report_if_requested
 else
   echo "HOCA run completed up to review. Human staging required."
+  print_timing_report_if_requested
 fi
 exit 0

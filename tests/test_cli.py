@@ -931,6 +931,23 @@ def test_run_forwards_dev_branch_flag(monkeypatch, tmp_path: Path) -> None:
     assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--dev-branch", "develop"])]
 
 
+def test_run_forwards_timing_flag(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(script_name: str, args: list[str]) -> None:
+        calls.append((script_name, args))
+
+    monkeypatch.setattr("hoca.cli.run_script", fake_run_script)
+
+    result = CliRunner().invoke(main, ["run", str(project_path), "A task", "--timing"])
+
+    assert result.exit_code == 0
+    assert calls == [("run-hoca-task.sh", [str(project_path), "A task", "--timing"])]
+
+
 def test_issue_constructs_task_and_passes_issue_id(monkeypatch, tmp_path: Path) -> None:
     project_path = tmp_path / "project"
     project_path.mkdir()
@@ -1187,6 +1204,7 @@ def test_report_help_displays_command_help() -> None:
     assert result.exit_code == 0
     assert "Show or regenerate the task report" in result.output
     assert "--regenerate" in result.output
+    assert "--timing" in result.output
 
 
 def test_report_shows_existing_report(tmp_path: Path) -> None:
@@ -1265,6 +1283,31 @@ def test_report_falls_back_to_runtime_archive(tmp_path: Path, monkeypatch) -> No
     assert result.exit_code == 0
     assert "Report:" in result.output
     assert "run-99999" in result.output
+
+
+def test_report_timing_renders_from_runtime_archive(tmp_path: Path, monkeypatch) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+
+    archive_root = tmp_path / "archives"
+    archive_run_dir = archive_root / "repo" / "run-99999"
+    archive_run_dir.mkdir(parents=True)
+    (archive_run_dir / "timings.json").write_text(
+        '{"run_id":"run-99999","phases":[{"name":"doctor","duration_seconds":1.25,'
+        '"status":"completed"}],"events":[],"counters":{"agent_loops":0,'
+        '"container_starts":0,"dependency_installs":0}}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("HOCA_RUNTIME_ARCHIVE_ROOT", str(archive_root))
+
+    result = CliRunner().invoke(main, ["report", str(project_path), "run-99999", "--timing"])
+
+    assert result.exit_code == 0
+    assert "HOCA Timing Report" in result.output
+    assert "Run ID: run-99999" in result.output
+    assert "doctor\t1.25s\tcompleted" in result.output
 
 
 def test_report_regenerates_from_runtime_archive(tmp_path: Path, monkeypatch) -> None:

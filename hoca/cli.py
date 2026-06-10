@@ -1049,12 +1049,14 @@ def fleet_legacy_check(root: Path | None) -> None:
 @click.option("--auto-merge", is_flag=True, default=False)
 @click.option("--notify-telegram", is_flag=True, default=False)
 @click.option("--dev-branch", help="Target repository development branch override.")
+@click.option("--timing", is_flag=True, default=False, help="Print the run timing summary at completion.")
 def run(
     project_path: Path,
     task: str,
     auto_merge: bool,
     notify_telegram: bool,
     dev_branch: str | None,
+    timing: bool,
 ) -> None:
     """Run a HOCA task against a target repository."""
     project_path = require_target_repo(project_path)
@@ -1065,6 +1067,8 @@ def run(
         args.append("--notify-telegram")
     if dev_branch:
         args.extend(["--dev-branch", dev_branch])
+    if timing:
+        args.append("--timing")
     run_script("run-hoca-task.sh", args)
 
 
@@ -1102,7 +1106,8 @@ def issue(
 @click.option(
     "--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts."
 )
-def report(project_path: Path, run_id: str, regenerate: bool) -> None:
+@click.option("--timing", is_flag=True, default=False, help="Print the timing report for this run.")
+def report(project_path: Path, run_id: str, regenerate: bool, timing: bool) -> None:
     """Show or regenerate the task report for a past HOCA run."""
     from hoca.run_state import resolve_run_dir
     from hoca.task_report import build_task_report_markdown
@@ -1114,6 +1119,12 @@ def report(project_path: Path, run_id: str, regenerate: bool) -> None:
         raise click.ClickException(
             f"Run directory not found for {run_id} (checked .hoca-runtime and runtime archive)"
         )
+
+    if timing:
+        from hoca.timing_report import build_timing_report
+
+        click.echo(build_timing_report(run_dir), nl=False)
+        return
 
     report_path = run_dir / "task-report.md"
 
