@@ -1144,6 +1144,61 @@ def kanban_init(project_path: Path) -> None:
     run_script("kanban-init.sh", [str(project_path)])
 
 
+@main.group()
+def bench() -> None:
+    """Run and compare HOCA benchmark scenarios."""
+
+
+@bench.command("run")
+@click.argument("benchmark_id")
+@click.option("--repo", "repo_path", required=True, type=click.Path(path_type=Path))
+@click.option("--runs", "run_count", default=2, show_default=True, type=click.IntRange(min=1))
+@click.option("--output", required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--resource-samples",
+    default=1,
+    show_default=True,
+    type=click.IntRange(min=0),
+    help="Resource samples to collect with the fleet resource sampler.",
+)
+def bench_run(
+    benchmark_id: str,
+    repo_path: Path,
+    run_count: int,
+    output: Path,
+    resource_samples: int,
+) -> None:
+    """Run a canonical benchmark against disposable repository clones."""
+    from hoca.benchmark import BENCHMARK_TASKS, render_benchmark_table, run_benchmark
+
+    if benchmark_id not in BENCHMARK_TASKS:
+        choices = ", ".join(sorted(BENCHMARK_TASKS))
+        raise click.ClickException(f"Unknown benchmark: {benchmark_id}. Choices: {choices}")
+    repo_path = require_target_repo(repo_path)
+    result = run_benchmark(
+        benchmark_id=benchmark_id,
+        repo=repo_path,
+        runs=run_count,
+        output=output,
+        hoca_script=repo_root() / "scripts" / "run-hoca-task.sh",
+        resource_samples=resource_samples,
+    )
+    click.echo(f"Benchmark result written: {output}")
+    click.echo(render_benchmark_table(result), nl=False)
+
+
+@bench.command("compare")
+@click.argument("baseline", type=click.Path(exists=True, path_type=Path))
+@click.argument("candidate", type=click.Path(exists=True, path_type=Path))
+def bench_compare(baseline: Path, candidate: Path) -> None:
+    """Compare two benchmark result JSON files."""
+    from hoca.benchmark import render_benchmark_comparison
+
+    baseline_payload = json.loads(baseline.read_text(encoding="utf-8"))
+    candidate_payload = json.loads(candidate.read_text(encoding="utf-8"))
+    click.echo(render_benchmark_comparison(baseline_payload, candidate_payload), nl=False)
+
+
 @main.command("kanban-run")
 @click.argument("project_path", type=click.Path(path_type=Path))
 @click.argument("task")

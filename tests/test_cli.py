@@ -20,6 +20,7 @@ CLI_COMMANDS = {
     "fleet": "Manage fleet-level HOCA state",
     "run": "Run a HOCA task against a target repository",
     "issue": "Run a HOCA task for a GitHub issue",
+    "bench": "Run and compare HOCA benchmark scenarios",
     "lane": "Manage and communicate with HOCA lanes",
     "kanban-init": "Experimental",
 }
@@ -51,6 +52,7 @@ def test_cli_help_displays_group_help() -> None:
     assert "fleet" in result.output
     assert "run" in result.output
     assert "issue" in result.output
+    assert "bench" in result.output
     assert "setup-profiles" in result.output
     assert "report" in result.output
     assert "lane" in result.output
@@ -1336,6 +1338,68 @@ def test_report_fails_for_non_repo(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "not a Git repository" in result.output
+
+
+def test_bench_run_invokes_harness(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "repo"
+    project_path.mkdir()
+    (project_path / ".git").mkdir()
+    output = tmp_path / "bench.json"
+    calls: list[dict[str, object]] = []
+
+    def fake_run_benchmark(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "summary": {
+                "wall_time": {"median": 1.0, "min": 1.0, "max": 1.0},
+                "phases": {},
+            }
+        }
+
+    monkeypatch.setattr("hoca.benchmark.run_benchmark", fake_run_benchmark)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "bench",
+            "run",
+            "PB-DOC-C",
+            "--repo",
+            str(project_path),
+            "--runs",
+            "3",
+            "--output",
+            str(output),
+            "--resource-samples",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Benchmark result written:" in result.output
+    assert calls[0]["benchmark_id"] == "PB-DOC-C"
+    assert calls[0]["repo"] == project_path
+    assert calls[0]["runs"] == 3
+    assert calls[0]["output"] == output
+    assert calls[0]["resource_samples"] == 2
+
+
+def test_bench_compare_renders_delta(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        '{"benchmark_id":"PB-DOC-C","summary":{"wall_time":{"median":100.0}}}\n',
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        '{"benchmark_id":"PB-DOC-C","summary":{"wall_time":{"median":70.0}}}\n',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(main, ["bench", "compare", str(baseline), str(candidate)])
+
+    assert result.exit_code == 0
+    assert "| PB-DOC-C | 100.00 | 70.00 | -30.00 | -30.00% |" in result.output
 
 
 def test_run_script_raises_on_missing_script(tmp_path: Path) -> None:
