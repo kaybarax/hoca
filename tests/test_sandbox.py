@@ -94,6 +94,18 @@ def test_sandbox_wrapper_mounts_shared_pnpm_store_volume() -> None:
     assert "/workspace/.pnpm-store" not in script
 
 
+def test_sandbox_wrapper_skips_pnpm_install_when_cache_matches() -> None:
+    script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
+
+    assert 'INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-pnpm.sha256"' in script
+    assert 'INSTALL_CACHE_FINGERPRINT="$(python3 - <<\'PY\'' in script
+    assert '[ "${HOCA_FORCE_INSTALL:-false}" = "true" ]' in script
+    assert '[ ! -d node_modules ]' in script
+    assert '!= "$INSTALL_CACHE_FINGERPRINT"' in script
+    assert 'printf \'%s\\n\' "$INSTALL_CACHE_FINGERPRINT" > "$INSTALL_CACHE_MARKER"' in script
+    assert "Skipping pnpm install; install cache current." in script
+
+
 def test_sandbox_wrapper_caches_openhands_settings_by_model_inputs() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 

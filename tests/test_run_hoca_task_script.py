@@ -61,6 +61,17 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
     assert "trap 'cleanup; exit 143' TERM" in content
 
 
+def test_run_tests_uses_install_cache_for_pnpm() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-tests.sh").read_text(encoding="utf-8")
+
+    assert '"$PYTHON_BIN" -m hoca.install_cache current "$PROJECT_PATH" "$manager"' in content
+    assert '"$PYTHON_BIN" -m hoca.install_cache mark "$PROJECT_PATH" "$manager"' in content
+    assert '[ "${HOCA_FORCE_INSTALL:-false}" != "true" ]' in content
+    assert 'Skipping: pnpm install (install cache current)' in content
+    assert "CI=true pnpm install --no-frozen-lockfile" in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

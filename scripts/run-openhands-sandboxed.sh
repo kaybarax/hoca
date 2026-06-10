@@ -77,7 +77,38 @@ if [ "$NETWORK_MODE" != "offline" ]; then
   cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
   pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}" >/dev/null 2>&1 || true
-  pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
+  INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-pnpm.sha256"
+  INSTALL_CACHE_FINGERPRINT="$(python3 - <<'PY'
+import hashlib
+import subprocess
+from pathlib import Path
+
+digest = hashlib.sha256()
+for name in ("pnpm-lock.yaml", "package.json"):
+    path = Path(name)
+    if path.is_file():
+        digest.update(f"file:{name}\0".encode())
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+for command in ("node", "pnpm", "python3"):
+    try:
+        result = subprocess.run(
+            [command, "--version"], check=False, capture_output=True, text=True
+        )
+        version = result.stdout.strip() or result.stderr.strip() or str(result.returncode)
+    except OSError:
+        version = "missing"
+    digest.update(f"{command}:{version}\0".encode())
+print(digest.hexdigest())
+PY
+)"
+  if [ "${HOCA_FORCE_INSTALL:-false}" = "true" ] || [ ! -d node_modules ] || [ "$(cat "$INSTALL_CACHE_MARKER" 2>/dev/null || true)" != "$INSTALL_CACHE_FINGERPRINT" ]; then
+    pnpm install --frozen-lockfile 2>/dev/null || pnpm install 2>/dev/null || true
+    mkdir -p "$(dirname "$INSTALL_CACHE_MARKER")"
+    printf '%s\n' "$INSTALL_CACHE_FINGERPRINT" > "$INSTALL_CACHE_MARKER"
+  else
+    echo "Skipping pnpm install; install cache current."
+  fi
 elif [ -f yarn.lock ] && command -v yarn >/dev/null 2>&1; then
   yarn install --frozen-lockfile 2>/dev/null || yarn install --immutable 2>/dev/null || yarn install 2>/dev/null || true
 fi
