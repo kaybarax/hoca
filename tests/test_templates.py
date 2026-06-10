@@ -229,3 +229,25 @@ def test_security_docs_cover_native_cli_worker_posture() -> None:
     assert "agent_policy.worker_engine" in fleet
     assert "metadata.worker_engine" in fleet
     assert "OpenHands-sandboxed lanes from host-native CLI lanes" in fleet
+
+
+def test_performance_docs_cover_v11_knobs_and_benchmarks() -> None:
+    root = TEMPLATES_DIR.parent
+    performance = (root / "docs" / "performance.md").read_text(encoding="utf-8")
+
+    for expected in (
+        "Run Cost Anatomy",
+        "HOCA_WORKER_MODE=hermes",
+        "HOCA_WORKER_MODE=direct",
+        "HOCA_REVIEWER_MODE=direct",
+        "HOCA_WORKER_ENGINE=openhands",
+        "claude-code",
+        "codex",
+        "bin/hoca run --express",
+        "run-budget-round-N.json",
+        "HOCA_REVIEW_WARMUP=true",
+        "Install caching",
+        "bin/hoca bench run",
+        "bin/hoca bench compare",
+    ):
+        assert expected in performance
