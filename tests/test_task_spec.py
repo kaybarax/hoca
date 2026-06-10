@@ -78,11 +78,11 @@ def test_infer_test_commands_for_python_repo(tmp_path: Path) -> None:
 
 def test_infer_test_commands_uses_npm_run_for_package_scripts(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"test": "vitest", "lint": "eslint ."}}),
+        json.dumps({"scripts": {"test": "vitest", "lint": "eslint .", "build": "vite build"}}),
         encoding="utf-8",
     )
 
-    assert infer_test_commands(tmp_path) == ["npm run test", "npm run lint"]
+    assert infer_test_commands(tmp_path) == ["npm run test", "npm run lint", "npm run build"]
 
 
 def test_infer_test_commands_keeps_pnpm_script_shortcut(tmp_path: Path) -> None:
@@ -97,12 +97,12 @@ def test_infer_test_commands_keeps_pnpm_script_shortcut(tmp_path: Path) -> None:
 
 def test_infer_test_commands_uses_yarn_lockfile(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"test": "vitest", "lint": "eslint ."}}),
+        json.dumps({"scripts": {"test": "vitest", "lint": "eslint .", "build": "vite build"}}),
         encoding="utf-8",
     )
     (tmp_path / "yarn.lock").write_text("# yarn lockfile\n", encoding="utf-8")
 
-    assert infer_test_commands(tmp_path) == ["yarn test", "yarn lint"]
+    assert infer_test_commands(tmp_path) == ["yarn test", "yarn lint", "yarn build"]
 
 
 def test_extract_explicit_test_commands_from_validation_section() -> None:

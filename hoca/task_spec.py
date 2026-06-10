@@ -223,6 +223,8 @@ def infer_test_commands(repo_root: Path) -> list[str]:
             commands.append(_package_script_command(runner, "lint"))
         if "typecheck" in scripts:
             commands.append(_package_script_command(runner, "typecheck"))
+        if "build" in scripts:
+            commands.append(_package_script_command(runner, "build"))
 
     if (repo_root / "pyproject.toml").is_file() or (repo_root / "requirements.txt").is_file():
         commands.append("pytest")
