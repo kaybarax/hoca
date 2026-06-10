@@ -11,8 +11,6 @@ from hoca.contracts import HocaTaskSpec
 from hoca.run_layout import ensure_run_layout
 from hoca.subprocess_utils import CommandResult
 from hoca.worker_hermes import (
-    ITERATIVE_WORKER_RUBRIC,
-    PSTACK_WORKER_PRINCIPLES,
     WorkerRunResult,
     _ensure_worker_attempt_report,
     _infer_worker_status,
@@ -94,15 +92,18 @@ def build_worker_direct_prompt(
         "3. Make only scoped edits needed for the goal and acceptance criteria.\n"
         "4. Run the smallest useful validation commands from test_commands, or document why none apply.\n"
         "5. Leave Git lifecycle to the HOCA manager: do not stage, commit, push, merge, or open PRs.\n"
-        "6. Finish with a concise implementation summary, validation performed, changed files, and any blocker.\n\n"
+        "6. Prefer existing helpers and ownership boundaries; avoid one-off modes and needless abstractions.\n"
+        "7. Finish with a concise implementation summary, validation performed, changed files, and any blocker.\n\n"
         "Safety constraints:\n"
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
         "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, OLLAMA_MODEL, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
-        f"{ITERATIVE_WORKER_RUBRIC}\n"
-        f"{PSTACK_WORKER_PRINCIPLES}\n"
+        "Report requirements:\n"
+        "- Leave enough evidence for HOCA to infer a worker attempt report.\n"
+        "- State validation commands and results; if skipped, state the concrete reason.\n"
+        "- If blocked, stop and name the blocker instead of broadening scope.\n"
     )
     return _redact_secret_like_lines(prompt)
 
