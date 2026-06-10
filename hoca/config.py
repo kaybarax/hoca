@@ -18,6 +18,8 @@ _SECRET_PATTERN = re.compile(r"(token|secret|password|api_key|private_key)", re.
 RoleName = Literal["manager", "worker", "reviewer", "fallback"]
 WorkerMode = Literal["hermes", "direct"]
 VALID_WORKER_MODES: frozenset[str] = frozenset(("hermes", "direct"))
+ReviewerMode = Literal["hermes", "direct"]
+VALID_REVIEWER_MODES: frozenset[str] = frozenset(("hermes", "direct"))
 
 
 def dotenv_values(path: Path) -> dict[str, str | None]:
@@ -155,6 +157,7 @@ class HocaConfig:
     network_mode: str = "offline"
     max_total_rounds: int = 3
     worker_mode: WorkerMode = "hermes"
+    reviewer_mode: ReviewerMode = "hermes"
 
     auto_merge: bool = False
     require_tests: bool = True
@@ -227,6 +230,15 @@ def _resolve_worker_mode(value: str) -> WorkerMode:
     return normalized  # type: ignore[return-value]
 
 
+def _resolve_reviewer_mode(value: str) -> ReviewerMode:
+    normalized = value.strip().lower()
+    if normalized not in VALID_REVIEWER_MODES:
+        raise ValueError(
+            f"HOCA_REVIEWER_MODE must be one of {sorted(VALID_REVIEWER_MODES)}, got: {value!r}"
+        )
+    return normalized  # type: ignore[return-value]
+
+
 def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
     dotenv: dict[str, str] = {}
     if dotenv_path is not None:
@@ -255,6 +267,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         network_mode=config_value("HOCA_NETWORK_MODE", "offline"),
         max_total_rounds=_resolve_max_total_rounds(config_value),
         worker_mode=_resolve_worker_mode(config_value("HOCA_WORKER_MODE", "hermes")),
+        reviewer_mode=_resolve_reviewer_mode(config_value("HOCA_REVIEWER_MODE", "hermes")),
         auto_merge=parse_bool(config_value("HOCA_AUTO_MERGE") or None, default=False),
         require_tests=parse_bool(config_value("HOCA_REQUIRE_TESTS") or None, default=True),
         require_review=parse_bool(config_value("HOCA_REQUIRE_REVIEW") or None, default=True),

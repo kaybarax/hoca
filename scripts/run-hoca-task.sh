@@ -76,6 +76,7 @@ HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
 HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"
 HOCA_DOCTOR_CACHE_DIR="${HOCA_DOCTOR_CACHE_DIR:-${HOME:-/tmp}/.hoca/doctor-cache}"
 WORKER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().worker_mode)')"
+REVIEWER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().reviewer_mode)')"
 DOR_ARTIFACT_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hoca-dor.XXXXXX")"
 cleanup_dor_tmp_dir() {
   rm -rf "$DOR_ARTIFACT_TMP_DIR"
@@ -1093,9 +1094,9 @@ while true; do
   set -e
   REVIEW_END_EPOCH="$(hoca_time_epoch)"
   if [ "$REVIEW_EXIT" -eq 0 ]; then
-    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "hermes" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}"
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "$REVIEWER_MODE" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}"
   else
-    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "hermes" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}" --status "failed"
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "$REVIEWER_MODE" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}" --status "failed"
   fi
   sync_run_status
   ARBITRATION_DECISION_JSON=""

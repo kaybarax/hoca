@@ -530,6 +530,7 @@ def test_workflow_fields_from_config_defaults() -> None:
         "workflow_version": WORKFLOW_VERSION,
         "max_total_rounds": 3,
         "worker_mode": "hermes",
+        "reviewer_mode": "hermes",
         "sandbox_mode": "docker",
         "worktree_mode": True,
     }
@@ -552,6 +553,7 @@ def test_write_initial_status_includes_workflow_metadata(tmp_path: Path) -> None
     assert data["pr_url"] is None
     assert data["sandbox_mode"] == "host"
     assert data["worker_mode"] == "hermes"
+    assert data["reviewer_mode"] == "hermes"
 
 
 def test_sync_status_fields_updates_artifact_backed_values(tmp_path: Path) -> None:

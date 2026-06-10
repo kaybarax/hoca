@@ -71,6 +71,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
             "HOCA_WORKER_MODE",
+            "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_HOST",
@@ -96,6 +97,7 @@ class TestLoadConfigDefaults:
         assert cfg.network_mode == "offline"
         assert cfg.max_total_rounds == 3
         assert cfg.worker_mode == "hermes"
+        assert cfg.reviewer_mode == "hermes"
         assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
         assert cfg.require_tests is True
@@ -127,6 +129,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX=false\n"
             "HOCA_MAX_TOTAL_ROUNDS=5\n"
             "HOCA_WORKER_MODE=direct\n"
+            "HOCA_REVIEWER_MODE=hermes\n"
         )
         for key in [
             "HOCA_AUTO_MERGE",
@@ -141,6 +144,7 @@ class TestLoadConfigDefaults:
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
             "HOCA_WORKER_MODE",
+            "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
         ]:
             monkeypatch.delenv(key, raising=False)
@@ -160,12 +164,20 @@ class TestLoadConfigDefaults:
         assert cfg.use_worktree_sandbox is False
         assert cfg.max_total_rounds == 5
         assert cfg.worker_mode == "direct"
+        assert cfg.reviewer_mode == "hermes"
 
     def test_invalid_worker_mode_fails_clearly(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("HOCA_WORKER_MODE=fast\n", encoding="utf-8")
 
         with pytest.raises(ValueError, match="HOCA_WORKER_MODE must be one of"):
+            load_config(dotenv_path=env_file)
+
+    def test_invalid_reviewer_mode_fails_clearly(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_REVIEWER_MODE=fast\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="HOCA_REVIEWER_MODE must be one of"):
             load_config(dotenv_path=env_file)
 
     def test_env_var_overrides_dotenv(

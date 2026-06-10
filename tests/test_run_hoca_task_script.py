@@ -1318,6 +1318,7 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     timings = json.loads((latest_run_dir(tmp_path) / "timings.json").read_text(encoding="utf-8"))
     phase_names = {phase["name"] for phase in timings["phases"]}
     worker_phase = next(phase for phase in timings["phases"] if phase["name"] == "worker_attempt")
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
     assert {
         "definition_of_ready",
         "doctor",
@@ -1332,6 +1333,7 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
         "pr_creation",
     }.issubset(phase_names)
     assert worker_phase["mode"] == "hermes"
+    assert review_phase["mode"] == "hermes"
     assert timings["counters"]["agent_loops"] >= 2
 
 
