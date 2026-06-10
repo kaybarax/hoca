@@ -44,6 +44,7 @@ from hoca.run_state import (
     write_final_state,
     write_initial_status,
     write_json_atomic,
+    write_status,
 )
 
 
@@ -632,6 +633,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     sync_status_parser.add_argument("run_dir")
 
+    write_status_parser = subparsers.add_parser(
+        "write-status", help="Write status.json status and refresh derived fields."
+    )
+    write_status_parser.add_argument("run_dir")
+    write_status_parser.add_argument("--status", required=True)
+    write_status_parser.add_argument("--reason", default="")
+
     args = parser.parse_args(argv)
     run_dir = Path(args.run_dir).resolve()
 
@@ -694,6 +702,13 @@ def main(argv: list[str] | None = None) -> int:
             if path is None:
                 print("status.json not found", file=sys.stderr)
                 return 1
+            print(path)
+        elif args.command == "write-status":
+            path = write_status(
+                run_dir,
+                args.status,
+                **({"reason": args.reason} if args.reason else {}),
+            )
             print(path)
     except Exception as exc:
         print(str(exc), file=sys.stderr)

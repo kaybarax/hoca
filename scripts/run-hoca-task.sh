@@ -619,15 +619,11 @@ record_run_artifact "${EARLY_INIT_STATUS_ARGS[@]}" >/dev/null 2>&1 || true
 update_status() {
   local new_status="$1"
   local reason="${2:-}"
-  if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
-    if [ -n "$reason" ]; then
-      jq --arg s "$new_status" --arg r "$reason" '.status = $s | .reason = $r' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
-    else
-      jq --arg s "$new_status" '.status = $s' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
-    fi
-    mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+  local args=(write-status "$RUN_DIR" --status "$new_status")
+  if [ -n "$reason" ]; then
+    args+=(--reason "$reason")
   fi
-  record_run_artifact sync-status "$RUN_DIR" >/dev/null 2>&1 || true
+  record_run_artifact "${args[@]}" >/dev/null 2>&1 || true
 }
 
 sync_run_status() {
