@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from hoca.benchmark import (
     _artifact_audit,
     render_benchmark_comparison,
@@ -86,3 +88,12 @@ def test_artifact_audit_reports_gate_artifacts(tmp_path) -> None:
 
 def test_artifact_audit_handles_missing_run_dir() -> None:
     assert _artifact_audit(None) == {"available": False}
+
+
+def test_benchmark_runs_skip_pr_creation_for_validation_clones() -> None:
+    content = (Path(__file__).resolve().parents[1] / "hoca" / "benchmark.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"HOCA_KEEP_RUNTIME": "false"' in content
+    assert '"HOCA_SKIP_PR_CREATION": "true"' in content

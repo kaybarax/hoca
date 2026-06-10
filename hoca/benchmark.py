@@ -202,6 +202,7 @@ def run_benchmark(
                     **os.environ,
                     "HOCA_RUNTIME_ARCHIVE_ROOT": str(archive_root),
                     "HOCA_KEEP_RUNTIME": "false",
+                    "HOCA_SKIP_PR_CREATION": "true",
                 },
             )
             ended = time.monotonic()

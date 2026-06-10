@@ -63,6 +63,17 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
     assert "trap 'cleanup; exit 143' TERM" in content
 
 
+def test_run_hoca_task_can_skip_pr_creation_after_commit() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'HOCA_SKIP_PR_CREATION:-false' in content
+    assert 'pr-creation-skipped.txt' in content
+    assert 'update_status "completed" "commit_created_no_pr"' in content
+    assert content.index('HOCA_SKIP_PR_CREATION:-false') < content.index(
+        'echo "Creating pull request..."'
+    )
+
+
 def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 

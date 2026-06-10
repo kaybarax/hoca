@@ -1339,6 +1339,19 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
   record_timing_phase "commit" "$COMMIT_START_EPOCH" "$COMMIT_END_EPOCH"
   update_status "committed" "commit_created"
 
+  if [ "${HOCA_SKIP_PR_CREATION:-false}" = "true" ]; then
+    echo "Skipping pull request creation because HOCA_SKIP_PR_CREATION=true."
+    printf '%s\n' "HOCA_SKIP_PR_CREATION=true" > "$RUN_DIR/pr-creation-skipped.txt"
+    update_status "completed" "commit_created_no_pr"
+    "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
+    "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+    SHOULD_RESTORE_DEV_BRANCH="true"
+    restore_dev_branch_after_run
+    echo "HOCA run completed through local commit creation."
+    print_timing_report_if_requested
+    exit 0
+  fi
+
   echo "Creating pull request..."
   PR_START_EPOCH="$(hoca_time_epoch)"
   PR_ARGS=()
