@@ -103,6 +103,21 @@ Run `hoca doctor` or the sandbox doctor checks before relying on the sandbox in
 a new environment. Doctor warnings are part of the security posture and should
 be treated as review input, not cosmetic output.
 
+### Reviewer Warm-Up
+
+`HOCA_REVIEW_WARMUP=true` starts best-effort reviewer warm-up while tests run.
+Warm-up may inspect the sandbox container state and may make a local model
+warm-up request for supported local providers. It does not forward GitHub
+tokens, does not add worker/reviewer credential scope, and does not change the
+task worktree. Warm-up artifacts are advisory (`reviewer-warmup.json` and logs);
+warm-up failure does not fail a run or bypass review.
+
+Credential boundaries hold because the warm-up process runs through the same
+manager-controlled HOCA environment, uses role-selected model metadata rather
+than broad secret forwarding, and never enters the manager-owned Git lifecycle.
+The reviewer still receives its normal phase-scoped environment only when the
+review phase starts.
+
 ### Worktree Sandbox
 
 When `HOCA_USE_WORKTREE_SANDBOX=true`, HOCA creates a disposable Git worktree per
@@ -169,6 +184,23 @@ HOCA uses code-level gates in addition to prompts.
 - The normal lifecycle is branch, implementation, validation, review, selective
   staging, commit, draft or ready PR, then human review. Direct merge is not the
   default.
+
+### Unchanged Gates In v1.1.0
+
+The v1.1.0 performance modes do not remove the safety gates. Direct
+worker/reviewer modes, express lanes, reviewer warm-up, install caching, derived
+budgets, review fanout, and native CLI worker adapters still keep:
+
+- definition-of-ready checks before execution
+- task-spec scoped prompts
+- worktree handling and runtime artifact capture
+- worker/reviewer environment allowlists
+- deterministic monitor stops
+- validation before review
+- review and manager arbitration before staging
+- selective safe staging
+- manager-owned commit, push, and PR creation
+- human-review-first merge posture
 
 ## Known Limitations
 

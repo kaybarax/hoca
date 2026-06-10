@@ -226,6 +226,11 @@ def test_security_docs_cover_native_cli_worker_posture() -> None:
     assert "HOCA_WORKER_ENGINE=codex" in security
     assert "host-native execution" in security
     assert "not OpenHands Docker-sandboxed execution" in security
+    assert "HOCA_REVIEW_WARMUP=true" in security
+    assert "warm-up failure does not fail a run or bypass review" in security
+    assert "Unchanged Gates In v1.1.0" in security
+    assert "definition-of-ready checks before execution" in security
+    assert "manager-owned commit, push, and PR creation" in security
     assert "agent_policy.worker_engine" in fleet
     assert "metadata.worker_engine" in fleet
     assert "OpenHands-sandboxed lanes from host-native CLI lanes" in fleet
