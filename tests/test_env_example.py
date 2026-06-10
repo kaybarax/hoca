@@ -14,8 +14,19 @@ def test_env_example_documents_hermes_upgrade_variables() -> None:
         "HOCA_NETWORK_MODE=offline",
         "HOCA_USE_WORKTREE_SANDBOX=true",
         "HOCA_USE_SANDBOX=true",
-        "HOCA_WORKER_MODE=hermes",
-        "HOCA_REVIEWER_MODE=hermes",
+        "HOCA_WORKER_MODE=direct",
+        "HOCA_REVIEWER_MODE=direct",
+        "HOCA_WORKER_ENGINE=openhands",
+        "HOCA_REVIEW_WARMUP=true",
+        "HOCA_FORCE_INSTALL=false",
+        "HOCA_BUDGET_MIN_TOTAL_ROUNDS=1",
+        "HOCA_BUDGET_MAX_TOTAL_ROUNDS=3",
+        "HOCA_BUDGET_MIN_OPENHANDS_TIMEOUT=240",
+        "HOCA_BUDGET_MAX_OPENHANDS_TIMEOUT=1200",
+        "HOCA_BUDGET_MIN_OPENHANDS_STALL=90",
+        "HOCA_BUDGET_MAX_OPENHANDS_STALL=600",
+        "HOCA_BUDGET_MIN_HERMES_TIMEOUT=600",
+        "HOCA_BUDGET_MAX_HERMES_TIMEOUT=2400",
     ]
     for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
@@ -78,3 +89,15 @@ def test_docs_explain_backend_keep_alive_settings() -> None:
     assert "export OLLAMA_MAX_LOADED_MODELS=1" in readme
     assert "disable idle model unloading" in readme
     assert "idle-timeout" in readme
+
+
+def test_readme_links_performance_guide_and_fast_defaults() -> None:
+    content = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "[Performance guide](docs/performance.md)" in content
+    assert "### v1.1 Fast Defaults" in content
+    assert "HOCA_WORKER_MODE=direct" in content
+    assert "HOCA_REVIEWER_MODE=direct" in content
+    assert "HOCA_WORKER_ENGINE=openhands" in content
+    assert "HOCA_REVIEW_WARMUP=true" in content
+    assert "run-budget-round-N.json" in content

@@ -300,6 +300,7 @@ The supporting docs explain the control plane and the adapter contract:
 
 - [Fleet orchestration guide](docs/fleet-orchestration.md)
 - [Agent adapter guide](docs/agent-adapters.md)
+- [Performance guide](docs/performance.md)
 
 ## Default Behavior
 
@@ -335,6 +336,29 @@ environmental or pre-existing, when the review tool itself crashes, or when
 all rounds are exhausted. Configure the round limit with
 `HOCA_MAX_TOTAL_ROUNDS` (default `3`): round 1 is the initial implementation
 plus review, and rounds 2-3 are repair plus review cycles.
+
+### v1.1 Fast Defaults
+
+Fresh `.env.example` setups use direct worker and reviewer modes:
+
+```env
+HOCA_WORKER_MODE=direct
+HOCA_REVIEWER_MODE=direct
+HOCA_WORKER_ENGINE=openhands
+HOCA_REVIEW_WARMUP=true
+```
+
+This removes the extra Hermes profile hop from worker/reviewer execution while
+keeping the same task spec, worktree handling, monitor policy, tests, review,
+safe staging, and PR gates. `HOCA_WORKER_ENGINE=openhands` remains the default
+sandboxed engine. Native `claude-code` and `codex` engines are available as
+host-execution adapters and should be enabled only when that posture is allowed
+for the project.
+
+Run budgets are derived from task risk and expected scope, then written to
+`run-budget-round-N.json`. Install caching skips repeated package installs when
+lockfile state is unchanged. See the performance guide for which knobs affect
+agent loops, containers, installs, model residency, tests, and review.
 
 ### Optional Durable Kanban Mode
 
