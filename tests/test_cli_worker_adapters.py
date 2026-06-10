@@ -118,6 +118,9 @@ def test_run_codex_worker_records_standard_attempt(tmp_path: Path, monkeypatch) 
     assert report["mode"] == "codex"
     assert report["commands_run"] == ["codex"]
     assert "README.md" in report["changed_files"]
+    assert "Codex completed implementation." in (run_dir / "openhands-output.log").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_run_codex_worker_missing_cli_fails_cleanly(tmp_path: Path, monkeypatch) -> None:

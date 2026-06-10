@@ -109,6 +109,7 @@ def run_cli_worker_adapter(
             run_dir=run_dir,
             timeout_seconds=int(env.get("HOCA_OPENHANDS_TIMEOUT", "600")),
             stall_seconds=int(env.get("HOCA_OPENHANDS_STALL", "300")),
+            output_file=output_file,
             actor_role="worker",
         )
         if process.stdout is not None:

@@ -517,6 +517,7 @@ def monitor_process(
     run_dir: Path,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     stall_seconds: int = DEFAULT_STALL_SECONDS,
+    output_file=None,
     actor_role: str = "worker",
 ) -> MonitorResult:
     events: list[MonitorEvent] = []
@@ -567,6 +568,10 @@ def monitor_process(
         assert process.stdout is not None
         for line in process.stdout:
             line = line.rstrip("\n")
+
+            if output_file:
+                output_file.write(line + "\n")
+                output_file.flush()
 
             with lock:
                 if watchdog_reason:
