@@ -134,6 +134,29 @@ a role is empty while another role is active, HOCA uses the first active role
 model as the fallback. Only the selected role model's credentials are forwarded
 to that phase, and API keys are redacted from reports and logs.
 
+### Backend Keep-Alive
+
+Local backends should keep the selected model resident between HOCA phases. For
+the default one-model Ollama setup, start Ollama with:
+
+```bash
+export OLLAMA_KEEP_ALIVE=30m
+export OLLAMA_MAX_LOADED_MODELS=1
+ollama serve
+```
+
+`OLLAMA_KEEP_ALIVE` prevents an idle unload between manager, worker, reviewer,
+and repair rounds. `OLLAMA_MAX_LOADED_MODELS=1` matches the default
+single-model policy; raise it only when the doctor residency check says your RAM
+can hold every configured role model plus Docker and sandbox memory.
+
+For LM Studio, keep the local server running and disable idle model unloading in
+the app settings when available. For llama.cpp server, MLX servers, LocalAI, and
+vLLM, use the backend's keep-alive, served-model, or idle-timeout option so the
+same model stays loaded across consecutive HOCA phases. If you opt into multiple
+local role models, configure the backend to keep all of them resident only when
+your machine has enough RAM; otherwise expect reloads or swap churn.
+
 ### Local OpenAI-Compatible And Cloud Models
 
 Use the same role blocks for local OpenAI-compatible servers and cloud models.

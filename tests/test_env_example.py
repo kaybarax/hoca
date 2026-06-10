@@ -64,3 +64,17 @@ def test_readme_documents_single_model_residency_default() -> None:
     assert "one `qwen-14b-pro` residency is about 24 GB" in content
     assert "swap churn" in content
     assert "Multi-model routing remains supported as an explicit opt-in" in content
+
+
+def test_docs_explain_backend_keep_alive_settings() -> None:
+    env_content = (ROOT / ".env.example").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "# OLLAMA_KEEP_ALIVE=30m" in env_content
+    assert "# OLLAMA_MAX_LOADED_MODELS=1" in env_content
+    assert "disable idle unload" in env_content
+    assert "### Backend Keep-Alive" in readme
+    assert "export OLLAMA_KEEP_ALIVE=30m" in readme
+    assert "export OLLAMA_MAX_LOADED_MODELS=1" in readme
+    assert "disable idle model unloading" in readme
+    assert "idle-timeout" in readme
