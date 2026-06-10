@@ -38,8 +38,17 @@ GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS: list[re.Pattern[str]] = [
 ]
 
 MANAGER_ONLY_GIT_LIFECYCLE_ROLES = frozenset({"worker", "reviewer", "openhands"})
+REDUNDANT_REVIEW_VALIDATION_ROLES = frozenset({"reviewer"})
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _COMMAND_LINE_PREFIX = re.compile(r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+")
+_VALIDATION_COMMAND = re.compile(
+    r"^\s*(?:[$#>]\s*)?(?:`)?(?:"
+    r"(?:npm|yarn|pnpm|bun)\s+(?:run\s+)?(?:build|lint|test|check)\b|"
+    r"npx\s+playwright\s+test\b|"
+    r"pytest\b|"
+    r"python(?:3)?\s+-m\s+pytest\b"
+    r")"
+)
 
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset(
@@ -181,6 +190,34 @@ def check_manager_only_git_lifecycle_command(line: str, actor_role: str) -> str 
     for pattern in GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS:
         if pattern.search(normalized):
             return pattern.pattern
+    return None
+
+
+def _run_has_passing_test_summary(run_dir: Path) -> bool:
+    summary_path = run_dir / "tests-summary.md"
+    if not summary_path.is_file():
+        return False
+    try:
+        summary = summary_path.read_text(encoding="utf-8", errors="replace").lower()
+    except OSError:
+        return False
+    return (
+        "- **status**: passed" in summary
+        and "- **exit code**: 0" in summary
+    )
+
+
+def check_reviewer_redundant_validation_command(
+    line: str, actor_role: str, run_dir: Path
+) -> str | None:
+    role = actor_role.strip().lower()
+    if role not in REDUNDANT_REVIEW_VALIDATION_ROLES:
+        return None
+    if not _run_has_passing_test_summary(run_dir):
+        return None
+    normalized = _ANSI_ESCAPE.sub("", line).strip(" │")
+    if _VALIDATION_COMMAND.search(normalized):
+        return _VALIDATION_COMMAND.pattern
     return None
 
 
@@ -457,6 +494,20 @@ def monitor_process_stream(
                     stop_reason = "manager_only_git_lifecycle"
                     break
 
+                redundant_validation = check_reviewer_redundant_validation_command(
+                    command_scan_text, actor_role, run_dir
+                )
+                if redundant_validation:
+                    _record(
+                        events,
+                        "reviewer_redundant_validation",
+                        f"Detected redundant reviewer validation command after passing test "
+                        f"summary: {redundant_validation}; source={command_source}; "
+                        f"line={line[:200]}",
+                    )
+                    stop_reason = "reviewer_redundant_validation"
+                    break
+
                 secret = check_secret_access(line, project_path)
                 if secret:
                     _record(events, "secret_access", f"Secret-like file access: {secret}")
@@ -608,6 +659,20 @@ def monitor_process(
                         f"{manager_only}; source={command_source}; line={line[:200]}",
                     )
                     stop_reason = "manager_only_git_lifecycle"
+                    break
+
+                redundant_validation = check_reviewer_redundant_validation_command(
+                    command_scan_text, actor_role, run_dir
+                )
+                if redundant_validation:
+                    _record(
+                        events,
+                        "reviewer_redundant_validation",
+                        f"Detected redundant reviewer validation command after passing test "
+                        f"summary: {redundant_validation}; source={command_source}; "
+                        f"line={line[:200]}",
+                    )
+                    stop_reason = "reviewer_redundant_validation"
                     break
 
                 secret = check_secret_access(line, project_path)

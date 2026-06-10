@@ -73,6 +73,7 @@ DIFF_FILE="$FULL_DIFF_FILE"
 DIFF_VIEW_FILE="$DIFF_FILE"
 TEST_SUMMARY_FILE="$RUN_DIR/tests-summary.md"
 TEST_SUMMARY_VIEW_FILE="$TEST_SUMMARY_FILE"
+TEST_SUMMARY_INLINE="(test summary file is missing)"
 TRUNCATION_FILE="$REVIEW_DIR/context-truncation.json"
 REVIEW_DIFF_MAX_LINES="${HOCA_REVIEW_DIFF_MAX_LINES:-1200}"
 REVIEW_DIFF_CONTEXT_LINES="${HOCA_REVIEW_DIFF_CONTEXT_LINES:-3}"
@@ -101,6 +102,7 @@ if [ -f "$TEST_SUMMARY_FILE" ]; then
     tail -n "$REVIEW_LOG_TAIL_LINES" "$TEST_SUMMARY_FILE" > "$TEST_SUMMARY_VIEW_FILE"
     TEST_SUMMARY_TRUNCATED=true
   fi
+  TEST_SUMMARY_INLINE="$(cat "$TEST_SUMMARY_VIEW_FILE")"
 fi
 
 cat > "$TRUNCATION_FILE" <<EOF
@@ -151,6 +153,11 @@ The changed-file list and diff are saved in:
 Test summary view and context truncation metadata:
 - ${TEST_SUMMARY_VIEW_FILE}
 - ${TRUNCATION_FILE}
+
+Test summary contents:
+\`\`\`
+${TEST_SUMMARY_INLINE}
+\`\`\`
 
 Inspect those files and the working tree directly. Do not rely on this prompt
 as a complete copy of the diff. If context-truncation.json says a view was

@@ -12,6 +12,7 @@ from hoca.monitor import (
     MonitorEvent,
     MonitorResult,
     check_manager_only_git_lifecycle_command,
+    check_reviewer_redundant_validation_command,
     command_policy_scan_context,
     check_dangerous_command,
     check_secret_access,
@@ -759,3 +760,36 @@ class TestMonitorProcessStream:
         )
         assert result.stop_reason == "manager_only_git_lifecycle"
         assert result.exit_code == 1
+
+    def test_reviewer_redundant_validation_in_stream_stops_after_passing_summary(
+        self, tmp_path: Path
+    ):
+        import io
+
+        (tmp_path / "tests-summary.md").write_text(
+            "# Test Summary\n\n- **Status**: passed\n- **Exit code**: 0\n",
+            encoding="utf-8",
+        )
+        stream = io.StringIO(
+            'reviewing\n{"source":"agent","action":{"command":"npx playwright test"}}\n'
+        )
+
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+            actor_role="reviewer",
+        )
+
+        assert result.stop_reason == "reviewer_redundant_validation"
+        assert result.exit_code == 1
+
+    def test_reviewer_validation_allowed_without_passing_summary(self, tmp_path: Path):
+        assert (
+            check_reviewer_redundant_validation_command(
+                "npx playwright test", "reviewer", tmp_path
+            )
+            is None
+        )
