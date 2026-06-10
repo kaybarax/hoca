@@ -225,6 +225,10 @@ class TestCheckUnrelatedDirectory:
         result = check_unrelated_directory("cd /project/src", "/project")
         assert result is None
 
+    def test_sandbox_mount_aliases_are_allowed(self):
+        assert check_unrelated_directory("cd /workspace/src", "/project") is None
+        assert check_unrelated_directory("cat /hoca-run/task-input.txt", "/project") is None
+
     def test_allowed_run_artifact_access(self):
         result = check_unrelated_directory(
             "cat /runs/run-1/review/git-diff.patch",
@@ -670,8 +674,7 @@ class TestMonitorProcessStream:
         import io
 
         partial_action = (
-            '{"id":"event-1","source":"agent","kind":"ActionEvent",'
-            '"action":{"command":"rm -rf /"'
+            '{"id":"event-1","source":"agent","kind":"ActionEvent","action":{"command":"rm -rf /"'
         )
         stream = io.StringIO(f"working\n{partial_action}\ndone\n")
         result = monitor_process_stream(

@@ -277,6 +277,7 @@ def check_unrelated_directory(
     abs_refs = re.findall(r"(?:cd|cat|ls|rm|cp|mv|vi|vim|nano|open)\s+(/[^\s;|&]+)", line)
     allowed_roots = [os.path.realpath(project_path)]
     allowed_roots.extend(os.path.realpath(path) for path in allowed_paths)
+    allowed_roots.extend(("/workspace", "/hoca-run"))
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
         ref_resolved = os.path.realpath(ref)
@@ -435,7 +436,9 @@ def monitor_process_stream(
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(
+                    command_scan_text, actor_role
+                )
                 if manager_only:
                     _record(
                         events,
@@ -580,7 +583,9 @@ def monitor_process(
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(
+                    command_scan_text, actor_role
+                )
                 if manager_only:
                     _record(
                         events,
