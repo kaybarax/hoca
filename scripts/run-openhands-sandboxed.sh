@@ -42,6 +42,8 @@ CONTAINER_BASE_URL="${CONTAINER_BASE_URL//localhost/host.docker.internal}"
 
 PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
 RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
+SANDBOX_TASK="${TASK//$PROJECT_PATH/\/workspace}"
+SANDBOX_TASK="${SANDBOX_TASK//$RUN_DIR/\/hoca-run}"
 SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
 SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
 NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
@@ -78,7 +80,7 @@ chmod +x "$SETUP_SCRIPT"
 
 # Write task content to a file the container can read
 TASK_FILE="$RUN_DIR/task-input.txt"
-printf '%s' "$TASK" > "$TASK_FILE"
+printf '%s' "$SANDBOX_TASK" > "$TASK_FILE"
 
 # Cleanup on exit
 cleanup_container() {
