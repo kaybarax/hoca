@@ -786,6 +786,21 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "reviewer_redundant_validation"
         assert result.exit_code == 1
 
+    def test_shell_wrapped_reviewer_validation_stops_after_passing_summary(
+        self, tmp_path: Path
+    ):
+        (tmp_path / "tests-summary.md").write_text(
+            "# Test Summary\n\n- **Status**: passed\n- **Exit code**: 0\n",
+            encoding="utf-8",
+        )
+
+        assert (
+            check_reviewer_redundant_validation_command(
+                'bash -lc "yarn build"', "reviewer", tmp_path
+            )
+            is not None
+        )
+
     def test_reviewer_validation_allowed_without_passing_summary(self, tmp_path: Path):
         assert (
             check_reviewer_redundant_validation_command(

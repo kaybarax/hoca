@@ -43,6 +43,12 @@ _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _COMMAND_LINE_PREFIX = re.compile(r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+")
 _VALIDATION_COMMAND = re.compile(
     r"^\s*(?:[$#>]\s*)?(?:`)?(?:"
+    r"(?:bash|sh|zsh)\s+-lc\s+[\"']?(?:"
+    r"(?:npm|yarn|pnpm|bun)\s+(?:run\s+)?(?:build|lint|test|check)\b|"
+    r"npx\s+playwright\s+test\b|"
+    r"pytest\b|"
+    r"python(?:3)?\s+-m\s+pytest\b"
+    r")|"
     r"(?:npm|yarn|pnpm|bun)\s+(?:run\s+)?(?:build|lint|test|check)\b|"
     r"npx\s+playwright\s+test\b|"
     r"pytest\b|"
