@@ -64,6 +64,7 @@ def run_script(
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
     env["HOCA_USE_SANDBOX"] = "false"
+    env["HOCA_WORKER_MODE"] = "hermes"
     if fake_bin is not None:
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     if extra_env:
