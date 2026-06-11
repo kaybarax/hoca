@@ -1558,6 +1558,7 @@ def test_run_hoca_task_direct_mode_recovers_root_review_report(
             "EOF\n"
             "echo 'Review complete.'\n"
             "echo 'LGTM'\n"
+            "exit 1\n"
         ),
     )
     env = base_env()

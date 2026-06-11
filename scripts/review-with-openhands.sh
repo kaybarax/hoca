@@ -284,8 +284,10 @@ if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
   cp "$REVIEW_DIR/openhands-exit-code.txt" "$RUN_DIR/openhands-review-exit-code.txt"
 fi
 
+REVIEW_REPORT_RECOVERED=false
 if [ ! -f "$STRUCTURED_REPORT_PATH" ] && [ -f "$ALT_STRUCTURED_REPORT_PATH" ]; then
   mv "$ALT_STRUCTURED_REPORT_PATH" "$STRUCTURED_REPORT_PATH"
+  REVIEW_REPORT_RECOVERED=true
 fi
 
 if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
@@ -296,6 +298,13 @@ if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
     --round "$REVIEW_ROUND" \
     --output "$STRUCTURED_REPORT_PATH" \
     >/dev/null 2>&1 || true
+  if [ -f "$STRUCTURED_REPORT_PATH" ]; then
+    REVIEW_REPORT_RECOVERED=true
+  fi
+fi
+
+if [ "$REVIEW_EXIT" -ne 0 ] && [ "$REVIEW_REPORT_RECOVERED" = true ]; then
+  REVIEW_EXIT=0
 fi
 
 if [ "$REVIEW_EXIT" -ne 0 ]; then
