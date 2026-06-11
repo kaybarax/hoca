@@ -207,10 +207,7 @@ def _run_has_passing_test_summary(run_dir: Path) -> bool:
         summary = summary_path.read_text(encoding="utf-8", errors="replace").lower()
     except OSError:
         return False
-    return (
-        "- **status**: passed" in summary
-        and "- **exit code**: 0" in summary
-    )
+    return "- **status**: passed" in summary and "- **exit code**: 0" in summary
 
 
 def check_reviewer_redundant_validation_command(
@@ -327,7 +324,7 @@ def check_unrelated_directory(
     allowed_roots.extend(("/workspace", "/hoca-run"))
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
-        ref = ref.rstrip('"\',]}')
+        ref = ref.rstrip("\"',]}")
         ref_resolved = os.path.realpath(ref)
         if not any(
             ref_resolved == root or ref_resolved.startswith(root + "/") for root in allowed_roots
@@ -341,7 +338,9 @@ def check_unrelated_directory(
 def should_scan_line_for_policy(line: str) -> bool:
     """Skip passive OpenHands observations; scan agent actions and plain output."""
     stripped = line.strip()
-    if re.match(r'^"(?:text|thought|reasoning_content|llm_message|extended_content)"\s*:', stripped):
+    if re.match(
+        r'^"(?:text|thought|reasoning_content|llm_message|extended_content)"\s*:', stripped
+    ):
         return False
     if not stripped.startswith("{"):
         return True

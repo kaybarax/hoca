@@ -341,7 +341,9 @@ def _model_residency_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, s
 
     if required_gb > ram_gb:
         status: DoctorLineStatus = (
-            "fail" if os.environ.get("HOCA_STRICT_MODEL_RESIDENCY", "").lower() == "true" else "warn"
+            "fail"
+            if os.environ.get("HOCA_STRICT_MODEL_RESIDENCY", "").lower() == "true"
+            else "warn"
         )
         lines.append(
             (

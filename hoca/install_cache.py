@@ -55,9 +55,7 @@ def install_current(project_path: Path, manager: str) -> bool:
     marker = marker_path(project_path, manager)
     if not marker.is_file():
         return False
-    return marker.read_text(encoding="utf-8").strip() == install_fingerprint(
-        project_path, manager
-    )
+    return marker.read_text(encoding="utf-8").strip() == install_fingerprint(project_path, manager)
 
 
 def write_marker(project_path: Path, manager: str) -> Path:

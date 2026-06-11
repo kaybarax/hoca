@@ -40,8 +40,7 @@ def test_run_claude_worker_records_standard_attempt(tmp_path: Path, monkeypatch)
     fake_bin = make_fake_cli(
         tmp_path,
         "claude",
-        "printf 'updated by claude\\n' > README.md\n"
-        "echo 'Claude completed implementation.'\n",
+        "printf 'updated by claude\\n' > README.md\necho 'Claude completed implementation.'\n",
     )
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("HOCA_OPENHANDS_STALL", "2")

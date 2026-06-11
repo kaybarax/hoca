@@ -1025,7 +1025,9 @@ def fleet_cleanup(dry_run: bool) -> None:
 
 @fleet.command("monitor")
 @click.option("--resources", is_flag=True, default=False, help="Collect fleet resource metrics.")
-@click.option("--interval", default=1.0, type=float, show_default=True, help="Seconds between samples.")
+@click.option(
+    "--interval", default=1.0, type=float, show_default=True, help="Seconds between samples."
+)
 @click.option("--samples", default=1, type=click.IntRange(min=1), show_default=True)
 @click.option(
     "--output",
@@ -1071,9 +1073,7 @@ def fleet_legacy_check(root: Path | None) -> None:
     if findings:
         for finding in findings:
             click.echo(f"{finding.path}:{finding.line_number}: removed tool reference")
-        raise click.ClickException(
-            f"Legacy removed-tool check found {len(findings)} finding(s)."
-        )
+        raise click.ClickException(f"Legacy removed-tool check found {len(findings)} finding(s).")
     click.echo("Legacy removed-tool check passed.")
 
 
@@ -1083,8 +1083,12 @@ def fleet_legacy_check(root: Path | None) -> None:
 @click.option("--auto-merge", is_flag=True, default=False)
 @click.option("--notify-telegram", is_flag=True, default=False)
 @click.option("--dev-branch", help="Target repository development branch override.")
-@click.option("--timing", is_flag=True, default=False, help="Print the run timing summary at completion.")
-@click.option("--express", is_flag=True, default=False, help="Use the low-risk express lane when eligible.")
+@click.option(
+    "--timing", is_flag=True, default=False, help="Print the run timing summary at completion."
+)
+@click.option(
+    "--express", is_flag=True, default=False, help="Use the low-risk express lane when eligible."
+)
 def run(
     project_path: Path,
     task: str,

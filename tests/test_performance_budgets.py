@@ -30,9 +30,12 @@ def test_performance_budget_warm_sandbox_reuses_one_run_scoped_container() -> No
     assert 'CONTAINER_NAME_FILE="$RUN_DIR/sandbox-container-name.txt"' in script
     assert 'if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then' in script
     assert "record_timing_event --type container_start --name docker-run" in script
-    assert len(re.findall(r"record_timing_event --type container_start --name docker-run", script)) == 2
+    assert (
+        len(re.findall(r"record_timing_event --type container_start --name docker-run", script))
+        == 2
+    )
     assert script.count('printf \'%s\\n\' "$CONTAINER_NAME" > "$CONTAINER_NAME_FILE"') == 3
-    assert "else\n  printf '%s\\n' \"$CONTAINER_NAME\" > \"$CONTAINER_NAME_FILE\"\nfi" in script
+    assert 'else\n  printf \'%s\\n\' "$CONTAINER_NAME" > "$CONTAINER_NAME_FILE"\nfi' in script
 
 
 def test_performance_budget_install_cache_skips_unchanged_lockfile() -> None:
@@ -70,8 +73,8 @@ def test_performance_budget_direct_defaults_spawn_zero_hermes_profiles() -> None
     assert 'record_timing_event --type "agent_loop" --name "worker-$WORKER_ENGINE"' in script
     assert 'record_timing_event --type "agent_loop" --name "reviewer-hermes"' not in script
     assert 'record_timing_event --type "agent_loop" --name "reviewer-$REVIEWER_MODE"' in script
-    assert 'export HOCA_WORKER_MODE=direct' in script
-    assert 'export HOCA_REVIEWER_MODE=direct' in script
+    assert "export HOCA_WORKER_MODE=direct" in script
+    assert "export HOCA_REVIEWER_MODE=direct" in script
 
 
 def test_performance_budget_tests_are_part_of_standard_pytest_suite() -> None:

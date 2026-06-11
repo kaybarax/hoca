@@ -67,7 +67,9 @@ def run_cli_worker_adapter(
 ) -> WorkerRunResult:
     binary = spec.command[0]
     if shutil.which(binary) is None:
-        raise CliWorkerAdapterUnavailable(f"{spec.missing_cli_name} is not installed or not on PATH")
+        raise CliWorkerAdapterUnavailable(
+            f"{spec.missing_cli_name} is not installed or not on PATH"
+        )
 
     project_path = project_path.resolve()
     task_spec_path = task_spec_path.resolve()
@@ -92,9 +94,10 @@ def run_cli_worker_adapter(
     output_path = run_dir / "openhands-output.log"
     stderr_path = run_dir / "openhands-stderr.log"
     command = [*spec.command, prompt]
-    with output_path.open("w", encoding="utf-8") as output_file, stderr_path.open(
-        "w", encoding="utf-8"
-    ) as stderr_file:
+    with (
+        output_path.open("w", encoding="utf-8") as output_file,
+        stderr_path.open("w", encoding="utf-8") as stderr_file,
+    ):
         process = subprocess.Popen(
             command,
             cwd=project_path,

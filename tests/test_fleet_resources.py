@@ -245,8 +245,7 @@ def test_fleet_report_can_include_validation_summary(tmp_path: Path) -> None:
     run_dir = Path(lane.run_dir)
     run_dir.mkdir(parents=True)
     (run_dir / "status.json").write_text(
-        json.dumps({"status": "pr_created", "current_round": 2, "pr_url": "https://x/pr/1"})
-        + "\n",
+        json.dumps({"status": "pr_created", "current_round": 2, "pr_url": "https://x/pr/1"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "final-state.json").write_text(

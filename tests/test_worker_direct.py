@@ -6,7 +6,11 @@ from pathlib import Path
 
 from hoca.contracts import HocaRoleModelSelection, HocaSandboxPolicy, HocaTaskSpec
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
-from hoca.worker_direct import build_worker_direct_prompt, run_worker_direct, write_worker_direct_prompt
+from hoca.worker_direct import (
+    build_worker_direct_prompt,
+    run_worker_direct,
+    write_worker_direct_prompt,
+)
 
 MAC_HOME = "/" + "Users/example"
 
@@ -120,9 +124,7 @@ def test_write_worker_direct_prompt_writes_audit_file(tmp_path: Path) -> None:
     )
 
 
-def test_run_worker_direct_invokes_openhands_without_hermes(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_worker_direct_invokes_openhands_without_hermes(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "project"
     init_repo(project)
     run_dir = project / ".hoca-runtime" / "runs" / "run-test"
@@ -135,7 +137,9 @@ def test_run_worker_direct_invokes_openhands_without_hermes(
         calls.append(tuple(command))
         (project / "README.md").write_text("changed\n", encoding="utf-8")
         (run_dir / "openhands-output.jsonl").write_text("{}\n", encoding="utf-8")
-        (run_dir / "monitor-result.json").write_text('{"stop_reason":"completed"}\n', encoding="utf-8")
+        (run_dir / "monitor-result.json").write_text(
+            '{"stop_reason":"completed"}\n', encoding="utf-8"
+        )
         return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
 
     monkeypatch.setattr("hoca.worker_direct.subprocess.run", fake_run)
@@ -159,9 +163,7 @@ def test_run_worker_direct_invokes_openhands_without_hermes(
     assert (run_dir / "prompts" / "worker-direct-prompt-1.txt").is_file()
 
 
-def test_run_worker_direct_monitor_stop_records_blocked(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_worker_direct_monitor_stop_records_blocked(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "project"
     init_repo(project)
     run_dir = project / ".hoca-runtime" / "runs" / "run-test"

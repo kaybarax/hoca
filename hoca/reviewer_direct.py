@@ -47,7 +47,9 @@ def _recover_structured_report_from_log(log_path: Path, report_path: Path) -> bo
     if not log_path.is_file():
         return False
     try:
-        report = try_extract_structured_report(log_path.read_text(encoding="utf-8", errors="replace"))
+        report = try_extract_structured_report(
+            log_path.read_text(encoding="utf-8", errors="replace")
+        )
     except OSError:
         return False
     if report is None:
@@ -84,9 +86,10 @@ def _invoke_openhands_review_direct(
     env.setdefault("HOCA_PYTHON", sys.executable)
     timeout_seconds = _direct_review_timeout_seconds(env)
     deadline = time.monotonic() + timeout_seconds
-    with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
-        "w", encoding="utf-8"
-    ) as stderr_file:
+    with (
+        stdout_path.open("w", encoding="utf-8") as stdout_file,
+        stderr_path.open("w", encoding="utf-8") as stderr_file,
+    ):
         process = subprocess.Popen(
             command,
             cwd=run_dir,

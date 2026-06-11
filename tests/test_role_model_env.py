@@ -178,7 +178,9 @@ class TestModelPoolDoctorLines:
         )
         lines = model_pool_doctor_lines(HocaConfig(model_pool=pool))
 
-        assert any(status == "ok" and "share one model slot" in message for status, message in lines)
+        assert any(
+            status == "ok" and "share one model slot" in message for status, message in lines
+        )
 
 
 class TestRunnerCredentialIsolation:

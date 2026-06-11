@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from hoca.contracts import HocaReviewReport
@@ -130,9 +129,7 @@ def test_run_reviewer_direct_invokes_review_wrapper_and_uses_gate(
     assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "LGTM"
 
 
-def test_run_reviewer_direct_fix_required_returns_repair_exit(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_reviewer_direct_fix_required_returns_repair_exit(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "project"
     init_repo(project)
     (project / "README.md").write_text("changed\n", encoding="utf-8")
@@ -154,7 +151,9 @@ def test_run_reviewer_direct_fix_required_returns_repair_exit(
     )
 
     assert result.exit_code == 2
-    assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "fix_required"
+    assert (
+        HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "fix_required"
+    )
 
 
 def test_run_reviewer_direct_recovers_fenced_report_from_stderr(

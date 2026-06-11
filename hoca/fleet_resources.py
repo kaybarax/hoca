@@ -90,9 +90,7 @@ def collect_resource_sample(registry: FleetRegistry) -> dict[str, Any]:
     per_lane: dict[str, dict[str, Any]] = {}
     matched_pids: set[int] = set()
     for lane in lanes:
-        lane_rows = [
-            row for row in rows if _matches_lane(row, lane.lane_id, lane.run_dir or "")
-        ]
+        lane_rows = [row for row in rows if _matches_lane(row, lane.lane_id, lane.run_dir or "")]
         for row in lane_rows:
             matched_pids.add(int(row["pid"]))
         per_lane[lane.lane_id] = {
@@ -157,7 +155,9 @@ def model_residency_summary(
     if resident_limit > 0 and len(resident_models) >= resident_limit:
         binding_reason = f"model residency cap reached ({len(resident_models)}/{resident_limit})"
     elif budget.memory_limit_mb > 0 and total_estimated_mb >= budget.memory_limit_mb:
-        binding_reason = f"memory estimate reached ({total_estimated_mb}/{budget.memory_limit_mb}mb)"
+        binding_reason = (
+            f"memory estimate reached ({total_estimated_mb}/{budget.memory_limit_mb}mb)"
+        )
     return {
         "resident_models": resident_models,
         "resident_model_count": len(resident_models),

@@ -118,7 +118,8 @@ class ResourceGovernor:
         return [
             lane
             for lane in lanes
-            if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
+            if lane.status
+            in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
         ]
 
     def can_launch(

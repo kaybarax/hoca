@@ -23,7 +23,9 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
 def test_run_hoca_task_invokes_definition_of_ready_once() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
-    assert content.count('run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID"') == 1
+    assert (
+        content.count('run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID"') == 1
+    )
     assert 'cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json"' in content
 
 
@@ -66,10 +68,10 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
 def test_run_hoca_task_can_skip_pr_creation_after_commit() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
-    assert 'HOCA_SKIP_PR_CREATION:-false' in content
-    assert 'pr-creation-skipped.txt' in content
+    assert "HOCA_SKIP_PR_CREATION:-false" in content
+    assert "pr-creation-skipped.txt" in content
     assert 'update_status "completed" "commit_created_no_pr"' in content
-    assert content.index('HOCA_SKIP_PR_CREATION:-false') < content.index(
+    assert content.index("HOCA_SKIP_PR_CREATION:-false") < content.index(
         'echo "Creating pull request..."'
     )
 
@@ -77,9 +79,9 @@ def test_run_hoca_task_can_skip_pr_creation_after_commit() -> None:
 def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
-    assert 'HOCA_REVIEW_WARMUP:-true' in content
-    assert 'start_reviewer_warmup' in content
-    assert 'wait_for_reviewer_warmup' in content
+    assert "HOCA_REVIEW_WARMUP:-true" in content
+    assert "start_reviewer_warmup" in content
+    assert "wait_for_reviewer_warmup" in content
     assert 'python" -m hoca.reviewer_warmup "$RUN_DIR"' not in content
     assert '-m hoca.reviewer_warmup "$RUN_DIR"' in content
     assert '2> "$RUN_DIR/logs/reviewer-warmup-stderr.txt" || true' in content
@@ -95,7 +97,7 @@ def test_run_hoca_task_applies_task_scaled_budget() -> None:
 
     assert "apply_run_budget()" in content
     assert "-m hoca.run_budget export-shell" in content
-    assert "eval \"$budget_exports\"" in content
+    assert 'eval "$budget_exports"' in content
     assert "generate_run_task_spec\napply_express_mode\napply_run_budget 1" in content
     assert 'apply_run_budget "$round_number"' in content
 
@@ -104,16 +106,16 @@ def test_run_hoca_task_records_worker_engine_for_timing() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
     assert "print(load_config().worker_engine)" in content
-    assert 'worker-$WORKER_ENGINE' in content
+    assert "worker-$WORKER_ENGINE" in content
     assert '--mode "$WORKER_ENGINE"' in content
-    assert 'engine: $WORKER_ENGINE' in content
+    assert "engine: $WORKER_ENGINE" in content
 
 
 def test_run_hoca_task_express_lane_preserves_gates_and_falls_back() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
     assert "--express" in content
-    assert "EXPRESS_REQUESTED=\"false\"" in content
+    assert 'EXPRESS_REQUESTED="false"' in content
     assert "apply_express_mode()" in content
     assert '"gates_preserved": [' in content
     for gate in (
@@ -126,10 +128,10 @@ def test_run_hoca_task_express_lane_preserves_gates_and_falls_back() -> None:
     ):
         assert gate in content
     assert 'spec.risk_level == "low" and expected_area_count <= 1' in content
-    assert 'MAX_TOTAL_ROUNDS=1' in content
-    assert 'export HOCA_WORKER_MODE=direct' in content
-    assert 'export HOCA_REVIEWER_MODE=direct' in content
-    assert 'export HOCA_REVIEW_WARMUP=true' in content
+    assert "MAX_TOTAL_ROUNDS=1" in content
+    assert "export HOCA_WORKER_MODE=direct" in content
+    assert "export HOCA_REVIEWER_MODE=direct" in content
+    assert "export HOCA_REVIEW_WARMUP=true" in content
     assert 'reason = "eligible" if eligible else "ineligible: high risk or wide scope"' in content
 
 
@@ -140,7 +142,7 @@ def test_run_tests_uses_install_cache_for_pnpm() -> None:
     assert '"$PYTHON_BIN" -m hoca.install_cache current "$PROJECT_PATH" "$manager"' in content
     assert '"$PYTHON_BIN" -m hoca.install_cache mark "$PROJECT_PATH" "$manager"' in content
     assert '[ "${HOCA_FORCE_INSTALL:-false}" != "true" ]' in content
-    assert 'Skipping: pnpm install (install cache current)' in content
+    assert "Skipping: pnpm install (install cache current)" in content
     assert "CI=true pnpm install --no-frozen-lockfile" in content
 
 
@@ -148,11 +150,11 @@ def test_openhands_wrapper_uses_tighter_direct_mode_stall_defaults() -> None:
     root = Path(__file__).resolve().parents[1]
     content = (root / "scripts" / "run-openhands-task.sh").read_text(encoding="utf-8")
 
-    assert 'DIRECT_MODE=false' in content
-    assert 'HOCA_WORKER_MODE:-hermes' in content
-    assert 'HOCA_REVIEWER_MODE:-hermes' in content
-    assert 'HOCA_DIRECT_OPENHANDS_TIMEOUT:-420' in content
-    assert 'HOCA_DIRECT_OPENHANDS_STALL:-120' in content
+    assert "DIRECT_MODE=false" in content
+    assert "HOCA_WORKER_MODE:-hermes" in content
+    assert "HOCA_REVIEWER_MODE:-hermes" in content
+    assert "HOCA_DIRECT_OPENHANDS_TIMEOUT:-420" in content
+    assert "HOCA_DIRECT_OPENHANDS_STALL:-120" in content
     assert 'TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"' in content
     assert 'STALL="${HOCA_OPENHANDS_STALL:-300}"' in content
     assert 'echo "  DIRECT_MODE=$DIRECT_MODE"' in content
@@ -1476,7 +1478,9 @@ def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
     timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
     worker_phase = next(phase for phase in timings["phases"] if phase["name"] == "worker_attempt")
     review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
-    agent_loop_names = {event["name"] for event in timings["events"] if event["type"] == "agent_loop"}
+    agent_loop_names = {
+        event["name"] for event in timings["events"] if event["type"] == "agent_loop"
+    }
 
     assert result.returncode == 0, result.stderr
     assert "HOCA run completed through pull request creation." in result.stdout
@@ -1806,10 +1810,7 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container_on_failure(
     docker_log = tmp_path / "docker-cleanup.log"
     write_executable(
         fake_bin / "docker",
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        f"printf '%s\\n' \"$*\" >> {docker_log}\n"
-        "exit 0\n",
+        f"#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >> {docker_log}\nexit 0\n",
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"

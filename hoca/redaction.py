@@ -4,9 +4,7 @@ import re
 
 ABSOLUTE_PATH_PATTERN = re.compile(r"(?<![\w.-])/(?:Users|home|Volumes|private|tmp)/[^\s;,)]+")
 EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-TOKEN_ASSIGNMENT_PATTERN = re.compile(
-    r"(?i)\b(api[_-]?key|token|password|secret)\s*=\s*([^\s;]+)"
-)
+TOKEN_ASSIGNMENT_PATTERN = re.compile(r"(?i)\b(api[_-]?key|token|password|secret)\s*=\s*([^\s;]+)")
 
 
 def redact_public_evidence_text(text: str) -> str:

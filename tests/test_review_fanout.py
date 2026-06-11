@@ -205,8 +205,8 @@ def test_collect_review_signals_respects_fanout_worker_cap(monkeypatch, tmp_path
     monkeypatch.setenv("HOCA_REVIEW_FANOUT_MAX_WORKERS", "1")
     monkeypatch.setenv(
         "HOCA_REVIEW_ADAPTERS",
-        "a=python3 -c 'import time; time.sleep(0.25); print(\"{\\\"verdict\\\":\\\"pass\\\"}\")',"
-        "b=python3 -c 'import time; time.sleep(0.25); print(\"{\\\"verdict\\\":\\\"pass\\\"}\")'",
+        'a=python3 -c \'import time; time.sleep(0.25); print("{\\"verdict\\":\\"pass\\"}")\','
+        'b=python3 -c \'import time; time.sleep(0.25); print("{\\"verdict\\":\\"pass\\"}")\'',
     )
 
     started = time.perf_counter()
