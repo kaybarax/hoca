@@ -574,6 +574,30 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "dangerous_command"
         assert result.exit_code == 1
 
+    def test_stream_timeout_invokes_cancel_callback(self, tmp_path: Path):
+        class SlowEmptyStream:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                time.sleep(1.2)
+                raise StopIteration
+
+        reasons: list[str] = []
+
+        result = monitor_process_stream(
+            SlowEmptyStream(),
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=0,
+            stall_seconds=0.1,
+            on_cancel=reasons.append,
+        )
+
+        assert result.stop_reason == "timeout"
+        assert result.exit_code == 1
+        assert reasons == ["timeout"]
+
     def test_safe_rm_rf_in_stream(self, tmp_path: Path):
         import io
 

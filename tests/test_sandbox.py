@@ -264,6 +264,8 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert 'openhands --headless --task \\"\\$TASK_CONTENT\\" --override-with-envs --json' in script
     assert '"kind": "ConversationErrorEvent"' in script
     assert "monitor_process_stream(" in script
+    assert "on_cancel=stop_container" in script
+    assert "['docker', 'stop', container_name]" in script
     assert "actor_role=actor_role" in script
 
 

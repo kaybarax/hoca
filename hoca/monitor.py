@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from hoca.security import is_secret_like_path
 
@@ -400,6 +401,7 @@ def monitor_process_stream(
     stall_seconds: int = DEFAULT_STALL_SECONDS,
     output_file=None,
     cancel_event: threading.Event | None = None,
+    on_cancel: Callable[[str], None] | None = None,
     actor_role: str = "worker",
 ) -> MonitorResult:
     """Monitor a stream (e.g. stdin piped from docker) for dangerous activity.
@@ -435,6 +437,8 @@ def monitor_process_stream(
                 with lock:
                     watchdog_reason.append("timeout")
                     _record(events, "timeout", f"Watchdog: hard timeout after {timeout_seconds}s")
+                if on_cancel is not None:
+                    on_cancel("timeout")
                 _cancel.set()
                 return
             with lock:
@@ -447,6 +451,8 @@ def monitor_process_stream(
                         "stall",
                         f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)",
                     )
+                if on_cancel is not None:
+                    on_cancel("stall")
                 _cancel.set()
                 return
 

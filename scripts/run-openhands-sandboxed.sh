@@ -303,6 +303,7 @@ PY
   " 2>"$RUN_DIR/openhands-stderr.log" | \
   PYTHONPATH="$HOCA_ROOT" python3 -c "
 import json
+import subprocess
 import sys
 from pathlib import Path
 from hoca.monitor import monitor_process_stream, MonitorResult
@@ -313,6 +314,21 @@ output_file = sys.argv[3]
 timeout = int(sys.argv[4])
 stall = int(sys.argv[5])
 actor_role = sys.argv[6]
+container_name = sys.argv[7]
+
+cancelled = False
+
+def stop_container(reason: str) -> None:
+    global cancelled
+    if cancelled:
+        return
+    cancelled = True
+    subprocess.run(
+        ['docker', 'stop', container_name],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 with open(output_file, 'w') as out_f:
     result = monitor_process_stream(
@@ -322,6 +338,7 @@ with open(output_file, 'w') as out_f:
         timeout_seconds=timeout,
         stall_seconds=stall,
         output_file=out_f,
+        on_cancel=stop_container,
         actor_role=actor_role,
     )
 
@@ -340,7 +357,7 @@ if result.stop_reason != 'completed':
     sys.exit(1)
 
 sys.exit(result.exit_code)
-" "$PROJECT_PATH" "$RUN_DIR" "$RUN_DIR/openhands-output.jsonl" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
+" "$PROJECT_PATH" "$RUN_DIR" "$RUN_DIR/openhands-output.jsonl" "$TIMEOUT" "$STALL" "$AGENT_ROLE" "$CONTAINER_NAME"
 EXIT_CODE=$?
 set -e
 
