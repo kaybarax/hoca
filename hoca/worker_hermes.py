@@ -152,6 +152,7 @@ def build_worker_hermes_prompt(
         "   Treat project_path as the only executable repository root. If the task spec "
         "or test_commands mention a different repo_root, rewrite validation commands to "
         "run from project_path and do not cd to the original checkout.\n"
+        '   If saving the OpenHands prompt for audit, save it only as "$run_dir/openhands-task-prompt.txt".\n'
         "3. Run implementation only through:\n"
         f'   HOCA_LOCK_ROLE_MODEL=true HOCA_USE_SANDBOX="{use_sandbox}" '
         f'HOCA_NETWORK_MODE="{network_mode}" '

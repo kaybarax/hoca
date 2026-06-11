@@ -156,6 +156,7 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
         in prompt
     )
     assert f"task_spec_repo_root_for_reference_only: {MAC_HOME}/original-checkout" in prompt
+    assert 'save it only as "$run_dir/openhands-task-prompt.txt"' in prompt
     assert f"- repo_root: {MAC_HOME}/original-checkout" not in prompt
 
 
