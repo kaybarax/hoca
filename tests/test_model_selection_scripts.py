@@ -122,11 +122,11 @@ def test_select_model_errors_when_requested_model_is_missing(tmp_path: Path) -> 
     assert "Requested HOCA model not found" in result.stderr
 
 
-def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
+def test_select_model_requires_explicit_ollama_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
     make_fake_curl(fake_bin)
 
-    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "missing-model"})
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-7b-pro"})
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-7b-pro"
@@ -136,7 +136,7 @@ def test_select_model_accepts_latest_tagged_aliases(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro:latest"])
     make_fake_curl(fake_bin)
 
-    result = run_script("select-model.sh", fake_bin)
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-14b-pro"})
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-14b-pro"
@@ -149,14 +149,14 @@ def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> 
     result = run_script("select-model.sh", fake_bin)
 
     assert result.returncode == 1
-    assert "No HOCA-compatible Ollama model found" in result.stderr
+    assert "No model configured" in result.stderr
 
 
 def test_select_model_errors_when_ollama_server_is_unreachable(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
     make_fake_curl(fake_bin, succeeds=False)
 
-    result = run_script("select-model.sh", fake_bin)
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-7b-pro"})
 
     assert result.returncode == 1
     assert "Start it with: ollama serve" in result.stderr
@@ -175,7 +175,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
         args=[str(project), "Summarize project", str(run_dir)],
     )
 
@@ -216,7 +216,7 @@ def test_openhands_wrapper_accepts_task_file_path(tmp_path: Path) -> None:
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
         args=[str(project), str(task_file), str(run_dir)],
     )
 
@@ -296,6 +296,10 @@ def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) ->
         fake_bin,
         extra_env={
             "HOCA_LOCK_ROLE_MODEL": "true",
+            "HOCA_WORKER_MODEL_NAME": "worker",
+            "HOCA_WORKER_MODEL_MODEL": "ollama/qwen-14b-pro",
+            "HOCA_WORKER_MODEL_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_WORKER_MODEL_API_KEY": "worker-key",
             "HOCA_REQUESTED_MODEL": "qwen-7b-pro",
             "OLLAMA_MODEL": "qwen-7b-pro",
             "LLM_MODEL": "ollama/qwen-7b-pro",
@@ -334,7 +338,7 @@ def test_openhands_wrapper_fails_without_env_override_support(tmp_path: Path) ->
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
         args=[str(project), "Summarize project", str(run_dir)],
     )
 
@@ -363,6 +367,7 @@ def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> Non
         fake_bin,
         extra_env={
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-14b-pro",
             "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
         },
         args=[str(project), "Summarize project", str(run_dir)],
@@ -390,6 +395,7 @@ def test_openhands_wrapper_strips_github_token_for_reviewer(tmp_path: Path) -> N
         extra_env={
             "HOCA_AGENT_ROLE": "reviewer",
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-14b-pro",
             "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
         },
         args=[str(project), "Review changes", str(run_dir)],
@@ -427,7 +433,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     result = run_script(
         "review-with-openhands.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-32b-pro"},
         args=[str(project), "Review project", str(run_dir)],
     )
 
@@ -495,6 +501,7 @@ def test_review_with_openhands_caps_large_diff_context(tmp_path: Path) -> None:
         fake_bin,
         extra_env={
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-32b-pro",
             "HOCA_REVIEW_DIFF_MAX_LINES": "12",
             "HOCA_REVIEW_LOG_TAIL_LINES": "10",
         },
@@ -549,7 +556,7 @@ def test_review_with_openhands_materializes_structured_json_from_output(tmp_path
     result = run_script(
         "review-with-openhands.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-32b-pro"},
         args=[str(project), "Review project", str(run_dir)],
     )
 
@@ -599,6 +606,7 @@ def test_review_with_openhands_prefers_structured_report(tmp_path: Path) -> None
         fake_bin,
         extra_env={
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-32b-pro",
             "HOCA_REVIEW_REPORT_PATH": str(structured_report),
         },
         args=[str(project), "Review project", str(run_dir)],

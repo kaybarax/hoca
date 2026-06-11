@@ -98,7 +98,6 @@ detect_ram_gb() {
 RECOMMENDED_RAM_GB="$(config_value HOCA_RECOMMENDED_RAM_GB)"
 RECOMMENDED_RAM_GB="${RECOMMENDED_RAM_GB:-48}"
 DEFAULT_MODEL="$(config_value OLLAMA_MODEL)"
-DEFAULT_MODEL="${DEFAULT_MODEL:-qwen-14b-pro}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

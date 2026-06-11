@@ -61,18 +61,19 @@ def test_env_example_defaults_all_roles_to_one_model() -> None:
     ]
 
     assert uncommented_model_lines == [
-        "HOCA_MANAGER_MODEL_MODEL=ollama/qwen-14b-pro",
-        "HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro",
-        "HOCA_REVIEWER_MODEL_MODEL=ollama/qwen-14b-pro",
+        "HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+        "HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+        "HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
     ]
+    assert "HOCA fails\n# closed when no role model is configured" in content
     assert "Explicit multi-model opt-in" in content
 
 
 def test_readme_documents_single_model_residency_default() -> None:
     content = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "documented default is one resident model for all\nroles" in content
-    assert "one `qwen-14b-pro` residency is about 24 GB" in content
+    assert "HOCA fails closed" in content
+    assert "one resident coding model for all roles" in content
     assert "swap churn" in content
     assert "Multi-model routing remains supported as an explicit opt-in" in content
 

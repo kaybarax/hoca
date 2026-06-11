@@ -152,15 +152,10 @@ def role_model_names_for_task_spec(config: HocaConfig) -> dict[str, str]:
     if config.model_pool.is_active:
         return role_model_names_for_report(config.model_pool)
 
-    fallback_name = config.ollama_model
-    if not fallback_name.startswith("ollama/"):
-        fallback_name = f"ollama/{fallback_name}"
-    return {
-        "manager": fallback_name,
-        "worker": fallback_name,
-        "reviewer": fallback_name,
-        "fallback": fallback_name,
-    }
+    raise ValueError(
+        "No HOCA role model pool is configured. Set HOCA_MANAGER_MODEL_MODEL, "
+        "HOCA_WORKER_MODEL_MODEL, and HOCA_REVIEWER_MODEL_MODEL in the HOCA env file."
+    )
 
 
 def safe_model_pool_dict(pool: HocaModelPool) -> dict[str, Any]:

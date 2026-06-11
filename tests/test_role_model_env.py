@@ -48,16 +48,14 @@ def _active_pool_config() -> ModelPoolConfig:
 
 
 class TestRoleModelResolution:
-    def test_inactive_pool_uses_ollama_fallback(self) -> None:
+    def test_inactive_pool_fails_closed(self) -> None:
         cfg = HocaConfig(
             ollama_model="qwen-14b-pro",
             ollama_base_url="http://127.0.0.1:11434",
         )
 
-        selection = resolve_role_llm("worker", cfg)
-
-        assert selection.llm_model == "ollama/qwen-14b-pro"
-        assert selection.api_key == "ollama"
+        with pytest.raises(ValueError, match="No HOCA role model pool is configured"):
+            resolve_role_llm("worker", cfg)
         assert should_resolve_role_model(cfg) is False
 
     def test_active_pool_resolves_worker_and_reviewer_slots(self) -> None:
@@ -159,10 +157,12 @@ class TestRoleModelResolution:
 
 
 class TestModelPoolDoctorLines:
-    def test_inactive_pool_reports_ollama_fallback_mode(self) -> None:
+    def test_inactive_pool_reports_fail_closed_configuration(self) -> None:
         lines = model_pool_doctor_lines(HocaConfig())
 
-        assert any(status == "ok" and "inactive" in message for status, message in lines)
+        assert any(
+            status == "fail" and "Model pool inactive" in message for status, message in lines
+        )
 
     def test_active_pool_validates_roles(self) -> None:
         lines = model_pool_doctor_lines(HocaConfig(model_pool=_active_pool_config()))
@@ -251,7 +251,7 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
     ]
 
 
-def test_load_config_empty_pool_ignores_direct_llm_env(
+def test_load_config_empty_pool_ignores_direct_llm_env_and_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -267,7 +267,8 @@ def test_load_config_empty_pool_ignores_direct_llm_env(
     cfg = load_config(dotenv_path=env_file)
 
     assert cfg.model_pool.is_active is False
-    assert resolve_role_llm("worker", cfg).llm_model == "ollama/qwen-14b-pro"
+    with pytest.raises(ValueError, match="No HOCA role model pool is configured"):
+        resolve_role_llm("worker", cfg)
 
 
 def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:

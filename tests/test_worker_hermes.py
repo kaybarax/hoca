@@ -40,6 +40,10 @@ def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
             monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_NAME", role.lower())
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_MODEL", "ollama/qwen-14b-pro")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_BASE_URL", "http://127.0.0.1:11434")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_API_KEY", "ollama")
 
 
 def sample_task_spec(**overrides: object) -> HocaTaskSpec:

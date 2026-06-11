@@ -81,15 +81,9 @@ def resolve_role_llm(role: RoleName, config: HocaConfig) -> RoleLlmSelection:
             raise ValueError(f"Cannot resolve model for role {role!r}")
         return _selection_from_slot(role, slot)
 
-    fallback_model = config.ollama_model
-    if not fallback_model.startswith("ollama/"):
-        fallback_model = f"ollama/{fallback_model}"
-    return RoleLlmSelection(
-        role=role,
-        slot_name="ollama-fallback",
-        llm_model=fallback_model,
-        base_url=config.ollama_base_url,
-        api_key="ollama",
+    raise ValueError(
+        "No HOCA role model pool is configured. Set HOCA_MANAGER_MODEL_MODEL, "
+        "HOCA_WORKER_MODEL_MODEL, and HOCA_REVIEWER_MODEL_MODEL in the HOCA env file."
     )
 
 
@@ -204,7 +198,13 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
     pool = config.model_pool
 
     if not pool.is_active:
-        lines.append(("ok", "Model pool inactive; using Ollama fallback configuration."))
+        lines.append(
+            (
+                "fail",
+                "Model pool inactive; configure HOCA_MANAGER_MODEL_MODEL, "
+                "HOCA_WORKER_MODEL_MODEL, and HOCA_REVIEWER_MODEL_MODEL.",
+            )
+        )
         return lines
 
     active = pool.active_slots

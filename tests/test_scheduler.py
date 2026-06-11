@@ -279,6 +279,11 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     )
     monkeypatch.setenv("GITHUB_TOKEN", "manager-token")
     monkeypatch.setenv("GH_TOKEN", "manager-gh-token")
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_NAME", role.lower())
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_MODEL", "ollama/qwen-14b-pro")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_BASE_URL", "http://127.0.0.1:11434")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_API_KEY", "ollama")
     budget = HocaResourceBudget(
         budget_id="default",
         max_parallel_projects=1,

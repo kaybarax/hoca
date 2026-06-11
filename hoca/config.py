@@ -175,7 +175,7 @@ class HocaConfig:
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_api_base: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen-14b-pro"
+    ollama_model: str = ""
     model_pool: ModelPoolConfig = ModelPoolConfig()
 
     webhook_secret: str = ""
@@ -298,7 +298,7 @@ def load_config(*, dotenv_path: Path | None = None) -> HocaConfig:
         ollama_host=ollama_host,
         ollama_base_url=ollama_base_url,
         ollama_api_base=ollama_api_base,
-        ollama_model=config_value("OLLAMA_MODEL", "qwen-14b-pro"),
+        ollama_model=config_value("OLLAMA_MODEL"),
         model_pool=_load_model_pool(config_value),
         webhook_secret=config_value("HOCA_WEBHOOK_SECRET"),
         webhook_url=config_value("HOCA_WEBHOOK_URL"),

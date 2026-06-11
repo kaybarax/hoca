@@ -248,17 +248,11 @@ class TestRoleModelSelection:
         assert config.resolve_role("reviewer").model == "openai/gpt-oss-20b"
         assert config.resolve_role("manager").name == "local-fast"
 
-    def test_role_model_names_for_task_spec_uses_ollama_fallback(self) -> None:
+    def test_role_model_names_for_task_spec_requires_model_pool(self) -> None:
         cfg = HocaConfig(ollama_model="qwen-14b-pro")
 
-        names = role_model_names_for_task_spec(cfg)
-
-        assert names == {
-            "manager": "ollama/qwen-14b-pro",
-            "worker": "ollama/qwen-14b-pro",
-            "reviewer": "ollama/qwen-14b-pro",
-            "fallback": "ollama/qwen-14b-pro",
-        }
+        with pytest.raises(ValueError, match="No HOCA role model pool is configured"):
+            role_model_names_for_task_spec(cfg)
 
     def test_role_model_names_for_task_spec_resolves_inherited_roles(self) -> None:
         cfg = HocaConfig(

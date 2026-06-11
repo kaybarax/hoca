@@ -112,7 +112,7 @@ class TestLoadConfigDefaults:
         assert cfg.ollama_host == "http://127.0.0.1:11434"
         assert cfg.ollama_base_url == "http://127.0.0.1:11434"
         assert cfg.ollama_api_base == "http://127.0.0.1:11434"
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""
         assert cfg.webhook_secret == ""
         assert cfg.notify_telegram is False
 
@@ -219,7 +219,7 @@ class TestLoadConfigDefaults:
 
 
 class TestModelPoolConfig:
-    def test_empty_model_pool_uses_ollama_fallback_config(
+    def test_empty_model_pool_preserves_explicit_ollama_config_without_activating_pool(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -451,7 +451,7 @@ class TestCurrentEnvVars:
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert not hasattr(cfg, "llm_model")
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""
 
     def test_ollama_host_alias(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
@@ -526,7 +526,7 @@ class TestCurrentEnvVars:
         assert cfg.max_webhook_bytes == 32768
         assert cfg.workspace_root is not None
 
-    def test_empty_model_pool_uses_ollama_defaults(
+    def test_empty_model_pool_has_no_implicit_ollama_model(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -538,4 +538,4 @@ class TestCurrentEnvVars:
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.model_pool.is_active is False
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""

@@ -36,9 +36,9 @@ if [[ "${HOCA_LLM_PROVIDER:-}" == "lmstudio" ]] || \
   exit 1
 fi
 
-# Ollama path (default)
+# Ollama path for explicitly configured Ollama models.
 if ! command -v ollama >/dev/null 2>&1; then
-  echo "No LLM provider available. Install Ollama, start a local OpenAI-compatible server, or configure a HOCA role model provider." >&2
+  echo "No LLM provider available. Configure a HOCA role model provider in the env file." >&2
   exit 1
 fi
 
@@ -79,10 +79,11 @@ if [[ -n "${HOCA_REQUESTED_MODEL:-}" ]]; then
   exit 1
 fi
 
-try_model "${OLLAMA_MODEL:-}"
-try_model "qwen-14b-pro"
-try_model "qwen-7b-pro"
-try_model "qwen-32b-pro"
+if [[ -n "${OLLAMA_MODEL:-}" ]]; then
+  try_model "$OLLAMA_MODEL"
+  echo "Configured OLLAMA_MODEL not found in Ollama: $OLLAMA_MODEL" >&2
+  exit 1
+fi
 
-echo "No HOCA-compatible Ollama model found after trying configured model, qwen-14b-pro, qwen-7b-pro, and qwen-32b-pro. Build one with scripts/install.sh or create qwen-14b-pro, qwen-7b-pro, or qwen-32b-pro." >&2
+echo "No model configured. Set HOCA role model blocks in the env file, or set OLLAMA_MODEL explicitly for legacy Ollama selection." >&2
 exit 1
