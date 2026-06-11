@@ -66,6 +66,7 @@ if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
   STRUCTURED_REPORT_PATH="$HOCA_REVIEW_REPORT_PATH"
 fi
 mkdir -p "$RUN_DIR/reviews"
+ALT_STRUCTURED_REPORT_PATH="$RUN_DIR/review-report-${REVIEW_ROUND}.json"
 
 CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
 FULL_DIFF_FILE="$REVIEW_DIR/git-diff.patch"
@@ -281,6 +282,10 @@ fi
 
 if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
   cp "$REVIEW_DIR/openhands-exit-code.txt" "$RUN_DIR/openhands-review-exit-code.txt"
+fi
+
+if [ ! -f "$STRUCTURED_REPORT_PATH" ] && [ -f "$ALT_STRUCTURED_REPORT_PATH" ]; then
+  mv "$ALT_STRUCTURED_REPORT_PATH" "$STRUCTURED_REPORT_PATH"
 fi
 
 if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then

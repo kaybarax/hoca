@@ -1540,6 +1540,49 @@ def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
     assert "reviewer-hermes" not in agent_loop_names
 
 
+def test_run_hoca_task_direct_mode_recovers_root_review_report(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'ALT_REPORT_DIR="$(dirname "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")")"\n'
+            'mkdir -p "$ALT_REPORT_DIR"\n'
+            'cat > "$ALT_REPORT_DIR/review-report-1.json" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],'
+            '"pr_notes":{"summary":["Direct reviewer completed"],"known_followups":[]}}\n'
+            "EOF\n"
+            "echo 'Review complete.'\n"
+            "echo 'LGTM'\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
+
+    run_dir = latest_run_dir(tmp_path)
+    review_report = json.loads(
+        (run_dir / "reviews" / "review-report-1.json").read_text(encoding="utf-8")
+    )
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
+
+    assert result.returncode == 0, result.stderr
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert review_report["verdict"] == "LGTM"
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    assert (run_dir / "decisions" / "manager-decision-1.json").is_file()
+    assert review_phase["mode"] == "direct"
+
+
 def test_run_hoca_task_direct_mode_preserves_gate_artifact_parity_with_hermes(
     tmp_path: Path,
 ) -> None:
