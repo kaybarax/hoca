@@ -189,6 +189,20 @@ def build_reviewer_hermes_prompt(
     hoca_root = repo_root()
     report_path = review_report_path(run_dir, round_number)
     worker_report = str(inputs.worker_report_path) if inputs.worker_report_path else "(missing)"
+    python_bin = os.environ.get("HOCA_PYTHON", sys.executable)
+    dotenv_path = os.environ.get("HOCA_DOTENV_PATH", str(hoca_root / ".env"))
+    sandbox_mode = os.environ.get("HOCA_USE_SANDBOX", "true")
+    network_mode = os.environ.get("HOCA_NETWORK_MODE", "offline")
+    review_command = (
+        "HOCA_LOCK_ROLE_MODEL=true "
+        "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false "
+        f'HOCA_USE_SANDBOX="{sandbox_mode}" '
+        f'HOCA_NETWORK_MODE="{network_mode}" '
+        f'HOCA_PYTHON="{python_bin}" '
+        f'HOCA_DOTENV_PATH="{dotenv_path}" '
+        f'"{hoca_root / "scripts" / "review-with-openhands.sh"}" '
+        '"$project_path" "$task" "$run_dir"'
+    )
     prompt = (
         "Execute one bounded HOCA reviewer pass using the hoca-reviewer-qa skill.\n\n"
         "Assignment parameters:\n"
@@ -211,6 +225,8 @@ def build_reviewer_hermes_prompt(
         "5. Do not implement changes, stage files, commit, push, merge, or open pull requests.\n"
         "6. Write exactly one structured HocaReviewReport JSON file at required_review_report_path.\n"
         "7. Use verdict LGTM only when there are no blocking findings. Use fix_required or blocked otherwise.\n\n"
+        "Required review wrapper command:\n"
+        f"{review_command}\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
         f"- goal: {spec.goal.strip()}\n"
         f"- acceptance_criteria: {', '.join(spec.acceptance_criteria) or '(none)'}\n"

@@ -64,6 +64,11 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "ad-hoc conditionals" in prompt
     assert "canonical helpers" in prompt
     assert "roughly 1000 lines" in prompt
+    assert "Required review wrapper command" in prompt
+    assert "HOCA_LOCK_ROLE_MODEL=true" in prompt
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false" in prompt
+    assert "HOCA_DOTENV_PATH=" in prompt
+    assert "scripts/review-with-openhands.sh" in prompt
     assert "secret-value" not in prompt
     assert "[redacted: possible secret]" in prompt
 
