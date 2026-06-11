@@ -30,7 +30,7 @@ MAX_FILE_EXCERPT_CHARS = 4000
 MAX_TOTAL_INSTRUCTION_CHARS = 12000
 RELEVANT_EXCERPT_CONTEXT_LINES = 2
 _PATH_LIKE_PATTERN = re.compile(
-    r"(?:^|[\s'\"`])([\w./-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|rb|md|yaml|yml|json|toml))(?:$|[\s'\"`,:;])"
+    r"(?:^|[\s'\"`(])([\w./-]+\.(?:tsx|jsx|yaml|py|ts|js|go|rs|java|rb|md|yml|json|toml))(?:$|[\s'\"`,:;.)\]])"
 )
 _SECRET_LINE_PATTERN = re.compile(
     r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"

@@ -90,6 +90,25 @@ def test_script_forwards_issue_id_and_round_cap(tmp_path: Path) -> None:
     assert data["max_total_rounds"] == 5
 
 
+def test_script_infers_task_file_before_sentence_period(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    test_path = tmp_path / "src" / "app" / "util" / "util.test.ts"
+    test_path.parent.mkdir(parents=True)
+    test_path.write_text("describe('util', () => {});\n", encoding="utf-8")
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "path-period"
+    run_dir.mkdir(parents=True)
+
+    result = run_script(
+        str(tmp_path),
+        "Add coverage in src/app/util/util.test.ts. Acceptance criteria: yarn test passes.",
+        str(run_dir),
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads((run_dir / "task-spec.json").read_text(encoding="utf-8"))
+    assert data["expected_areas"] == ["src/app/util/util.test.ts"]
+
+
 def test_script_fails_on_invalid_repo(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / "missing-git"
     run_dir.mkdir(parents=True)
