@@ -249,6 +249,37 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
 
 
+def test_openhands_wrapper_prefixes_openai_compatible_local_model(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_SKIP_ROLE_MODEL_RESOLUTION": "true",
+            "LLM_MODEL": "ggml-org/gpt-oss-20b-GGUF",
+            "LLM_BASE_URL": "http://127.0.0.1:8080/v1",
+            "LLM_API_KEY": "local",
+            "HOCA_USE_SANDBOX": "false",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in result.stdout
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "LLM_BASE_URL=http://127.0.0.1:8080/v1" in captured
+    assert "deepseek" not in captured.lower()
+
+
 def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
     make_fake_curl(fake_bin)

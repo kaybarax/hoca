@@ -82,9 +82,14 @@ case "${LLM_MODEL:-}" in
     API_KEY="${LLM_API_KEY:-ollama}"
     ;;
   *)
-    MODEL="${LLM_MODEL}"
     BASE_URL="${LLM_BASE_URL:-}"
-    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required}"
+    if [ -n "$BASE_URL" ]; then
+      MODEL="openai/${LLM_MODEL}"
+      API_KEY="${LLM_API_KEY:-local}"
+    else
+      MODEL="${LLM_MODEL}"
+      API_KEY="${LLM_API_KEY:?LLM_API_KEY is required}"
+    fi
     ;;
 esac
 
