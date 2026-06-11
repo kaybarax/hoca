@@ -435,6 +435,11 @@ git_status_short_for_task() {
     local path="${status_line#???}"
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
+      .pnpm-store|.pnpm-store/*) continue ;;
+      node_modules|node_modules/*) continue ;;
+      .npm|.npm/*) continue ;;
+      .yarn/cache|.yarn/cache/*) continue ;;
+      .cache|.cache/*) continue ;;
     esac
     printf '%s\n' "$status_line"
   done

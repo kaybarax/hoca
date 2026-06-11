@@ -1762,7 +1762,11 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
     )
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
-        openhands_body="printf 'agent edit\\n' > README.md\n",
+        openhands_body=(
+            "printf 'agent edit\\n' > README.md\n"
+            "mkdir -p .pnpm-store/v3/files/00\n"
+            "printf cache > .pnpm-store/v3/files/00/cache-entry\n"
+        ),
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -1775,6 +1779,7 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
     assert "Working tree has existing changes:" not in result.stdout
     assert "README.md" in changed_files
     assert ".hoca-runtime" not in changed_files
+    assert ".pnpm-store" not in changed_files
 
 
 def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> None:
