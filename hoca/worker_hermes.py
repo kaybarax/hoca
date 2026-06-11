@@ -161,7 +161,8 @@ def build_worker_hermes_prompt(
         f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
         f"{hoca_root / 'scripts' / 'run-openhands-task.sh'} "
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
-        "4. Inspect repository changes read-only (git status, git diff).\n"
+        "4. Inspect repository changes read-only (git status, git diff), excluding manager-owned "
+        ".hoca-runtime/ artifacts from the changed-file assessment.\n"
         "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
         f"{ITERATIVE_WORKER_RUBRIC}\n"
         "6. Apply the implementation quality principles while shaping the diff.\n"
