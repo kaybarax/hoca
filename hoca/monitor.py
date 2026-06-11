@@ -193,6 +193,15 @@ def _is_safe_rm_target(line: str) -> bool:
     return True
 
 
+def _is_temp_repo_git_add_all(line: str) -> bool:
+    return bool(
+        re.search(
+            r"\bcd\s+(?:/tmp|/private/tmp|/var/tmp)/[^\s;&|]+.*\bgit\s+add\s+-A\b",
+            line,
+        )
+    )
+
+
 def check_dangerous_command(line: str) -> str | None:
     # Check rm -rf separately — allow it for safe build artifact targets
     if _RM_RF_BARE.search(line):
@@ -200,6 +209,8 @@ def check_dangerous_command(line: str) -> str | None:
             return _RM_RF_BARE.pattern
 
     for pattern in DANGEROUS_COMMANDS:
+        if pattern.pattern == r"\bgit\s+add\s+-A\b" and _is_temp_repo_git_add_all(line):
+            continue
         if pattern.search(line):
             return pattern.pattern
     return None

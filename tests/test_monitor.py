@@ -72,6 +72,13 @@ class TestCheckDangerousCommand:
     def test_git_add_A(self):
         assert check_dangerous_command("git add -A") is not None
 
+    def test_git_add_A_inside_temp_repo_allowed(self):
+        command = "cd /tmp/repo-clean-test && git init && git add -A && git commit -m test"
+        assert check_dangerous_command(command) is None
+
+    def test_git_add_A_inside_project_still_blocked(self):
+        assert check_dangerous_command("cd /workspace && git add -A") is not None
+
     def test_git_commit_am(self):
         assert check_dangerous_command("git commit -am 'msg'") is not None
 
