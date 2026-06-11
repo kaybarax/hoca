@@ -32,7 +32,6 @@ HERMES_PROVIDER_BY_MODEL_PREFIX: dict[str, str] = {
     "deepseek": "deepseek",
     "gemini": "google",
     "google": "google",
-    "openai": "openai",
     "openrouter": "openrouter",
     "together": "together",
     "together_ai": "together",

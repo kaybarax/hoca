@@ -197,7 +197,6 @@ def test_profile_mode_normalizes_openai_compatible_worker_model(tmp_path: Path) 
     assert result.returncode == 0, result.stderr
     captured = capture_env.read_text(encoding="utf-8")
     assert "--model openai/ggml-org/gpt-oss-20b-GGUF" in captured
-    assert "--provider openai" in captured
     assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
 
 

@@ -272,7 +272,6 @@ def test_load_config_empty_pool_ignores_direct_llm_env(
 
 def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:
     assert hermes_provider_for_model("deepseek/deepseek-v4-flash") == "deepseek"
-    assert hermes_provider_for_model("openai/ggml-org/gpt-oss-20b-GGUF") == "openai"
     assert hermes_provider_for_model("openrouter/openai/gpt-4o-mini") == "openrouter"
     assert hermes_provider_for_model("ollama/qwen-14b-pro") == ""
 
