@@ -210,6 +210,14 @@ Produce a structured HocaReviewReport as JSON (YAML is acceptable only if JSON i
 not practical). Write the report to:
 - ${STRUCTURED_REPORT_PATH}
 
+Required output order:
+1. Inspect the changed files, diff, and test summary.
+2. Write the structured JSON report to the exact path above using the available
+   file editing or shell writing tool.
+3. Verify the report file exists at that exact path.
+4. Only after the report file exists, finish with the same JSON inside a fenced
+   \`\`\`json block. Do not finish with prose only.
+
 This path is exact. Do not create, delete, rename, or inspect alternate report
 directories such as /workspace/hoca-runs. If running inside the sandbox, the
 run directory is mounted and writable at both /hoca-run and the absolute path

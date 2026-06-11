@@ -183,6 +183,16 @@ def test_review_wrapper_inherits_task_spec_network_mode() -> None:
     )
 
 
+def test_review_wrapper_requires_file_report_before_finish() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
+
+    assert "Required output order:" in content
+    assert "Write the structured JSON report to the exact path above" in content
+    assert "Verify the report file exists at that exact path" in content
+    assert "Do not finish with prose only" in content
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [
