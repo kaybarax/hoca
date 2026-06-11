@@ -154,7 +154,7 @@ def build_worker_hermes_prompt(
         "run from project_path and do not cd to the original checkout.\n"
         '   If saving the OpenHands prompt for audit, save it only as "$run_dir/openhands-task-prompt.txt".\n'
         "3. Run implementation only through:\n"
-        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_USE_SANDBOX="{use_sandbox}" '
+        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_SKIP_ROLE_MODEL_RESOLUTION=false HOCA_USE_SANDBOX="{use_sandbox}" '
         f'HOCA_NETWORK_MODE="{network_mode}" '
         f"{f'DOCKER_CONTEXT="{docker_context}" ' if docker_context else ''}"
         f'HOCA_PYTHON="{hoca_python}" '

@@ -147,6 +147,7 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
 
     assert "project_path as the only executable repository root" in prompt
     assert "do not cd to the original checkout" in prompt
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false" in prompt
     assert (
         "Do not read, write, or run commands in any repository path other than project_path"
         in prompt
