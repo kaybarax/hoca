@@ -322,6 +322,7 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
+    monkeypatch.setenv("HOCA_WORKER_MODE", "hermes")
     clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
