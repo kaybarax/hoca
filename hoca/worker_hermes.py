@@ -287,10 +287,20 @@ def _invoke_hermes_worker(
             cwd=run_dir,
         )
     except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = (exc.stderr or "") + f"\nHermes worker timed out after {timeout_seconds}s."
+        stdout = _timeout_stream_to_text(exc.stdout)
+        stderr = (
+            _timeout_stream_to_text(exc.stderr)
+            + f"\nHermes worker timed out after {timeout_seconds}s."
+        )
         stdout_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
+        if _openhands_completed_successfully(run_dir):
+            return CommandResult(
+                command=tuple(command),
+                returncode=0,
+                stdout=stdout,
+                stderr=stderr,
+            )
         return CommandResult(
             command=tuple(command),
             returncode=124,
@@ -306,6 +316,14 @@ def _invoke_hermes_worker(
         stdout=completed.stdout,
         stderr=completed.stderr,
     )
+
+
+def _timeout_stream_to_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
 
 
 def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
@@ -345,6 +363,17 @@ def _monitor_stop_reason(run_dir: Path) -> str | None:
         return None
     stop_reason = monitor.get("stop_reason")
     return stop_reason if isinstance(stop_reason, str) and stop_reason else None
+
+
+def _openhands_completed_successfully(run_dir: Path) -> bool:
+    exit_code_path = run_dir / "openhands-exit-code.txt"
+    if not exit_code_path.is_file():
+        return False
+    try:
+        exit_code = exit_code_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return exit_code == "0" and _monitor_stop_reason(run_dir) == "completed"
 
 
 def _completed_despite_finalization_stall(
@@ -427,6 +456,8 @@ def _missing_profile_attempt_status(
         return inferred_status
     if project_path is not None and _project_has_changes(project_path):
         return inferred_status
+    if _openhands_completed_successfully(run_dir):
+        return inferred_status
     if _openhands_edit_tool_failure(run_dir):
         return "failed"
     return "blocked"
@@ -450,6 +481,40 @@ def _project_has_changes(project_path: Path) -> bool:
         line.strip() and not line[3:].startswith(".hoca-runtime/")
         for line in completed.stdout.splitlines()
     )
+
+
+def _relocate_leaked_openhands_prompt(*, project_path: Path, run_dir: Path) -> None:
+    leaked_prompt = project_path / "openhands-task-prompt.txt"
+    if not leaked_prompt.is_file():
+        return
+    destination = run_dir / "openhands-task-prompt.txt"
+    try:
+        text = leaked_prompt.read_text(encoding="utf-8", errors="replace")
+        if not destination.exists():
+            destination.write_text(text, encoding="utf-8")
+        leaked_prompt.unlink()
+    except OSError:
+        return
+
+
+def _relocate_leaked_attempt_reports(*, project_path: Path, run_dir: Path) -> None:
+    leaked_attempts_dir = project_path / "attempts"
+    if not leaked_attempts_dir.is_dir():
+        return
+    destination_dir = run_dir / "attempts"
+    try:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        for leaked_attempt in leaked_attempts_dir.glob("worker-attempt-*.json"):
+            destination = destination_dir / leaked_attempt.name
+            if not destination.exists():
+                destination.write_text(
+                    leaked_attempt.read_text(encoding="utf-8", errors="replace"),
+                    encoding="utf-8",
+                )
+            leaked_attempt.unlink()
+        leaked_attempts_dir.rmdir()
+    except OSError:
+        return
 
 
 def run_worker_hermes(
@@ -519,6 +584,8 @@ def run_worker_hermes(
         timeout_seconds=_resolve_timeout_seconds(),
         max_turns=_resolve_max_turns(),
     )
+    _relocate_leaked_openhands_prompt(project_path=project_path, run_dir=run_dir)
+    _relocate_leaked_attempt_reports(project_path=project_path, run_dir=run_dir)
     status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
     status = _missing_profile_attempt_status(
         run_dir,

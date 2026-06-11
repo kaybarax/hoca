@@ -125,6 +125,13 @@ def test_hoca_doctor_script_accepts_docker_or_podman() -> None:
     assert "Neither docker nor podman found" in content
 
 
+def test_hoca_doctor_script_accepts_explicit_role_models_without_ollama_default() -> None:
+    script = REPO_ROOT / "scripts" / "hoca-doctor.sh"
+    content = script.read_text(encoding="utf-8")
+    assert 'if [ -z "$DEFAULT_MODEL" ]; then' in content
+    assert "No legacy OLLAMA_MODEL configured" in content
+
+
 def test_create_pr_script_uses_manager_gh_auth_not_sandbox_token() -> None:
     script = REPO_ROOT / "scripts" / "create-pr.sh"
     content = script.read_text(encoding="utf-8")

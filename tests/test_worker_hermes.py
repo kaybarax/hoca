@@ -22,6 +22,10 @@ from hoca.worker_hermes import (
     _ensure_worker_attempt_report,
     _infer_worker_status,
     _missing_profile_attempt_status,
+    _openhands_completed_successfully,
+    _relocate_leaked_attempt_reports,
+    _relocate_leaked_openhands_prompt,
+    _timeout_stream_to_text,
     load_task_spec,
     run_worker_hermes,
     verify_profile_prerequisites,
@@ -258,6 +262,17 @@ def init_repo(path: Path) -> None:
     (path / "README.md").write_text("initial\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
+
+
+def _project_has_untracked_files(path: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return bool(completed.stdout.strip())
 
 
 def test_run_worker_hermes_profile_mode_invokes_hermes(
@@ -622,6 +637,74 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
     assert status == "blocked"
     assert report.status == "blocked"
     assert report.blocked_reason == "Hermes worker did not write a structured attempt report."
+
+
+def test_missing_profile_attempt_after_successful_openhands_noop_is_completed(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-exit-code.txt").write_text("0\n", encoding="utf-8")
+    (run_dir / "monitor-result.json").write_text(
+        '{"stop_reason":"completed","exit_code":0}\n',
+        encoding="utf-8",
+    )
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+        project_path=project,
+    )
+
+    assert status == "completed"
+    assert _openhands_completed_successfully(run_dir) is True
+
+
+def test_timeout_stream_to_text_accepts_bytes() -> None:
+    assert _timeout_stream_to_text(b"hello \xe2\x9c\x93") == "hello \u2713"
+    assert _timeout_stream_to_text("plain") == "plain"
+    assert _timeout_stream_to_text(None) == ""
+
+
+def test_relocate_leaked_openhands_prompt_moves_artifact_out_of_repo(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    leaked_prompt = project / "openhands-task-prompt.txt"
+    leaked_prompt.write_text("prompt body\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    _relocate_leaked_openhands_prompt(project_path=project, run_dir=run_dir)
+
+    assert not leaked_prompt.exists()
+    assert (run_dir / "openhands-task-prompt.txt").read_text(encoding="utf-8") == "prompt body\n"
+    assert not _project_has_untracked_files(project)
+
+
+def test_relocate_leaked_attempt_reports_moves_artifacts_out_of_repo(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    leaked_attempts = project / "attempts"
+    leaked_attempts.mkdir()
+    (leaked_attempts / "worker-attempt-1.json").write_text('{"status":"completed"}\n')
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    _relocate_leaked_attempt_reports(project_path=project, run_dir=run_dir)
+
+    assert not leaked_attempts.exists()
+    assert (run_dir / "attempts" / "worker-attempt-1.json").read_text(
+        encoding="utf-8"
+    ) == '{"status":"completed"}\n'
+    assert not _project_has_untracked_files(project)
 
 
 def test_missing_profile_attempt_with_file_editor_argument_error_is_failed(tmp_path: Path) -> None:
