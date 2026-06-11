@@ -117,6 +117,7 @@ def make_fake_worker_hermes(fake_bin: Path) -> None:
         'if [[ -n "${HERMES_CAPTURE_ENV:-}" ]]; then\n'
         '  printf "ARGS=%s\\n" "$*" > "$HERMES_CAPTURE_ENV"\n'
         '  printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" >> "$HERMES_CAPTURE_ENV"\n'
+        '  printf "CUSTOM_BASE_URL=%s\\n" "${CUSTOM_BASE_URL:-}" >> "$HERMES_CAPTURE_ENV"\n'
         "fi\n"
         'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
@@ -196,8 +197,10 @@ def test_profile_mode_normalizes_openai_compatible_worker_model(tmp_path: Path) 
 
     assert result.returncode == 0, result.stderr
     captured = capture_env.read_text(encoding="utf-8")
-    assert "--model openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--model ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--provider custom" in captured
     assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "CUSTOM_BASE_URL=http://127.0.0.1:8080/v1" in captured
 
 
 def test_script_fails_without_hermes(tmp_path: Path) -> None:

@@ -254,18 +254,23 @@ def _invoke_hermes_worker(
 
     cfg = load_config()
     selection = resolve_role_llm("worker", cfg)
-    hermes_model = openai_compatible_model_for_selection(selection)
+    hermes_model = selection.llm_model.strip()
+    nested_openhands_model = openai_compatible_model_for_selection(selection)
     if hermes_model:
         command.extend(["--model", hermes_model])
     provider = hermes_provider_for_model(hermes_model)
+    if not provider and selection.base_url.strip():
+        provider = "custom"
     if provider:
         command.extend(["--provider", provider])
     env = strip_pool_credentials(apply_role_to_env("worker", cfg, os.environ.copy()))
     env.update(selection.env_vars())
-    env["LLM_MODEL"] = hermes_model
+    env["LLM_MODEL"] = nested_openhands_model
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "worker"
     env = filter_env(env, "worker")
+    if provider == "custom":
+        env["CUSTOM_BASE_URL"] = selection.base_url.strip()
     if cfg.model_pool.is_active:
         print(log_line_for_selection(selection), file=sys.stderr)
 

@@ -39,6 +39,7 @@ def make_fake_profile_hermes(fake_bin: Path) -> None:
         "set -euo pipefail\n"
         'printf "ARGS=%s\\n" "$*" > "$HERMES_CAPTURE_ENV"\n'
         'printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" >> "$HERMES_CAPTURE_ENV"\n'
+        'printf "CUSTOM_BASE_URL=%s\\n" "${CUSTOM_BASE_URL:-}" >> "$HERMES_CAPTURE_ENV"\n'
         'printf "HOCA_SKIP_ROLE_MODEL_RESOLUTION=%s\\n" "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" >> "$HERMES_CAPTURE_ENV"\n'
         "mkdir -p reviews logs\n"
         "cat > reviews/review-report-1.json <<'JSON'\n"
@@ -203,8 +204,10 @@ def test_profile_mode_normalizes_openai_compatible_reviewer_model(tmp_path: Path
 
     assert result.returncode == 0, result.stderr
     captured = capture_env.read_text(encoding="utf-8")
-    assert "--model openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--model ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--provider custom" in captured
     assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "CUSTOM_BASE_URL=http://127.0.0.1:8080/v1" in captured
     assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=true" in captured
 
 

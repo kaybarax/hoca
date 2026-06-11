@@ -247,15 +247,18 @@ def _invoke_hermes_reviewer(
     ]
     cfg = load_config()
     selection = resolve_role_llm("reviewer", cfg)
-    hermes_model = openai_compatible_model_for_selection(selection)
+    hermes_model = selection.llm_model.strip()
+    nested_openhands_model = openai_compatible_model_for_selection(selection)
     if hermes_model:
         command.extend(["--model", hermes_model])
     provider = hermes_provider_for_model(hermes_model)
+    if not provider and selection.base_url.strip():
+        provider = "custom"
     if provider:
         command.extend(["--provider", provider])
     env = strip_pool_credentials(apply_role_to_env("reviewer", cfg, os.environ.copy()))
     env.update(selection.env_vars())
-    env["LLM_MODEL"] = hermes_model
+    env["LLM_MODEL"] = nested_openhands_model
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
     # The reviewer profile invokes the OpenHands review wrapper as a child.
@@ -263,6 +266,8 @@ def _invoke_hermes_reviewer(
     # re-resolving or falling back to local defaults inside the profile shell.
     env["HOCA_SKIP_ROLE_MODEL_RESOLUTION"] = "true"
     env = filter_env(env, "reviewer")
+    if provider == "custom":
+        env["CUSTOM_BASE_URL"] = selection.base_url.strip()
     if cfg.model_pool.is_active:
         print(log_line_for_selection(selection), file=sys.stderr)
 
