@@ -74,6 +74,7 @@ def run_script(
 ):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DOTENV_PATH"] = str(fake_bin.parent / "missing.env")
     for key in ("LLM_MODEL", "OLLAMA_MODEL"):
         env.pop(key, None)
     if extra_env:

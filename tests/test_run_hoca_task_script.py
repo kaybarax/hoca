@@ -160,6 +160,17 @@ def test_openhands_wrapper_uses_tighter_direct_mode_stall_defaults() -> None:
     assert 'echo "  DIRECT_MODE=$DIRECT_MODE"' in content
 
 
+def test_openhands_wrapper_defaults_dotenv_to_hoca_root_before_model_resolution() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-openhands-task.sh").read_text(encoding="utf-8")
+
+    assert '[ -z "${HOCA_DOTENV_PATH:-}" ]' in content
+    assert 'export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"' in content
+    assert content.index('export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"') < content.index(
+        'source "$SCRIPT_DIR/resolve-role-model-env.sh"'
+    )
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

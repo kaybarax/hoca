@@ -34,6 +34,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
 AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
+if [ -z "${HOCA_DOTENV_PATH:-}" ] && [ -f "$HOCA_ROOT/.env" ]; then
+  export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"
+fi
 
 case "$AGENT_ROLE" in
   worker|reviewer)
