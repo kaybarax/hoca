@@ -237,6 +237,10 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert "--workdir /workspace" in script
     assert 'PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"' in script
     assert 'RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"' in script
+    assert 'GIT_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --absolute-git-dir' in script
+    assert 'GIT_COMMON_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --git-common-dir' in script
+    assert 'GIT_DIR_MOUNTS+=("-v" "${GIT_DIR}:${GIT_DIR}")' in script
+    assert 'GIT_DIR_MOUNTS+=("-v" "${GIT_COMMON_DIR}:${GIT_COMMON_DIR}")' in script
     assert 'SANDBOX_TASK="${TASK//$PROJECT_PATH/\\/workspace}"' in script
     assert 'SANDBOX_TASK="${SANDBOX_TASK//$RUN_DIR/\\/hoca-run}"' in script
     assert '-v "${PROJECT_PATH}:/workspace"' in script
@@ -261,6 +265,39 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert '"kind": "ConversationErrorEvent"' in script
     assert "monitor_process_stream(" in script
     assert "actor_role=actor_role" in script
+
+
+def test_sandbox_wrapper_mounts_worktree_git_dirs(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    run_dir = tmp_path / "run"
+    fake_bin = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    repo.mkdir()
+    run_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "hoca@example.test"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "HOCA Test"], cwd=repo, check=True)
+    (repo / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True)
+    subprocess.run(["git", "worktree", "add", "-b", "task", str(worktree)], cwd=repo, check=True)
+    write_fake_sandbox_tools(fake_bin, state_dir)
+
+    result = run_sandbox_wrapper(worktree, run_dir, fake_bin)
+
+    git_dir = subprocess.check_output(
+        ["git", "-C", str(worktree), "rev-parse", "--path-format=absolute", "--absolute-git-dir"],
+        text=True,
+    ).strip()
+    git_common_dir = subprocess.check_output(
+        ["git", "-C", str(worktree), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        text=True,
+    ).strip()
+    docker_log = (state_dir / "docker.log").read_text(encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+    assert f"-v {git_dir}:{git_dir}" in docker_log
+    assert f"-v {git_common_dir}:{git_common_dir}" in docker_log
 
 
 def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:

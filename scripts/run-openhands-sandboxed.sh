@@ -33,6 +33,14 @@ RUN_ID="$(basename "$RUN_DIR")"
 PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
 mkdir -p "$RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
+GIT_DIR_MOUNTS=()
+if GIT_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --absolute-git-dir 2>/dev/null)" && [ -n "$GIT_DIR" ]; then
+  GIT_COMMON_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || printf '%s' "$GIT_DIR")"
+  GIT_DIR_MOUNTS+=("-v" "${GIT_DIR}:${GIT_DIR}")
+  if [ -n "$GIT_COMMON_DIR" ] && [ "$GIT_COMMON_DIR" != "$GIT_DIR" ]; then
+    GIT_DIR_MOUNTS+=("-v" "${GIT_COMMON_DIR}:${GIT_COMMON_DIR}")
+  fi
+fi
 RUN_DIR_HASH="$(printf '%s' "$RUN_DIR" | shasum -a 256 | awk '{print substr($1,1,12)}')"
 SAFE_RUN_ID="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9_.-' '-')"
 SAFE_AGENT_ROLE="$(printf '%s' "$AGENT_ROLE" | tr -c 'A-Za-z0-9_.-' '-')"
@@ -155,6 +163,7 @@ DOCKER_RUN_ARGS=(
   --hostname "hoca-sandbox"
   --workdir /workspace
   -v "${PROJECT_PATH}:/workspace"
+  "${GIT_DIR_MOUNTS[@]}"
   -v "${RUN_DIR}:/hoca-run"
   -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
