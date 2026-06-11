@@ -285,10 +285,17 @@ if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
 fi
 
 REVIEW_REPORT_RECOVERED=false
-if [ ! -f "$STRUCTURED_REPORT_PATH" ] && [ -f "$ALT_STRUCTURED_REPORT_PATH" ]; then
-  mv "$ALT_STRUCTURED_REPORT_PATH" "$STRUCTURED_REPORT_PATH"
-  REVIEW_REPORT_RECOVERED=true
-fi
+ALT_STRUCTURED_REPORT_PATHS=(
+  "$RUN_DIR/review-report-${REVIEW_ROUND}.json"
+  "$RUN_DIR/reports/review-report-${REVIEW_ROUND}.json"
+)
+for ALT_STRUCTURED_REPORT_PATH in "${ALT_STRUCTURED_REPORT_PATHS[@]}"; do
+  if [ ! -f "$STRUCTURED_REPORT_PATH" ] && [ -f "$ALT_STRUCTURED_REPORT_PATH" ]; then
+    mv "$ALT_STRUCTURED_REPORT_PATH" "$STRUCTURED_REPORT_PATH"
+    REVIEW_REPORT_RECOVERED=true
+    break
+  fi
+done
 
 if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate \

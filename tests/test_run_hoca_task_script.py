@@ -1540,7 +1540,7 @@ def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
     assert "reviewer-hermes" not in agent_loop_names
 
 
-def test_run_hoca_task_direct_mode_recovers_root_review_report(
+def test_run_hoca_task_direct_mode_recovers_misplaced_review_report_even_when_review_exits_nonzero(
     tmp_path: Path,
 ) -> None:
     init_repo(tmp_path)
@@ -1550,8 +1550,8 @@ def test_run_hoca_task_direct_mode_recovers_root_review_report(
         openhands_body="printf 'direct agent edit\\n' > README.md\n",
         review_body=(
             'ALT_REPORT_DIR="$(dirname "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")")"\n'
-            'mkdir -p "$ALT_REPORT_DIR"\n'
-            'cat > "$ALT_REPORT_DIR/review-report-1.json" <<EOF\n'
+            'mkdir -p "$ALT_REPORT_DIR/reports"\n'
+            'cat > "$ALT_REPORT_DIR/reports/review-report-1.json" <<EOF\n'
             '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
             '"verdict":"LGTM","findings":[],'
             '"pr_notes":{"summary":["Direct reviewer completed"],"known_followups":[]}}\n'
