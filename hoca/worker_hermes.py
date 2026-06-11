@@ -164,11 +164,13 @@ def build_worker_hermes_prompt(
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
         "4. Inspect repository changes read-only (git status, git diff), excluding manager-owned "
         ".hoca-runtime/ artifacts from the changed-file assessment.\n"
-        "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
+        "5. After one relevant validation command passes for the changed scope, stop working immediately. "
+        "Do not continue exploring, re-running broader validation, or making optional edits.\n"
+        "6. Apply the bounded iteration discipline before marking the attempt complete.\n"
         f"{ITERATIVE_WORKER_RUBRIC}\n"
-        "6. Apply the implementation quality principles while shaping the diff.\n"
+        "7. Apply the implementation quality principles while shaping the diff.\n"
         f"{PSTACK_WORKER_PRINCIPLES}\n"
-        "7. Write attempts/worker-attempt-<round>.json or run:\n"
+        "8. Write attempts/worker-attempt-<round>.json or run:\n"
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
         f"--round {round_number} --status <completed|failed|blocked>\n\n"
         "Safety constraints:\n"
