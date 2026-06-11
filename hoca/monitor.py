@@ -96,6 +96,10 @@ _SAFE_RM_TARGETS = frozenset(
         "tmp/",
         "./tmp",
         "./tmp/",
+        "test-dist",
+        "test-dist/",
+        "./test-dist",
+        "./test-dist/",
     }
 )
 
@@ -157,7 +161,12 @@ def _is_safe_rm_target(line: str) -> bool:
     if not match:
         return False
     targets_str = match.group(2).strip()
-    targets = targets_str.split()
+    targets_str = re.split(r"\s*(?:;|\|\||&&)\s*", targets_str, maxsplit=1)[0]
+    targets = [
+        target
+        for target in targets_str.split()
+        if not target.startswith((">", "1>", "2>")) and ">" not in target
+    ]
     if not targets:
         return False
     for target in targets:
@@ -166,11 +175,20 @@ def _is_safe_rm_target(line: str) -> bool:
         # e.g., "apps/api-gateway/dist" is safe because basename is "dist"
         parts = base.split("/")
         leaf = parts[-1] if parts else ""
+        if target == ".git" and re.search(
+            r"\bcd\s+(?:/tmp|/private/tmp|/var/tmp)/[^\s;&|]+.*\brm\s+.*\s+\.git\b",
+            line,
+        ):
+            continue
+        if base.startswith("/"):
+            if target.startswith(("/tmp/", "/private/tmp/", "/var/tmp/")):
+                continue
+            return False
         if target in _SAFE_RM_TARGETS:
             continue
         if leaf in {t.rstrip("/") for t in _SAFE_RM_TARGETS}:
             continue
-        # Block anything that starts with / (absolute) or looks unsafe
+        # Block anything else that looks unsafe.
         return False
     return True
 
@@ -340,7 +358,9 @@ def should_scan_line_for_policy(line: str) -> bool:
     """Skip passive OpenHands observations; scan agent actions and plain output."""
     stripped = line.strip()
     if re.match(
-        r'^"(?:text|thought|reasoning_content|llm_message|extended_content)"\s*:', stripped
+        r'^"(?:text|thought|reasoning_content|llm_message|extended_content|summary|'
+        r'old_content|new_content|old_str|new_str|file_text)"\s*:',
+        stripped,
     ):
         return False
     if not stripped.startswith("{"):

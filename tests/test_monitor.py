@@ -293,9 +293,18 @@ class TestShouldScanLineForPolicy:
         line = '"text": "Safety prompt says never run gh pr merge."'
         assert should_scan_line_for_policy(line) is False
 
+    def test_pretty_printed_summary_fragment_is_not_scanned(self):
+        line = '"summary": "file_editor old_str contains rm -rf build/"'
+        assert should_scan_line_for_policy(line) is False
+
     def test_pretty_printed_command_fragment_is_still_scanned(self):
         line = '"command": "rm -rf /"'
         assert should_scan_line_for_policy(line) is True
+
+    def test_pretty_printed_file_content_fragment_is_not_scanned(self):
+        for field in ("old_content", "new_content"):
+            line = f'"{field}": "{{\\"scripts\\":{{\\"clean\\":\\"rm -rf build/\\"}}}}"'
+            assert should_scan_line_for_policy(line) is False
 
 
 class TestMonitorEvent:
@@ -500,8 +509,32 @@ class TestRmRfSafeTargets:
     def test_rm_rf_coverage_allowed(self):
         assert check_dangerous_command("rm -rf coverage") is None
 
+    def test_rm_rf_generated_test_artifact_allowed(self):
+        assert check_dangerous_command("rm -rf test-dist") is None
+
+    def test_rm_rf_generated_test_artifact_with_redirection_allowed(self):
+        command = "rm -rf test-dist 2>/dev/null; exit $EXIT_CODE"
+        assert check_dangerous_command(command) is None
+
+    def test_rm_rf_temp_git_reset_allowed(self):
+        command = "mkdir -p /tmp/artifact-test && cd /tmp/artifact-test && rm -rf .git"
+        assert check_dangerous_command(command) is None
+
+    def test_rm_rf_local_git_blocked(self):
+        assert check_dangerous_command("rm -rf .git") is not None
+
+    def test_rm_rf_temp_child_allowed(self):
+        assert check_dangerous_command("rm -rf /tmp/test-repo-clean") is None
+        assert check_dangerous_command("rm -rf /private/tmp/test-repo-clean") is None
+        assert check_dangerous_command("rm -rf /var/tmp/test-repo-clean") is None
+
     def test_rm_rf_root_blocked(self):
         assert check_dangerous_command("rm -rf /") is not None
+
+    def test_rm_rf_temp_root_blocked(self):
+        assert check_dangerous_command("rm -rf /tmp") is not None
+        assert check_dangerous_command("rm -rf /private/tmp") is not None
+        assert check_dangerous_command("rm -rf /var/tmp") is not None
 
     def test_rm_rf_etc_blocked(self):
         assert check_dangerous_command("rm -rf /etc") is not None
@@ -659,6 +692,45 @@ class TestMonitorProcessStream:
 
         stream = io.StringIO(
             'working\n        "text": "HOCA safety prompt says do NOT run gh pr merge."\ndone\n'
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_summary_fragment_is_ignored(
+        self, tmp_path: Path
+    ):
+        import io
+
+        stream = io.StringIO(
+            'working\n        "summary": "file_editor old_str contains rm -rf build/"\ndone\n'
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_file_content_fragment_is_ignored(
+        self, tmp_path: Path
+    ):
+        import io
+
+        stream = io.StringIO(
+            'working\n'
+            '        "old_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
+            '        "new_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
+            "done\n"
         )
         result = monitor_process_stream(
             stream,
