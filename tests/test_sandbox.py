@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +16,106 @@ from hoca.sandbox_network import docker_run_network_args, package_install_allowe
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SANDBOX_WRAPPER = REPO_ROOT / "scripts" / "run-openhands-sandboxed.sh"
 SANDBOX_DOCKER_ENV = REPO_ROOT / "scripts" / "sandbox-docker-env.sh"
+
+
+def write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def write_fake_sandbox_tools(fake_bin: Path, state_dir: Path) -> None:
+    fake_bin.mkdir(parents=True)
+    state_dir.mkdir(parents=True)
+    write_executable(
+        fake_bin / "docker",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+log="{state_dir}/docker.log"
+state="{state_dir}/container-running"
+printf '%s\\n' "$*" >> "$log"
+case "${{1:-}}" in
+  image)
+    exit 0
+    ;;
+  inspect)
+    if [[ "${{2:-}}" == "--format" ]]; then
+      if [[ -f "$state" ]]; then echo true; exit 0; fi
+      echo false
+      exit 1
+    fi
+    [[ -f "$state" ]]
+    exit $?
+    ;;
+  run)
+    touch "$state"
+    echo container-id
+    exit 0
+    ;;
+  rm)
+    rm -f "$state"
+    exit 0
+    ;;
+  exec)
+    cd "${{FAKE_SANDBOX_PROJECT:?}}"
+    bash "${{FAKE_SANDBOX_RUN_DIR:?}}/sandbox-setup.sh"
+    printf '%s\\n' '{{"kind":"Status","message":"fake openhands completed"}}'
+    exit 0
+    ;;
+esac
+exit 0
+""",
+    )
+    write_executable(
+        fake_bin / "pnpm",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "{state_dir}/pnpm.log"
+if [[ "${{1:-}}" == "--version" ]]; then echo "9.0.0"; exit 0; fi
+if [[ "${{1:-}}" == "config" ]]; then exit 0; fi
+if [[ "${{1:-}}" == "install" ]]; then mkdir -p node_modules; exit 0; fi
+exit 0
+""",
+    )
+
+
+def run_sandbox_wrapper(
+    project: Path,
+    run_dir: Path,
+    fake_bin: Path,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+            "HOCA_PYTHON": sys.executable,
+            "HOCA_NETWORK_MODE": "package-install",
+            "FAKE_SANDBOX_PROJECT": str(project),
+            "FAKE_SANDBOX_RUN_DIR": str(run_dir),
+        }
+    )
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [
+            str(SANDBOX_WRAPPER),
+            str(project),
+            "Update README",
+            str(run_dir),
+            "ollama/test",
+            "http://127.0.0.1:11434",
+            "ollama",
+            "30",
+            "10",
+            "worker",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
 
 
 def test_sandbox_policy_defaults_to_enabled_offline() -> None:
@@ -154,6 +258,34 @@ def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:
     assert "elif [ -f yarn.lock ]" in script
     assert "yarn install --frozen-lockfile" in script
     assert re.search(r"(^|\s)npm\s+install\b", script) is None
+
+
+def test_sandbox_wrapper_reuses_container_and_install_cache_across_two_invocations(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    fake_bin = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    project.mkdir()
+    run_dir.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    (project / "pnpm-lock.yaml").write_text("lock-v1\n", encoding="utf-8")
+    write_fake_sandbox_tools(fake_bin, state_dir)
+
+    first = run_sandbox_wrapper(project, run_dir, fake_bin)
+    second = run_sandbox_wrapper(project, run_dir, fake_bin)
+
+    docker_log = (state_dir / "docker.log").read_text(encoding="utf-8")
+    pnpm_log = (state_dir / "pnpm.log").read_text(encoding="utf-8")
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert docker_log.count("run -d") == 1
+    assert docker_log.count("exec ") == 2
+    assert pnpm_log.count("install --frozen-lockfile") == 1
+    assert "Skipping pnpm install; install cache current." in second.stdout
+    assert (run_dir / "sandbox-container-name.txt").is_file()
+    assert (project / ".hoca-runtime" / "install-cache" / "sandbox-pnpm.sha256").is_file()
 
 
 def test_sandbox_network_helpers_respect_hoca_python() -> None:
