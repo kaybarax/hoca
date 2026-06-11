@@ -1589,6 +1589,64 @@ def test_run_hoca_task_direct_mode_preserves_gate_artifact_parity_with_hermes(
     ).read_text(encoding="utf-8")
 
 
+def test_run_hoca_task_direct_mode_blocked_review_status(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")"\n'
+            'cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"blocked",'
+            '"findings":[{"id":"B1","severity":"high","category":"correctness",'
+            '"file":"README.md","summary":"Blocked review",'
+            '"required_fix":"Human review is required"}],'
+            '"pr_notes":{"summary":["Blocked"],"known_followups":["Human review is required"]}}\n'
+            "EOF\n"
+            "echo 'Blocked review.'\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Manager blocked the run after round 1 of 1" in result.stderr
+    assert '"status": "blocked"' in latest_status(tmp_path)
+    assert '"final_state": "blocked"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_direct_mode_failed_tests_status(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        pytest_body="echo 'tests failed'\nexit 3\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Tests still failed after round 1 of 1" in result.stderr
+    assert '"status": "failed"' in latest_status(tmp_path)
+    assert '"reason": "tests_failed"' in latest_status(tmp_path)
+
+
 def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:
     init_repo(tmp_path)
     subprocess.run(["git", "branch", "-M", "main"], cwd=tmp_path, check=True)
