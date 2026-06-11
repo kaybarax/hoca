@@ -1790,6 +1790,39 @@ def test_run_hoca_task_cleanup_removes_runtime_even_when_lock_was_replaced(
     assert (run_dir(tmp_path, "issue-42") / "status.json").is_file()
 
 
+def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container_on_failure(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            'run_dir="$(find .hoca-runtime/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
+            'printf "hoca-worker-run-scoped\\n" > "$run_dir/sandbox-container-name.txt"\n'
+            "echo 'OpenHands crashed after sandbox start.' >&2\n"
+            "exit 1\n"
+        ),
+    )
+    docker_log = tmp_path / "docker-cleanup.log"
+    write_executable(
+        fake_bin / "docker",
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"printf '%s\\n' \"$*\" >> {docker_log}\n"
+        "exit 0\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    docker_calls = docker_log.read_text(encoding="utf-8")
+    assert "rm -f hoca-worker-run-scoped" in docker_calls
+    assert "rm -f hoca-worker-" in docker_calls
+    assert not (tmp_path / ".hoca-runtime").exists()
+
+
 def test_run_hoca_task_cleanup_removes_unpublished_worktree_branch_on_failure(
     tmp_path: Path,
 ) -> None:
