@@ -89,7 +89,7 @@ def build_worker_direct_prompt(
         f"{_sandbox_section(spec)}"
         "\nRequired workflow:\n"
         "1. Treat execution_project_path as the only repository root. Do not cd to repo_root_reference_only.\n"
-        "2. Inspect current repository state and prior round artifacts before changing files.\n"
+        "2. Inspect current repository state and prior round artifacts before changing files. Keep inspection targeted: use git status/diff and the task's expected files; do not recursively list the repository, dependency directories, or generated artifacts.\n"
         "3. Make only scoped edits needed for the goal and acceptance criteria.\n"
         "4. When using editing tools, send every required argument in one call: full path plus exact old/new text or insertion text. Do not retry partial edits.\n"
         "5. Verify repository diff after edits; if no diff exists, fix the edit or report a concrete blocker.\n"

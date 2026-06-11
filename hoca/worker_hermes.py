@@ -147,6 +147,7 @@ def build_worker_hermes_prompt(
         "Required steps:\n"
         "1. Read the manager task spec at task_spec_path.\n"
         "   Inspect current repository state and prior round artifacts before changing files.\n"
+        "   Keep inspection targeted: use git status/diff and the task's expected files; do not recursively list the repository, dependency directories, or generated artifacts.\n"
         "2. Build a precise OpenHands implementation prompt from goal, non_goals, "
         "expected_areas, acceptance_criteria, and test_commands.\n"
         "   Treat project_path as the only executable repository root. If the task spec "

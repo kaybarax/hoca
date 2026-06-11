@@ -112,6 +112,7 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Bounded iteration discipline" in prompt
     assert "completion is genuinely true" in prompt
     assert "Inspect current repository state and prior round artifacts" in prompt
+    assert "do not recursively list the repository" in prompt
     assert "excluding manager-owned .hoca-runtime/ artifacts" in prompt
     assert "Implementation quality principles" in prompt
     assert "Name the data shape first" in prompt
