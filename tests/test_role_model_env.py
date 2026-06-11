@@ -169,7 +169,7 @@ class TestModelPoolDoctorLines:
         assert any("worker resolves" in message for _, message in lines)
         assert not any(status == "fail" for status, _ in lines)
 
-    def test_same_worker_and_reviewer_slot_warns(self) -> None:
+    def test_same_worker_and_reviewer_slot_is_ok(self) -> None:
         pool = ModelPoolConfig(
             slots=(ModelSlot(name="shared", model="ollama/qwen-14b-pro", api_key="x"),),
             worker_model="shared",
@@ -178,7 +178,7 @@ class TestModelPoolDoctorLines:
         )
         lines = model_pool_doctor_lines(HocaConfig(model_pool=pool))
 
-        assert any(status == "warn" and "same model slot" in message for status, message in lines)
+        assert any(status == "ok" and "share one model slot" in message for status, message in lines)
 
 
 class TestRunnerCredentialIsolation:
