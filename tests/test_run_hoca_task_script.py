@@ -171,6 +171,18 @@ def test_openhands_wrapper_defaults_dotenv_to_hoca_root_before_model_resolution(
     )
 
 
+def test_review_wrapper_inherits_task_spec_network_mode() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
+
+    assert "spec_network_mode=" in content
+    assert '.sandbox.network_mode // empty' in content
+    assert 'export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"' in content
+    assert content.index('export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"') < content.index(
+        'HOCA_AGENT_ROLE=reviewer "$SCRIPT_DIR/run-openhands-task.sh"'
+    )
+
+
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
     root = Path(__file__).resolve().parents[1]
     scripts = [

@@ -142,6 +142,10 @@ if [ -f "$TASK_SPEC_FILE" ] && command -v jq >/dev/null 2>&1; then
   if [ -n "$expected_area_lines" ]; then
     EXPECTED_AREAS_BLOCK="$(printf '%s\n' "$expected_area_lines" | sed 's/^/- /')"
   fi
+  spec_network_mode="$(jq -r '.sandbox.network_mode // empty' "$TASK_SPEC_FILE" 2>/dev/null || true)"
+  if [ -z "${HOCA_REVIEWER_NETWORK_MODE:-}" ] && [ -n "$spec_network_mode" ]; then
+    export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"
+  fi
 fi
 
 REVIEW_TASK="Review the current repository changes for the following task: ${REVIEW_GOAL}
