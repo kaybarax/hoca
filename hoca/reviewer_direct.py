@@ -100,8 +100,8 @@ def _invoke_openhands_review_direct(
         )
         while process.poll() is None:
             if _structured_report_ready(report_path) or _recover_structured_report_from_log(
-                stderr_path, report_path
-            ):
+                stdout_path, report_path
+            ) or _recover_structured_report_from_log(stderr_path, report_path):
                 try:
                     process.terminate()
                     process.wait(timeout=5)
@@ -145,6 +145,14 @@ def _evaluate_direct_report(
     *, run_dir: Path, round_number: int, process_exit_code: int
 ) -> tuple[Path, int]:
     report_path = review_report_path(run_dir, round_number)
+    stdout_path = run_dir / "logs" / "reviewer-direct-stdout.txt"
+    stderr_path = run_dir / "logs" / "reviewer-direct-stderr.txt"
+    if not report_path.exists():
+        _recover_structured_report_from_log(stdout_path, report_path)
+        if not report_path.exists():
+            _recover_structured_report_from_log(stderr_path, report_path)
+        if not report_path.exists():
+            _recover_structured_report_from_log(run_dir / "openhands-review.txt", report_path)
     if not report_path.exists():
         path = _write_blocked_report(
             run_dir=run_dir,
