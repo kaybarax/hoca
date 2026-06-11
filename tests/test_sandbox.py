@@ -288,6 +288,30 @@ def test_sandbox_wrapper_reuses_container_and_install_cache_across_two_invocatio
     assert (project / ".hoca-runtime" / "install-cache" / "sandbox-pnpm.sha256").is_file()
 
 
+def test_sandbox_wrapper_reinstalls_when_lockfile_changes(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    fake_bin = tmp_path / "bin"
+    state_dir = tmp_path / "state"
+    project.mkdir()
+    run_dir.mkdir()
+    (project / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    (project / "pnpm-lock.yaml").write_text("lock-v1\n", encoding="utf-8")
+    write_fake_sandbox_tools(fake_bin, state_dir)
+
+    first = run_sandbox_wrapper(project, run_dir, fake_bin)
+    (project / "pnpm-lock.yaml").write_text("lock-v2\n", encoding="utf-8")
+    second = run_sandbox_wrapper(project, run_dir, fake_bin)
+
+    docker_log = (state_dir / "docker.log").read_text(encoding="utf-8")
+    pnpm_log = (state_dir / "pnpm.log").read_text(encoding="utf-8")
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert docker_log.count("run -d") == 1
+    assert pnpm_log.count("install --frozen-lockfile") == 2
+    assert "Skipping pnpm install; install cache current." not in second.stdout
+
+
 def test_sandbox_network_helpers_respect_hoca_python() -> None:
     script = SANDBOX_DOCKER_ENV.read_text(encoding="utf-8")
 
