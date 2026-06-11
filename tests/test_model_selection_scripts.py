@@ -279,6 +279,42 @@ def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) ->
     assert "qwen-7b-pro" not in result.stdout
 
 
+def test_openhands_wrapper_fails_without_env_override_support(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "echo 'should not run'\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false"},
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 1
+    assert "Cannot safely enforce HOCA-selected role model" in result.stdout
+    assert "resolved model was: ollama/qwen-14b-pro" in result.stdout
+    assert "should not run" not in result.stdout
+    assert "Cannot safely enforce HOCA-selected role model" in (
+        run_dir / "openhands-error.txt"
+    ).read_text(encoding="utf-8")
+
+
 def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
     make_fake_curl(fake_bin)

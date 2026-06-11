@@ -224,6 +224,18 @@ if ! printf '%s\n' "$OH_HELP" | grep -q -- "--task"; then
   exit 1
 fi
 
+if ! printf '%s\n' "$OH_HELP" | grep -q -- "--override-with-envs"; then
+  case "$AGENT_ROLE" in
+    worker|reviewer)
+      {
+        echo "OpenHands CLI does not support --override-with-envs. Cannot safely enforce HOCA-selected role model."
+        echo "Refusing to run with OpenHands defaults for $AGENT_ROLE; resolved model was: $MODEL"
+      } | tee "$RUN_DIR/openhands-error.txt"
+      exit 1
+      ;;
+  esac
+fi
+
 OH_FLAGS=(--headless --task "$TASK")
 
 if printf '%s\n' "$OH_HELP" | grep -q -- "--override-with-envs"; then
