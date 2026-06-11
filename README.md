@@ -83,32 +83,33 @@ configuration. Configure manager, worker, and reviewer model blocks in `.env`;
 if none are active, HOCA fails closed instead of silently falling back to a
 hard-coded model.
 
-The role model blocks below can point at any LiteLLM/OpenAI-compatible model
-backend. For local runtimes such as MLX server, LM Studio, llama.cpp server,
-LocalAI, or vLLM, set the model name, local `*_MODEL_BASE_URL`, and whatever API
-key placeholder that server expects. For cloud providers, leave
-`*_MODEL_BASE_URL` empty unless the provider or gateway requires a custom
-endpoint.
+The role model blocks below are user-owned. Set the exact model name, base URL,
+and API key expected by your local runtime, gateway, or cloud provider. For
+local OpenAI-compatible runtimes such as MLX server, llama.cpp server, LM
+Studio, LocalAI, vLLM, or NVIDIA Spark-style local endpoints, set
+`*_MODEL_BASE_URL` to that server's `/v1` endpoint and use the API key
+placeholder it expects. For cloud providers, leave `*_MODEL_BASE_URL` empty
+unless the provider or gateway requires a custom endpoint.
 
 ### Role Model Pool
 
 HOCA routes manager, worker, and reviewer phases through role-scoped model
 configuration in `.env`. A practical local MLX setup for a 48 GB Apple Silicon
-machine is one resident coding model for all roles:
+machine is one resident agentic model for all roles:
 
 ```env
 HOCA_MANAGER_MODEL_NAME=manager
-HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
 HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
 HOCA_MANAGER_MODEL_API_KEY=local
 
 HOCA_WORKER_MODEL_NAME=worker
-HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
 HOCA_WORKER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
 HOCA_WORKER_MODEL_API_KEY=local
 
 HOCA_REVIEWER_MODEL_NAME=reviewer
-HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
 HOCA_REVIEWER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
 HOCA_REVIEWER_MODEL_API_KEY=local
 ```
@@ -129,8 +130,9 @@ to that phase, and API keys are redacted from reports and logs.
 
 ### Backend Keep-Alive
 
-Local backends should keep the selected model resident between HOCA phases. For
-the default one-model Ollama setup, start Ollama with:
+Local backends should keep the selected model resident between HOCA phases.
+Use your backend's own controls for residency, idle unload, cache size, and
+served-model count. For Ollama, that might look like:
 
 ```bash
 export OLLAMA_KEEP_ALIVE=30m
@@ -139,22 +141,21 @@ ollama serve
 ```
 
 `OLLAMA_KEEP_ALIVE` prevents an idle unload between manager, worker, reviewer,
-and repair rounds. `OLLAMA_MAX_LOADED_MODELS=1` matches the default
-single-model policy; raise it only when the doctor residency check says your RAM
-can hold every configured role model plus Docker and sandbox memory.
+and repair rounds. `OLLAMA_MAX_LOADED_MODELS=1` matches the recommended
+single-model local policy; raise it only when the doctor residency check says
+your RAM can hold every configured role model plus Docker and sandbox memory.
 
-For LM Studio, keep the local server running and disable idle model unloading in
-the app settings when available. For llama.cpp server, MLX servers, LocalAI, and
-vLLM, use the backend's keep-alive, served-model, or idle-timeout option so the
-same model stays loaded across consecutive HOCA phases. If you opt into multiple
-local role models, configure the backend to keep all of them resident only when
-your machine has enough RAM; otherwise expect reloads or swap churn.
+For MLX, llama.cpp, LM Studio, LocalAI, vLLM, and other OpenAI-compatible
+servers, keep the server process running, disable idle model unloading where
+available, and cap prompt/model cache size when needed. If you opt into
+multiple local role models, configure the backend to keep all of them resident
+only when your machine has enough RAM; otherwise expect reloads or swap churn.
 
 ### Local OpenAI-Compatible And Cloud Models
 
 Use the same role blocks for local OpenAI-compatible servers and cloud models.
-Local examples include LM Studio, llama.cpp's OpenAI-compatible server, MLX
-servers, LocalAI, and vLLM:
+Local examples include MLX, llama.cpp's OpenAI-compatible server, LM Studio,
+LocalAI, vLLM, and any other local runtime that exposes the OpenAI protocol:
 
 ```env
 HOCA_REVIEWER_MODEL_NAME=reviewer

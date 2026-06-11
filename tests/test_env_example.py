@@ -61,11 +61,11 @@ def test_env_example_defaults_all_roles_to_one_model() -> None:
     ]
 
     assert uncommented_model_lines == [
-        "HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
-        "HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
-        "HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+        "HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit",
+        "HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit",
+        "HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit",
     ]
-    assert "HOCA fails\n# closed when no role model is configured" in content
+    assert "HOCA is model\n# agnostic and fails closed" in content
     assert "Explicit multi-model opt-in" in content
 
 
@@ -73,7 +73,7 @@ def test_readme_documents_single_model_residency_default() -> None:
     content = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "HOCA fails closed" in content
-    assert "one resident coding model for all roles" in content
+    assert "one resident agentic model for all roles" in content
     assert "swap churn" in content
     assert "Multi-model routing remains supported as an explicit opt-in" in content
 
@@ -84,12 +84,13 @@ def test_docs_explain_backend_keep_alive_settings() -> None:
 
     assert "# OLLAMA_KEEP_ALIVE=30m" in env_content
     assert "# OLLAMA_MAX_LOADED_MODELS=1" in env_content
-    assert "disable idle unload" in env_content
+    assert "disable idle\n# unload" in env_content
     assert "### Backend Keep-Alive" in readme
     assert "export OLLAMA_KEEP_ALIVE=30m" in readme
     assert "export OLLAMA_MAX_LOADED_MODELS=1" in readme
     assert "disable idle model unloading" in readme
-    assert "idle-timeout" in readme
+    assert "cap prompt/model cache size" in readme
+    assert "served-model count" in readme
 
 
 def test_readme_links_performance_guide_and_fast_defaults() -> None:
