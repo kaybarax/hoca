@@ -58,6 +58,14 @@ SANDBOX_USER="$(sandbox_resolve_user "$PROJECT_PATH")"
 SANDBOX_HOME="$(sandbox_prepare_home "$RUN_DIR")"
 NETWORK_MODE="$(sandbox_resolve_network_mode "$AGENT_ROLE" "$RUN_DIR")"
 sandbox_record_network_policy "$AGENT_ROLE" "$RUN_DIR"
+if [ "$NETWORK_MODE" = "offline" ] && printf '%s\n' "$CONTAINER_BASE_URL" | grep -q 'host\.docker\.internal'; then
+  {
+    echo "HOCA sandbox network_mode=offline cannot reach a host-local LLM endpoint."
+    echo "Resolved LLM_BASE_URL uses host.docker.internal after localhost remapping."
+    echo "Use an in-container LLM endpoint or opt into HOCA_NETWORK_MODE=package-install/full for this run."
+  } | tee "$RUN_DIR/openhands-error.txt"
+  exit 1
+fi
 record_timing_event() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
     "${HOCA_PYTHON:-python3}" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
@@ -122,8 +130,8 @@ cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 echo "Sandbox setup complete."
 echo "  bun: $(command -v bun 2>/dev/null && bun --version || echo 'not available')"
 echo "  node: $(command -v node 2>/dev/null && node --version || echo 'not available')"
-echo "  pnpm: $(command -v pnpm 2>/dev/null && pnpm --version || echo 'not available')"
-echo "  yarn: $(command -v yarn 2>/dev/null && yarn --version || echo 'not available')"
+echo "  pnpm: $(command -v pnpm 2>/dev/null || echo 'not available')"
+echo "  yarn: $(command -v yarn 2>/dev/null || echo 'not available')"
 echo "  openhands: $(command -v openhands 2>/dev/null && openhands --version 2>/dev/null || echo 'not available')"
 SETUP_EOF
 chmod +x "$SETUP_SCRIPT"
@@ -210,6 +218,27 @@ docker exec \
     OPENHANDS_PERSISTENCE_DIR=/hoca-run/openhands-persistence
     export OPENHANDS_PERSISTENCE_DIR
     mkdir -p \"\$OPENHANDS_PERSISTENCE_DIR\"
+    cat > /hoca-run/sitecustomize.py <<'PY'
+try:
+    from openhands_cli.stores.agent_store import AgentStore
+
+    _hoca_original_build_agent_context = AgentStore._build_agent_context
+
+    def _hoca_build_agent_context(self):
+        context = _hoca_original_build_agent_context(self)
+        return context.model_copy(
+            update={
+                'skills': [],
+                'load_user_skills': False,
+                'load_public_skills': False,
+                'marketplace_path': None,
+            }
+        )
+
+    AgentStore._build_agent_context = _hoca_build_agent_context
+except Exception:
+    pass
+PY
     OPENHANDS_PYTHON=/opt/openhands-tools/openhands/bin/python
     if [ ! -x \"\$OPENHANDS_PYTHON\" ]; then
       OPENHANDS_PYTHON=python3
@@ -230,6 +259,7 @@ import sys
 from pathlib import Path
 
 from openhands.sdk import LLM
+from openhands.sdk.context.agent_context import AgentContext
 from openhands_cli.utils import get_default_cli_agent
 
 model, base_url, api_key, settings_path = sys.argv[1:5]
@@ -243,7 +273,15 @@ llm = LLM(
     extended_thinking_budget=None,
     timeout=600,
 )
-agent = get_default_cli_agent(llm)
+agent = get_default_cli_agent(llm).model_copy(
+    update={
+        'agent_context': AgentContext(
+            load_user_skills=False,
+            load_public_skills=False,
+            marketplace_path=None,
+        )
+    }
+)
 Path(settings_path).write_text(agent.model_dump_json(), encoding=\"utf-8\")
 PY
       printf '%s\n' \"\$SETTINGS_FINGERPRINT\" > \"\$SETTINGS_FINGERPRINT_PATH\"
@@ -252,7 +290,7 @@ PY
 
     TASK_CONTENT=\$(cat /hoca-run/task-input.txt)
 
-    openhands --headless --task \"\$TASK_CONTENT\" --override-with-envs --json
+    PYTHONPATH=/hoca-run:\${PYTHONPATH:-} openhands --headless --task \"\$TASK_CONTENT\" --override-with-envs --json
   " 2>"$RUN_DIR/openhands-stderr.log" | \
   PYTHONPATH="$HOCA_ROOT" python3 -c "
 import json

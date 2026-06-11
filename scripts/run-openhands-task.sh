@@ -194,11 +194,33 @@ if [ -n "$OPENHANDS_PYTHON" ] && [ -x "$OPENHANDS_PYTHON" ]; then
   OPENHANDS_PERSISTENCE_DIR="$RUN_DIR/openhands-persistence"
   export OPENHANDS_PERSISTENCE_DIR
   mkdir -p "$OPENHANDS_PERSISTENCE_DIR"
+  cat > "$RUN_DIR/sitecustomize.py" <<'PY'
+try:
+    from openhands_cli.stores.agent_store import AgentStore
+
+    _hoca_original_build_agent_context = AgentStore._build_agent_context
+
+    def _hoca_build_agent_context(self):
+        context = _hoca_original_build_agent_context(self)
+        return context.model_copy(
+            update={
+                "skills": [],
+                "load_user_skills": False,
+                "load_public_skills": False,
+                "marketplace_path": None,
+            }
+        )
+
+    AgentStore._build_agent_context = _hoca_build_agent_context
+except Exception:
+    pass
+PY
   "$OPENHANDS_PYTHON" - "$MODEL" "$BASE_URL" "$API_KEY" "$OPENHANDS_PERSISTENCE_DIR/agent_settings.json" <<'PY'
 import sys
 from pathlib import Path
 
 from openhands.sdk import LLM
+from openhands.sdk.context.agent_context import AgentContext
 from openhands_cli.utils import get_default_cli_agent
 
 model, base_url, api_key, settings_path = sys.argv[1:5]
@@ -212,7 +234,15 @@ llm = LLM(
     extended_thinking_budget=None,
     timeout=600,
 )
-agent = get_default_cli_agent(llm)
+agent = get_default_cli_agent(llm).model_copy(
+    update={
+        'agent_context': AgentContext(
+            load_user_skills=False,
+            load_public_skills=False,
+            marketplace_path=None,
+        )
+    }
+)
 Path(settings_path).write_text(agent.model_dump_json(), encoding="utf-8")
 PY
   echo "Using isolated OpenHands config: $OPENHANDS_PERSISTENCE_DIR"
@@ -310,6 +340,7 @@ if base_url:
     env_override['LLM_BASE_URL'] = base_url
 env_override['LLM_API_KEY'] = api_key
 env_override['CI'] = 'true'
+env_override['PYTHONPATH'] = str(run_dir) + os.pathsep + env_override.get('PYTHONPATH', '')
 
 with open(output_file, 'w') as out_f:
     proc = subprocess.Popen(

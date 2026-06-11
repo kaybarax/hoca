@@ -246,9 +246,17 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert "TASK_CONTENT=\\$(cat /hoca-run/task-input.txt)" in script
     assert "OPENHANDS_PERSISTENCE_DIR=/hoca-run/openhands-persistence" in script
     assert "OPENHANDS_PYTHON=/opt/openhands-tools/openhands/bin/python" in script
+    assert "network_mode=offline cannot reach a host-local LLM endpoint" in script
     assert "reasoning_effort=None" in script
     assert "enable_encrypted_reasoning=False" in script
     assert "extended_thinking_budget=None" in script
+    assert "load_user_skills=False" in script
+    assert "load_public_skills=False" in script
+    assert "marketplace_path=None" in script
+    assert "cat > /hoca-run/sitecustomize.py <<'PY'" in script
+    assert "'skills': []" in script
+    assert "AgentStore._build_agent_context = _hoca_build_agent_context" in script
+    assert "PYTHONPATH=/hoca-run:\\${PYTHONPATH:-} openhands" in script
     assert 'openhands --headless --task \\"\\$TASK_CONTENT\\" --override-with-envs --json' in script
     assert '"kind": "ConversationErrorEvent"' in script
     assert "monitor_process_stream(" in script
@@ -260,6 +268,8 @@ def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:
 
     assert "elif [ -f yarn.lock ]" in script
     assert "yarn install --frozen-lockfile" in script
+    assert 'echo "  pnpm: $(command -v pnpm 2>/dev/null || echo \'not available\')"' in script
+    assert 'echo "  yarn: $(command -v yarn 2>/dev/null || echo \'not available\')"' in script
     assert re.search(r"(^|\s)npm\s+install\b", script) is None
 
 
