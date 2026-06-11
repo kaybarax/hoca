@@ -6,10 +6,12 @@ import pytest
 
 from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config
 from hoca.role_model_env import (
+    RoleLlmSelection,
     apply_role_to_env,
     export_shell,
     hermes_provider_for_model,
     model_pool_doctor_lines,
+    openai_compatible_model_for_selection,
     pool_credential_env_keys,
     resolve_role_llm,
     should_resolve_role_model,
@@ -270,5 +272,18 @@ def test_load_config_empty_pool_ignores_direct_llm_env(
 
 def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:
     assert hermes_provider_for_model("deepseek/deepseek-v4-flash") == "deepseek"
+    assert hermes_provider_for_model("openai/ggml-org/gpt-oss-20b-GGUF") == "openai"
     assert hermes_provider_for_model("openrouter/openai/gpt-4o-mini") == "openrouter"
     assert hermes_provider_for_model("ollama/qwen-14b-pro") == ""
+
+
+def test_openai_compatible_model_for_selection_prefixes_local_base_url() -> None:
+    selection = RoleLlmSelection(
+        role="worker",
+        slot_name="worker",
+        llm_model="ggml-org/gpt-oss-20b-GGUF",
+        base_url="http://127.0.0.1:8080/v1",
+        api_key="local",
+    )
+
+    assert openai_compatible_model_for_selection(selection) == ("openai/ggml-org/gpt-oss-20b-GGUF")

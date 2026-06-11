@@ -37,7 +37,8 @@ def make_fake_profile_hermes(fake_bin: Path) -> None:
     hermes.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" > "$HERMES_CAPTURE_ENV"\n'
+        'printf "ARGS=%s\\n" "$*" > "$HERMES_CAPTURE_ENV"\n'
+        'printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" >> "$HERMES_CAPTURE_ENV"\n'
         'printf "HOCA_SKIP_ROLE_MODEL_RESOLUTION=%s\\n" "${HOCA_SKIP_ROLE_MODEL_RESOLUTION:-}" >> "$HERMES_CAPTURE_ENV"\n'
         "mkdir -p reviews logs\n"
         "cat > reviews/review-report-1.json <<'JSON'\n"
@@ -167,6 +168,44 @@ def test_profile_mode_pins_nested_reviewer_to_selected_model(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     captured = capture_env.read_text(encoding="utf-8")
     assert "LLM_MODEL=deepseek/deepseek-v4-flash" in captured
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=true" in captured
+
+
+def test_profile_mode_normalizes_openai_compatible_reviewer_model(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    make_fake_profile_hermes(fake_bin)
+    hermes_home = tmp_path / "hermes-home"
+    (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
+    capture_env = tmp_path / "reviewer-env.txt"
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-profile"
+    run_dir.mkdir(parents=True)
+    task_spec_path = write_task_spec(run_dir)
+
+    result = run_script(
+        str(project),
+        str(task_spec_path),
+        str(run_dir),
+        "1",
+        extra_env={
+            "HERMES_HOME": str(hermes_home),
+            "HOCA_REVIEWER_MODEL_NAME": "reviewer-local",
+            "HOCA_REVIEWER_MODEL_MODEL": "ggml-org/gpt-oss-20b-GGUF",
+            "HOCA_REVIEWER_MODEL_BASE_URL": "http://127.0.0.1:8080/v1",
+            "HOCA_REVIEWER_MODEL_API_KEY": "local",
+            "HERMES_CAPTURE_ENV": str(capture_env),
+        },
+        fake_bin=fake_bin,
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = capture_env.read_text(encoding="utf-8")
+    assert "--model openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--provider openai" in captured
+    assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
     assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=true" in captured
 
 

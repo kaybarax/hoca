@@ -32,6 +32,7 @@ HERMES_PROVIDER_BY_MODEL_PREFIX: dict[str, str] = {
     "deepseek": "deepseek",
     "gemini": "google",
     "google": "google",
+    "openai": "openai",
     "openrouter": "openrouter",
     "together": "together",
     "together_ai": "together",
@@ -124,6 +125,17 @@ def _provider_api_key_env_vars(model: str, api_key: str) -> dict[str, str]:
 def hermes_provider_for_model(model: str) -> str:
     provider = model.split("/", 1)[0].lower()
     return HERMES_PROVIDER_BY_MODEL_PREFIX.get(provider, "")
+
+
+def openai_compatible_model_for_selection(selection: RoleLlmSelection) -> str:
+    model = selection.llm_model.strip()
+    if not model:
+        return model
+    if hermes_provider_for_model(model) or model.startswith("ollama/"):
+        return model
+    if selection.base_url.strip():
+        return f"openai/{model}"
+    return model
 
 
 def pool_credential_env_keys(env: dict[str, str]) -> list[str]:

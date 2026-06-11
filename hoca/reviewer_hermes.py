@@ -17,6 +17,7 @@ from hoca.role_model_env import (
     apply_role_to_env,
     hermes_provider_for_model,
     log_line_for_selection,
+    openai_compatible_model_for_selection,
     resolve_role_llm,
     strip_pool_credentials,
 )
@@ -246,13 +247,15 @@ def _invoke_hermes_reviewer(
     ]
     cfg = load_config()
     selection = resolve_role_llm("reviewer", cfg)
-    if selection.llm_model.strip():
-        command.extend(["--model", selection.llm_model])
-    provider = hermes_provider_for_model(selection.llm_model)
+    hermes_model = openai_compatible_model_for_selection(selection)
+    if hermes_model:
+        command.extend(["--model", hermes_model])
+    provider = hermes_provider_for_model(hermes_model)
     if provider:
         command.extend(["--provider", provider])
     env = strip_pool_credentials(apply_role_to_env("reviewer", cfg, os.environ.copy()))
     env.update(selection.env_vars())
+    env["LLM_MODEL"] = hermes_model
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
     # The reviewer profile invokes the OpenHands review wrapper as a child.

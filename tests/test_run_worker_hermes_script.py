@@ -114,6 +114,10 @@ def make_fake_worker_hermes(fake_bin: Path) -> None:
     hermes.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
+        'if [[ -n "${HERMES_CAPTURE_ENV:-}" ]]; then\n'
+        '  printf "ARGS=%s\\n" "$*" > "$HERMES_CAPTURE_ENV"\n'
+        '  printf "LLM_MODEL=%s\\n" "${LLM_MODEL:-}" >> "$HERMES_CAPTURE_ENV"\n'
+        "fi\n"
         'RUN_DIR="${HERMES_TEST_RUN_DIR:?}"\n'
         'mkdir -p "$RUN_DIR/attempts" "$RUN_DIR/logs"\n'
         'cat > "$RUN_DIR/attempts/worker-attempt-1.json" <<EOF\n'
@@ -156,6 +160,45 @@ def test_script_profile_mode_writes_worker_attempt(tmp_path: Path) -> None:
     data = json.loads(attempt.read_text(encoding="utf-8"))
     assert data["status"] in {"completed", "failed", "blocked"}
     assert data["round"] == 1
+
+
+def test_profile_mode_normalizes_openai_compatible_worker_model(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    make_fake_ollama(fake_bin)
+    make_fake_worker_hermes(fake_bin)
+    hermes_home = tmp_path / "hermes-home"
+    (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
+    capture_env = tmp_path / "worker-env.txt"
+
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-shell"
+    run_dir.mkdir(parents=True)
+    task_spec_path = write_task_spec(run_dir)
+
+    result = run_script(
+        str(project),
+        str(task_spec_path),
+        str(run_dir),
+        "1",
+        extra_env={
+            "HERMES_HOME": str(hermes_home),
+            "HERMES_TEST_RUN_DIR": str(run_dir),
+            "HERMES_CAPTURE_ENV": str(capture_env),
+            "HOCA_WORKER_MODEL_NAME": "worker-local",
+            "HOCA_WORKER_MODEL_MODEL": "ggml-org/gpt-oss-20b-GGUF",
+            "HOCA_WORKER_MODEL_BASE_URL": "http://127.0.0.1:8080/v1",
+            "HOCA_WORKER_MODEL_API_KEY": "local",
+        },
+        fake_bin=fake_bin,
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = capture_env.read_text(encoding="utf-8")
+    assert "--model openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "--provider openai" in captured
+    assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
 
 
 def test_script_fails_without_hermes(tmp_path: Path) -> None:
