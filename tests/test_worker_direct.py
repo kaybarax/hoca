@@ -91,12 +91,30 @@ def test_build_worker_direct_prompt_contains_every_task_spec_binding() -> None:
     assert "Verify repository diff after edits" in prompt
     assert "After one relevant validation command passes" in prompt
     assert "Do not continue exploring" in prompt
-    assert "create temporary git repositories" in prompt
+    assert "use temporary git repositories" in prompt
     assert "never run git init, git add, or git commit in any temp path" in prompt
     assert "never use `rm -rf`, `rm -Rf`, or other recursive cleanup" in prompt
     assert "do not recursively list the repository" in prompt
-    assert "remove an empty temp directory with `rmdir`" in prompt
+    assert "remove empty dirs with `rmdir`" in prompt
     assert "hermes" not in prompt.lower()
+
+
+def test_build_worker_direct_prompt_adds_repo_clean_validation_rule() -> None:
+    prompt = build_worker_direct_prompt(
+        spec=sample_task_spec(
+            raw_request="Add a repeatable repo-clean verification command",
+            goal="Add a repeatable repo-clean verification command",
+        ),
+        project_path=Path(f"{MAC_HOME}/project"),
+        run_dir=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test"),
+        round_number=1,
+        task_spec_path=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test/task-spec.json"),
+    )
+
+    assert "Repo-clean validation rule" in prompt
+    assert "do not create a temp git repo or fake commit history" in prompt.lower()
+    assert "unit test that mocks git output" in prompt
+    assert "never use rm -rf" in prompt.lower()
 
 
 def test_build_worker_direct_prompt_injects_redacted_repair_brief() -> None:

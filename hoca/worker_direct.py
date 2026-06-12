@@ -61,6 +61,14 @@ def build_worker_direct_prompt(
             "\nRepair brief for this attempt (scope override for this round only):\n"
             f"{_redact_secret_like_lines(repair_brief.strip())}\n"
         )
+    repo_clean_section = ""
+    task_text = f"{spec.raw_request} {spec.goal}".lower()
+    if "repo-clean" in task_text or "committed generated artifacts" in task_text:
+        repo_clean_section = (
+            "\nRepo-clean validation rule:\n"
+            "- Validate with the existing checkout or a unit test that mocks git output; do not create a temp git repo or fake commit history.\n"
+            "- If scratch files are needed, remove exact files only or use rmdir on empty directories; never use rm -rf.\n"
+        )
 
     prompt = (
         "Execute one bounded HOCA worker attempt directly in OpenHands.\n\n"
@@ -70,6 +78,7 @@ def build_worker_direct_prompt(
         f"- round: {round_number}\n"
         f"- task_spec_path: {task_spec_path.resolve()}\n"
         f"{repair_section}\n"
+        f"{repo_clean_section}\n"
         "Spec:\n"
         f"- run_id: {spec.run_id}\n"
         f"- repo_root_reference_only: {spec.repo_root}\n"
@@ -89,26 +98,26 @@ def build_worker_direct_prompt(
         f"{_sandbox_section(spec)}"
         "\nRequired workflow:\n"
         "1. Treat execution_project_path as the only repository root. Do not cd to repo_root_reference_only.\n"
-        "2. Inspect current repo state and prior round artifacts first. Use git status/diff and the task's expected files; do not recursively list the repository, dependency directories, or generated artifacts.\n"
-        "3. Make only scoped edits needed for the goal and acceptance criteria.\n"
-        "4. When using editing tools, send every required argument in one call: full path plus exact old/new text or insertion text.\n"
+        "2. Inspect current repo state and prior artifacts with git status/diff and the task's expected files; do not recursively list the repository, dependency directories, or generated artifacts.\n"
+        "3. Make only scoped edits.\n"
+        "4. When using editing tools, send every required argument in one call.\n"
         "5. Verify repository diff after edits; if no diff exists, fix the edit or report a blocker.\n"
-        "6. Run the smallest useful validation from test_commands, or explain why none apply.\n"
-        "7. Leave Git lifecycle to the HOCA manager: do not stage, commit, push, merge, open PRs, or create temporary git repositories for validation.\n"
-        "8. If you need a scratch workspace, use non-git temporary files or fixtures inside execution_project_path; never run git init, git add, or git commit in any temp path.\n"
-        "9. Prefer existing helpers and ownership boundaries; avoid one-off modes and needless abstractions.\n"
-        "10. After one relevant validation command passes, stop immediately. Do not continue exploring, broaden validation, or make optional edits.\n"
-        "11. Finish with a concise summary, validation, changed files, and any blocker.\n\n"
+        "6. Run the smallest useful validation from test_commands.\n"
+        "7. Leave Git lifecycle to the HOCA manager: do not stage, commit, push, merge, open PRs, or use temporary git repositories.\n"
+        "8. If you need a scratch workspace, use non-git temp files or fixtures in execution_project_path; never run git init, git add, or git commit in any temp path.\n"
+        "9. Prefer existing helpers; avoid one-off modes and needless abstractions.\n"
+        "10. After one relevant validation command passes, stop. Do not continue exploring, broaden validation, or make optional edits.\n"
+        "11. Finish with concise summary, validation, changed files, and blocker.\n\n"
         "Safety:\n"
         "- Do not read or modify secret-like files (.env, keys, tokens, credential stores).\n"
-        "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
+        "- If the task mentions .env.example, access only that exact path.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, OLLAMA_MODEL, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
-        "- If you create temporary verification files or a temp directory, clean up only the exact files you created; remove an empty temp directory with `rmdir` and never use `rm -rf`, `rm -Rf`, or other recursive cleanup.\n"
+        "- If you create temporary verification files or a temp directory, clean up exact files only; remove empty dirs with `rmdir` and never use `rm -rf`, `rm -Rf`, or other recursive cleanup.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Report:\n"
         "- Leave enough evidence for HOCA to infer a worker attempt report.\n"
-        "- State validation commands and results; if skipped, state the concrete reason.\n"
+        "- State validation commands and results; if skipped, say why.\n"
         "- If blocked, stop and name the blocker instead of broadening scope.\n"
     )
     return _redact_secret_like_lines(prompt)
