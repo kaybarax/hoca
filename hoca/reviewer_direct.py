@@ -20,6 +20,7 @@ from hoca.reviewer_hermes import (
 )
 
 DEFAULT_DIRECT_REVIEW_TIMEOUT_SECONDS = 600
+DEFAULT_DIRECT_REVIEW_POST_EXIT_GRACE_SECONDS = 10
 
 
 def _direct_review_timeout_seconds(env: dict[str, str]) -> int:
@@ -106,9 +107,11 @@ def _invoke_openhands_review_direct(
             text=True,
         )
         while process.poll() is None:
-            if _structured_report_ready(report_path) or _recover_structured_report_from_log(
-                stdout_path, report_path
-            ) or _recover_structured_report_from_log(stderr_path, report_path):
+            if (
+                _structured_report_ready(report_path)
+                or _recover_structured_report_from_log(stdout_path, report_path)
+                or _recover_structured_report_from_log(stderr_path, report_path)
+            ):
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -142,6 +145,15 @@ def _invoke_openhands_review_direct(
                     stdout_path.read_text(encoding="utf-8", errors="replace"),
                     stderr_path.read_text(encoding="utf-8", errors="replace") + timeout_message,
                 )
+            time.sleep(0.5)
+        post_exit_grace_deadline = time.monotonic() + DEFAULT_DIRECT_REVIEW_POST_EXIT_GRACE_SECONDS
+        while time.monotonic() < post_exit_grace_deadline:
+            if (
+                _structured_report_ready(report_path)
+                or _recover_structured_report_from_log(stdout_path, report_path)
+                or _recover_structured_report_from_log(stderr_path, report_path)
+            ):
+                break
             time.sleep(0.5)
         returncode = process.returncode if process.returncode is not None else 1
     return CommandResult(
