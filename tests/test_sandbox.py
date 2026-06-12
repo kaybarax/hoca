@@ -245,6 +245,7 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert 'SANDBOX_TASK="${SANDBOX_TASK//$RUN_DIR/\\/hoca-run}"' in script
     assert '-v "${PROJECT_PATH}:/workspace"' in script
     assert '-v "${RUN_DIR}:/hoca-run"' in script
+    assert '-v "${RUN_DIR}:/hoca-runs"' in script
     assert '-v "${RUN_DIR}:${RUN_DIR}"' in script
     assert 'printf \'%s\' "$SANDBOX_TASK" > "$TASK_FILE"' in script
     assert "TASK_CONTENT=\\$(cat /hoca-run/task-input.txt)" in script

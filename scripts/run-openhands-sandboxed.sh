@@ -165,6 +165,7 @@ DOCKER_RUN_ARGS=(
   -v "${PROJECT_PATH}:/workspace"
   "${GIT_DIR_MOUNTS[@]}"
   -v "${RUN_DIR}:/hoca-run"
+  -v "${RUN_DIR}:/hoca-runs"
   -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
   -v "${PNPM_STORE_VOLUME}:${PNPM_STORE_DIR}"
