@@ -199,6 +199,13 @@ Review-only constraints:
 - Use the provided test summary as the primary validation evidence. Do not rerun
   build, lint, or test commands unless the summary is missing, failed, or clearly
   inconsistent with the diff.
+- Judge tool and script behavior from the diff, the existing checkout, and
+  documented semantics. Do not build side experiments: never create temporary
+  git repositories or fixture trees, and never use rm -rf, rm -Rf, or other
+  recursive deletion anywhere, including cleanup.
+- Never place shell commands inside delegated task or subagent instructions;
+  the deterministic safety monitor scans all streamed text and stops the
+  review when it sees dangerous command text.
 
 Structural quality bar:
 - Block correctness, security, scope, test, and material maintainability regressions.

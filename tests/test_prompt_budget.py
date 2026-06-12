@@ -48,6 +48,9 @@ def test_direct_reviewer_prompt_keeps_report_rules_without_long_rubric() -> None
     assert "verdict: LGTM | fix_required | blocked" in script
     assert "Do not implement fixes or edit repository files" in script
     assert "Use the provided test summary as the primary validation evidence" in script
+    assert "never create temporary" in script
+    assert "never use rm -rf, rm -Rf, or other" in script
+    assert "Never place shell commands inside delegated task or subagent instructions" in script
     assert "Severity rubric:" in script
     assert "Distinguish blockers from PR tech debt" in script
     assert "roughly 1000 lines" not in script
