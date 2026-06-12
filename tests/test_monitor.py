@@ -710,9 +710,7 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
 
-    def test_dangerous_text_in_pretty_printed_summary_fragment_is_ignored(
-        self, tmp_path: Path
-    ):
+    def test_dangerous_text_in_pretty_printed_summary_fragment_is_ignored(self, tmp_path: Path):
         import io
 
         stream = io.StringIO(
@@ -734,9 +732,48 @@ class TestMonitorProcessStream:
         import io
 
         stream = io.StringIO(
-            'working\n'
+            "working\n"
             '        "old_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
             '        "new_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
+            "done\n"
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_file_editor_arguments_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '    "arguments": "{\\"command\\": \\"str_replace\\", '
+            '\\"summary\\": \\"Add repo-clean script\\", '
+            '\\"old_str\\": \\"    \\\\\\"clean\\\\\\": \\\\\\"rm -rf build/ && rm -rf dist/\\\\\\"\\"}"\n'
+            "done\n"
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_passive_arguments_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '    "arguments": "{\\"summary\\": \\"Planning the repo-clean verification command\\", '
+            '\\"thought\\": \\"The task mentions rm -rf, but this is only reasoning text.\\"}"\n'
             "done\n"
         )
         result = monitor_process_stream(

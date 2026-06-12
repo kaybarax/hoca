@@ -56,6 +56,7 @@ _VALIDATION_COMMAND = re.compile(
     r"python(?:3)?\s+-m\s+pytest\b"
     r")"
 )
+_PASSIVE_ARGUMENT_KEYS = ("summary", "thought", "reasoning_content", "llm_message")
 
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset(
@@ -200,6 +201,14 @@ def _is_temp_repo_git_add_all(line: str) -> bool:
             line,
         )
     )
+
+
+def _arguments_fragment_should_be_skipped(line: str) -> bool:
+    if '"arguments":' not in line:
+        return False
+    if '"command"' in line:
+        return False
+    return any(key in line for key in _PASSIVE_ARGUMENT_KEYS)
 
 
 def check_dangerous_command(line: str) -> str | None:
@@ -373,6 +382,12 @@ def should_scan_line_for_policy(line: str) -> bool:
         r'old_content|new_content|old_str|new_str|file_text)"\s*:',
         stripped,
     ):
+        return False
+    if '"arguments":' in stripped and any(
+        key in stripped for key in ("old_str", "new_str", "old_content", "new_content", "file_text")
+    ):
+        return False
+    if _arguments_fragment_should_be_skipped(stripped):
         return False
     if not stripped.startswith("{"):
         return True
