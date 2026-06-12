@@ -107,6 +107,7 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Manager-owned Git lifecycle only" in prompt
     assert "git add, git commit, git push" in prompt
     assert "Do not stage, commit, push" in prompt
+    assert "clean up only the exact files or temp directory you created" in prompt
     assert "access only that exact path" in prompt
     assert "never use .env* globs" in prompt
     assert "Bounded iteration discipline" in prompt

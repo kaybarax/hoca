@@ -92,6 +92,7 @@ def test_build_worker_direct_prompt_contains_every_task_spec_binding() -> None:
     assert "After one relevant validation command passes" in prompt
     assert "Do not continue exploring" in prompt
     assert "do not recursively list the repository" in prompt
+    assert "clean up only the exact files or temp directory you created" in prompt
     assert "hermes" not in prompt.lower()
 
 
