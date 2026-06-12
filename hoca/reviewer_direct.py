@@ -110,14 +110,18 @@ def _invoke_openhands_review_direct(
                 stdout_path, report_path
             ) or _recover_structured_report_from_log(stderr_path, report_path):
                 try:
-                    process.terminate()
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+                    try:
+                        process.terminate()
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                returncode = process.returncode if process.returncode is not None else 0
                 return CommandResult(
                     tuple(command),
-                    0,
+                    returncode,
                     stdout_path.read_text(encoding="utf-8", errors="replace"),
                     stderr_path.read_text(encoding="utf-8", errors="replace"),
                 )
