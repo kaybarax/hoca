@@ -59,6 +59,13 @@ def _recover_structured_report_from_log(log_path: Path, report_path: Path) -> bo
     return True
 
 
+def _recover_structured_report_from_logs(log_paths: list[Path], report_path: Path) -> bool:
+    for log_path in log_paths:
+        if _recover_structured_report_from_log(log_path, report_path):
+            return True
+    return False
+
+
 def _invoke_openhands_review_direct(
     *,
     project_path: Path,
@@ -147,13 +154,21 @@ def _evaluate_direct_report(
     report_path = review_report_path(run_dir, round_number)
     stdout_path = run_dir / "logs" / "reviewer-direct-stdout.txt"
     stderr_path = run_dir / "logs" / "reviewer-direct-stderr.txt"
-    if not report_path.exists():
-        _recover_structured_report_from_log(stdout_path, report_path)
-        if not report_path.exists():
-            _recover_structured_report_from_log(stderr_path, report_path)
-        if not report_path.exists():
-            _recover_structured_report_from_log(run_dir / "openhands-review.txt", report_path)
-    if not report_path.exists():
+    candidate_logs = [
+        stdout_path,
+        stderr_path,
+        run_dir / "openhands-review-stderr.log",
+        run_dir / "openhands-review.txt",
+        run_dir / "openhands-output.log",
+        run_dir / "openhands-output.jsonl",
+        run_dir / "openhands-stderr.log",
+        run_dir / "review" / "openhands-output.log",
+        run_dir / "review" / "openhands-output.jsonl",
+        run_dir / "review" / "openhands-stderr.log",
+    ]
+    if not _structured_report_ready(report_path):
+        _recover_structured_report_from_logs(candidate_logs, report_path)
+    if not _structured_report_ready(report_path):
         path = _write_blocked_report(
             run_dir=run_dir,
             round_number=round_number,

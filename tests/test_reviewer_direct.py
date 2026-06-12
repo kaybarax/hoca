@@ -105,6 +105,34 @@ class FakeStdoutReviewProcess:
         self.returncode = -9
 
 
+class FakeCopiedStderrReviewProcess:
+    def __init__(self, command, *, copied_stderr_path: Path):
+        self.command = tuple(command)
+        self.returncode: int | None = 0
+        copied_stderr_path.write_text(
+            "OpenHands emitted the report on stderr.\n"
+            "```json\n"
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Recovered from copied stderr."],'
+            '"known_followups":[]}}\n'
+            "```\n",
+            encoding="utf-8",
+        )
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        self.returncode = 0
+        return 0
+
+    def terminate(self):
+        self.returncode = -15
+
+    def kill(self):
+        self.returncode = -9
+
+
 class FakeHangingReviewProcess:
     def __init__(self, command):
         self.command = tuple(command)
@@ -244,6 +272,38 @@ def test_run_reviewer_direct_recovers_fenced_report_from_stdout(
     report = HocaReviewReport.from_json(result.review_report_path.read_text())
     assert report.verdict == "LGTM"
     assert report.pr_notes["summary"] == ["Recovered from stdout."]
+
+
+def test_run_reviewer_direct_recovers_fenced_report_from_copied_stderr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+
+    def fake_popen(command, **kwargs):
+        return FakeCopiedStderrReviewProcess(
+            command,
+            copied_stderr_path=run_dir / "openhands-review-stderr.log",
+        )
+
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
+
+    result = run_reviewer_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.exit_code == 0
+    report = HocaReviewReport.from_json(result.review_report_path.read_text())
+    assert report.verdict == "LGTM"
+    assert report.pr_notes["summary"] == ["Recovered from copied stderr."]
 
 
 def test_run_reviewer_direct_times_out_without_structured_report(
