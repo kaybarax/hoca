@@ -104,7 +104,7 @@ def build_worker_direct_prompt(
         "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, OLLAMA_MODEL, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
-        "- If you create temporary verification files, clean up only the exact files or temp directory you created; do not use recursive cleanup.\n"
+        "- If you create temporary verification files or a temp directory, clean up only the exact files you created; remove an empty temp directory with `rmdir` and never use `rm -rf`, `rm -Rf`, or other recursive cleanup.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Report:\n"
         "- Leave enough evidence for HOCA to infer a worker attempt report.\n"

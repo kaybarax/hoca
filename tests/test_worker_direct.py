@@ -93,8 +93,9 @@ def test_build_worker_direct_prompt_contains_every_task_spec_binding() -> None:
     assert "Do not continue exploring" in prompt
     assert "create temporary git repositories" in prompt
     assert "never run git init, git add, or git commit in any temp path" in prompt
+    assert "never use `rm -rf`, `rm -Rf`, or other recursive cleanup" in prompt
     assert "do not recursively list the repository" in prompt
-    assert "clean up only the exact files or temp directory you created" in prompt
+    assert "remove an empty temp directory with `rmdir`" in prompt
     assert "hermes" not in prompt.lower()
 
 
