@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -165,6 +166,36 @@ class FakeGracefulReviewProcess:
 
     def kill(self):
         self.kill_calls += 1
+        self.returncode = -9
+
+
+class FakeSlowShutdownReviewProcess:
+    def __init__(self, command, *, report_path: Path, review_text_path: Path):
+        self.command = tuple(command)
+        self.returncode: int | None = None
+        self.terminate_calls = 0
+        review_text_path.write_text("LGTM\n", encoding="utf-8")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Slow shutdown."],'
+            '"known_followups":[]}}\n',
+            encoding="utf-8",
+        )
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self.returncode is None:
+            raise subprocess.TimeoutExpired(cmd=self.command, timeout=timeout or 0)
+        return self.returncode
+
+    def terminate(self):
+        self.terminate_calls += 1
+        self.returncode = -15
+
+    def kill(self):
         self.returncode = -9
 
 
@@ -413,6 +444,41 @@ def test_run_reviewer_direct_waits_for_report_before_terminating(
     assert processes and processes[0].wait_calls >= 1
     assert processes[0].terminate_calls == 0
     assert processes[0].kill_calls == 0
+
+
+def test_run_reviewer_direct_treats_self_termination_after_report_as_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    processes: list[FakeSlowShutdownReviewProcess] = []
+
+    def fake_popen(command, **kwargs):
+        process = FakeSlowShutdownReviewProcess(
+            command,
+            report_path=review_report_path(run_dir, 1),
+            review_text_path=run_dir / "openhands-review.txt",
+        )
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
+
+    result = run_reviewer_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.exit_code == 0
+    assert processes and processes[0].terminate_calls >= 1
+    assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "LGTM"
 
 
 def test_run_reviewer_direct_waits_for_late_report_after_exit(tmp_path: Path, monkeypatch) -> None:

@@ -142,6 +142,10 @@ def _invoke_openhands_review_direct(
                         process.kill()
                         process.wait(timeout=5)
                 returncode = process.returncode if process.returncode is not None else 0
+                if returncode in (-15, -9) and _structured_report_ready(report_path):
+                    # We stopped the reviewer ourselves because the structured
+                    # report was already recovered; the signal is not a failure.
+                    returncode = 0
                 return CommandResult(
                     tuple(command),
                     returncode,
