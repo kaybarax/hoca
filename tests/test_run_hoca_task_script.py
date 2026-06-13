@@ -37,6 +37,20 @@ def test_run_hoca_task_doctor_cache_can_be_disabled() -> None:
     assert '[ "$HOCA_DOCTOR_CACHE_SECONDS" -gt 0 ]' in content
 
 
+def test_run_hoca_task_excludes_validation_side_effects_from_task_changes() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "is_validation_side_effect_path()" in content
+    assert "record_validation_side_effects()" in content
+    assert 'changed_files_for_task | sort -u > "$PRE_TEST_CHANGED_FILES"' in content
+    assert 'record_validation_side_effects "$PRE_TEST_CHANGED_FILES"' in content
+    assert content.index('"$SCRIPT_DIR/run-tests.sh"') < content.index(
+        'record_validation_side_effects "$PRE_TEST_CHANGED_FILES"'
+    )
+    review_script = (SCRIPT.parent / "review-with-openhands.sh").read_text(encoding="utf-8")
+    assert 'side_effects_file="$RUN_DIR/validation-side-effect-files.txt"' in review_script
+
+
 def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
@@ -176,7 +190,7 @@ def test_review_wrapper_inherits_task_spec_network_mode() -> None:
     content = (root / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
 
     assert "spec_network_mode=" in content
-    assert '.sandbox.network_mode // empty' in content
+    assert ".sandbox.network_mode // empty" in content
     assert 'export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"' in content
     assert content.index('export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"') < content.index(
         'HOCA_AGENT_ROLE=reviewer "$SCRIPT_DIR/run-openhands-task.sh"'

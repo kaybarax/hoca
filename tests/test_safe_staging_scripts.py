@@ -288,6 +288,26 @@ def test_safe_stage_stages_reviewed_accounted_files(tmp_path: Path) -> None:
     assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
 
 
+def test_safe_stage_excludes_recorded_validation_side_effect_files(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"
+    write_run_files(run_dir)
+    (run_dir / "intended-files.txt").write_text("README.md\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("updated\n", encoding="utf-8")
+    (tmp_path / "build-report-20260613.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "validation-side-effect-files.txt").write_text(
+        "build-report-20260613.json\n", encoding="utf-8"
+    )
+
+    result = run_safe_stage(tmp_path, "Update README", run_dir)
+
+    assert result.returncode == 0, result.stderr
+    assert staged_files(tmp_path) == ["README.md"]
+    assert "build-report-20260613.json" not in (run_dir / "staged-files.txt").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_safe_stage_expands_untracked_intended_directories(tmp_path: Path) -> None:
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-1"

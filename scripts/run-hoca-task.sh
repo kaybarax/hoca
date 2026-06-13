@@ -430,6 +430,13 @@ worker_git() {
   git -C "${WORKER_PROJECT_PATH:-$PROJECT_PATH}" "$@"
 }
 
+is_validation_side_effect_path() {
+  [ -n "${RUN_DIR:-}" ] || return 1
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
+  [ -s "$side_effects_file" ] || return 1
+  grep -Fxq -- "$1" "$side_effects_file"
+}
+
 git_status_short_for_task() {
   worker_git status --short --untracked-files=all | while IFS= read -r status_line || [ -n "$status_line" ]; do
     local path="${status_line#???}"
@@ -441,12 +448,35 @@ git_status_short_for_task() {
       .yarn/cache|.yarn/cache/*) continue ;;
       .cache|.cache/*) continue ;;
     esac
+    if is_validation_side_effect_path "$path"; then
+      continue
+    fi
     printf '%s\n' "$status_line"
   done
 }
 
 changed_files_for_task() {
   git_status_short_for_task | sed 's/^...//'
+}
+
+record_validation_side_effects() {
+  local pre_file="$1"
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
+  local post_file="$RUN_DIR/post-test-changed-files.txt"
+  changed_files_for_task | sort -u > "$post_file"
+  local new_paths
+  new_paths="$(comm -13 "$pre_file" "$post_file")"
+  rm -f "$post_file"
+  if [ -z "$new_paths" ]; then
+    return 0
+  fi
+  {
+    if [ -f "$side_effects_file" ]; then cat "$side_effects_file"; fi
+    printf '%s\n' "$new_paths"
+  } | sort -u > "${side_effects_file}.tmp"
+  mv "${side_effects_file}.tmp" "$side_effects_file"
+  echo "Validation-phase side-effect files excluded from review and staging:"
+  printf '%s\n' "$new_paths"
 }
 
 is_dependency_lockfile_path() {
@@ -1193,12 +1223,15 @@ while true; do
 
   echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
   start_reviewer_warmup
+  PRE_TEST_CHANGED_FILES="$RUN_DIR/pre-test-changed-files.txt"
+  changed_files_for_task | sort -u > "$PRE_TEST_CHANGED_FILES"
   TEST_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
   TEST_END_EPOCH="$(hoca_time_epoch)"
+  record_validation_side_effects "$PRE_TEST_CHANGED_FILES"
   if [ "$TESTS_EXIT" -eq 0 ]; then
     record_timing_phase "test_run" "$TEST_START_EPOCH" "$TEST_END_EPOCH" --round "$current_round"
   else
@@ -1308,6 +1341,12 @@ if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WOR
   UNTRACKED_WORKTREE_TAR="$RUN_DIR/untracked-worktree-files.tar"
   worker_git ls-files --others --exclude-standard \
     | awk '$0 != ".hoca-runtime" && $0 !~ /^\.hoca-runtime\//' \
+    | while IFS= read -r untracked_path || [ -n "$untracked_path" ]; do
+        if is_validation_side_effect_path "$untracked_path"; then
+          continue
+        fi
+        printf '%s\n' "$untracked_path"
+      done \
     > "$UNTRACKED_WORKTREE_FILES"
   if [ -s "$UNTRACKED_WORKTREE_FILES" ]; then
     tar -C "$WORKTREE_PATH" -cf "$UNTRACKED_WORKTREE_TAR" -T "$UNTRACKED_WORKTREE_FILES"

@@ -35,6 +35,7 @@ run_review_gate() {
 }
 
 changed_files_for_review() {
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
   {
     git diff --name-only --diff-filter=ACMRTUXB
     git ls-files --others --exclude-standard
@@ -43,6 +44,9 @@ changed_files_for_review() {
     case "$changed_path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
     esac
+    if [ -s "$side_effects_file" ] && grep -Fxq -- "$changed_path" "$side_effects_file"; then
+      continue
+    fi
     [ -e "$changed_path" ] || continue
     printf '%s\n' "$changed_path"
   done | sort -u

@@ -69,6 +69,10 @@ git_changed_paths() {
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
     esac
+    if [ -s "$RUN_DIR/validation-side-effect-files.txt" ] \
+      && grep -Fxq -- "$path" "$RUN_DIR/validation-side-effect-files.txt"; then
+      continue
+    fi
     printf '%s\n' "$path"
   done
 }
