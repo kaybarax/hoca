@@ -68,6 +68,7 @@ def build_worker_direct_prompt(
             "\nRepo-clean validation rule:\n"
             "- Validate with the existing checkout or a unit test that mocks git output; do not create a temp git repo or fake commit history.\n"
             "- If scratch files are needed, remove exact files only or use rmdir on empty directories; never use rm -rf.\n"
+            "- The workspace contains HOCA-managed caches (.pnpm-store, node_modules, .hoca-runtime); never delete or clean them. Check only git-tracked files (git ls-files); untracked workspace dirs are not committed artifacts.\n"
         )
 
     prompt = (

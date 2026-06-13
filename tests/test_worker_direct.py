@@ -115,6 +115,9 @@ def test_build_worker_direct_prompt_adds_repo_clean_validation_rule() -> None:
     assert "do not create a temp git repo or fake commit history" in prompt.lower()
     assert "unit test that mocks git output" in prompt
     assert "never use rm -rf" in prompt.lower()
+    assert "HOCA-managed caches" in prompt
+    assert "never delete or clean them" in prompt
+    assert "git ls-files" in prompt
 
 
 def test_build_worker_direct_prompt_injects_redacted_repair_brief() -> None:
