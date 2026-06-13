@@ -239,6 +239,12 @@ class TestCheckUnrelatedDirectory:
         assert check_unrelated_directory("cat /hoca-run/task-input.txt", "/project") is None
         assert check_unrelated_directory("cat /hoca-runs/review-report-1.json", "/project") is None
         assert check_unrelated_directory("cat /hoca-runsx/file.txt", "/project") is not None
+
+    def test_json_escape_sequences_do_not_extend_extracted_paths(self):
+        line = r'{"command": "cd /workspace\nls -la"}'
+        assert check_unrelated_directory(line, "/project") is None
+        assert check_unrelated_directory(r'"command": "cd /workspace\"', "/project") is None
+        assert check_unrelated_directory(r'{"command": "cat /etc\npasswd"}', "/project") is not None
         assert (
             check_unrelated_directory(
                 'file_editor: {"command": "view", "path": "/hoca-run/context-truncation.json"}',

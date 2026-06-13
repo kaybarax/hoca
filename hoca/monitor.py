@@ -364,6 +364,11 @@ def check_unrelated_directory(
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
         ref = ref.rstrip("\"',]}")
+        # JSON-encoded stream lines glue literal escape sequences onto the
+        # path (e.g. cd /workspace\nls); cut the ref at the first escape.
+        ref = re.split(r"(?:\\+[nrt])", ref)[0].rstrip("\\")
+        if not ref:
+            continue
         ref_resolved = os.path.realpath(ref)
         if not any(
             ref_resolved == root or ref_resolved.startswith(root + "/") for root in allowed_roots
