@@ -448,6 +448,49 @@ def test_run_reviewer_direct_waits_for_late_report_after_exit(tmp_path: Path, mo
     assert HocaReviewReport.from_json(result.review_report_path.read_text()).verdict == "LGTM"
 
 
+def test_run_reviewer_direct_recovers_report_written_through_review_mount(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    (project / "README.md").write_text("changed\n", encoding="utf-8")
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    mount_report_path = run_dir / "review" / "review-report-1.json"
+
+    def fake_popen(command, **kwargs):
+        mount_report_path.parent.mkdir(parents=True, exist_ok=True)
+        mount_report_path.write_text(
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Mount path report."],'
+            '"known_followups":[]}}\n',
+            encoding="utf-8",
+        )
+        (run_dir / "openhands-review.txt").write_text("LGTM\n", encoding="utf-8")
+        return FakeLateReportProcess(
+            command,
+            report_path=run_dir / "review" / "unused-late-report.json",
+            review_text_path=run_dir / "openhands-review.txt",
+        )
+
+    monkeypatch.setattr("hoca.reviewer_direct.subprocess.Popen", fake_popen)
+
+    result = run_reviewer_direct(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.exit_code == 0
+    assert result.review_report_path == review_report_path(run_dir, 1)
+    report = HocaReviewReport.from_json(result.review_report_path.read_text())
+    assert report.verdict == "LGTM"
+    assert report.pr_notes["summary"] == ["Mount path report."]
+
+
 def test_run_reviewer_direct_times_out_without_structured_report(
     tmp_path: Path, monkeypatch
 ) -> None:

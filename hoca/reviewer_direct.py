@@ -67,6 +67,25 @@ def _recover_structured_report_from_logs(log_paths: list[Path], report_path: Pat
     return False
 
 
+def _recover_report_from_alternate_paths(
+    run_dir: Path, round_number: int, report_path: Path
+) -> bool:
+    # The review sandbox mounts the review dir at /hoca-run, so reviewers that
+    # write through the mount land the report beside the review artifacts
+    # instead of in reviews/.
+    candidates = (
+        run_dir / "review" / f"review-report-{round_number}.json",
+        run_dir / f"review-report-{round_number}.json",
+    )
+    for candidate in candidates:
+        if candidate == report_path or not _structured_report_ready(candidate):
+            continue
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(candidate.read_text(encoding="utf-8"), encoding="utf-8")
+        return True
+    return False
+
+
 def _invoke_openhands_review_direct(
     *,
     project_path: Path,
@@ -109,6 +128,7 @@ def _invoke_openhands_review_direct(
         while process.poll() is None:
             if (
                 _structured_report_ready(report_path)
+                or _recover_report_from_alternate_paths(run_dir, round_number, report_path)
                 or _recover_structured_report_from_log(stdout_path, report_path)
                 or _recover_structured_report_from_log(stderr_path, report_path)
             ):
@@ -150,6 +170,7 @@ def _invoke_openhands_review_direct(
         while time.monotonic() < post_exit_grace_deadline:
             if (
                 _structured_report_ready(report_path)
+                or _recover_report_from_alternate_paths(run_dir, round_number, report_path)
                 or _recover_structured_report_from_log(stdout_path, report_path)
                 or _recover_structured_report_from_log(stderr_path, report_path)
             ):
@@ -182,6 +203,8 @@ def _evaluate_direct_report(
         run_dir / "review" / "openhands-output.jsonl",
         run_dir / "review" / "openhands-stderr.log",
     ]
+    if not _structured_report_ready(report_path):
+        _recover_report_from_alternate_paths(run_dir, round_number, report_path)
     if not _structured_report_ready(report_path):
         _recover_structured_report_from_logs(candidate_logs, report_path)
     if not _structured_report_ready(report_path):
