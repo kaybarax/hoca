@@ -383,7 +383,7 @@ def should_scan_line_for_policy(line: str) -> bool:
     """Skip passive OpenHands observations; scan agent actions and plain output."""
     stripped = line.strip()
     if re.match(
-        r'^"(?:text|thought|reasoning_content|llm_message|extended_content|summary|'
+        r'^"(?:text|thought|reasoning_content|llm_message|extended_content|summary|message|'
         r'old_content|new_content|old_str|new_str|file_text)"\s*:',
         stripped,
     ):
