@@ -237,6 +237,8 @@ class TestCheckUnrelatedDirectory:
     def test_sandbox_mount_aliases_are_allowed(self):
         assert check_unrelated_directory("cd /workspace/src", "/project") is None
         assert check_unrelated_directory("cat /hoca-run/task-input.txt", "/project") is None
+        assert check_unrelated_directory("cat /hoca-runs/review-report-1.json", "/project") is None
+        assert check_unrelated_directory("cat /hoca-runsx/file.txt", "/project") is not None
         assert (
             check_unrelated_directory(
                 'file_editor: {"command": "view", "path": "/hoca-run/context-truncation.json"}',
