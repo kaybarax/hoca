@@ -4,14 +4,15 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  notify.sh TYPE "task text" [PR_URL] [--telegram]
+  notify.sh TYPE "task text" [PR_URL] [--macos] [--telegram]
   notify.sh /path/to/project /path/to/run-dir
 
 TYPE must be one of: complete, blocked, failed, needs-review.
 
-Telegram is sent only when enabled with --telegram, HOCA_NOTIFY_TELEGRAM=true,
-or notify_telegram=true in run-dir/status.json. TELEGRAM_BOT_TOKEN and
-TELEGRAM_CHAT_ID must also be set.
+macOS notifications are sent only when enabled with --macos or
+HOCA_NOTIFY_MACOS=true. Telegram is sent only when enabled with --telegram,
+HOCA_NOTIFY_TELEGRAM=true, or notify_telegram=true in run-dir/status.json.
+TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must also be set.
 EOF
 }
 
@@ -140,6 +141,7 @@ fi
 NOTIFY_TYPE="$1"
 TASK_TEXT="$2"
 PR_URL="${3:-}"
+MACOS_REQUESTED="false"
 TELEGRAM_REQUESTED="false"
 PROJECT_PATH=""
 RUN_DIR=""
@@ -164,12 +166,16 @@ if [ -d "$1" ] && [ -d "$2" ]; then
   esac
 else
   shift 2
-  if [ "${1:-}" != "" ] && [ "${1:-}" != "--telegram" ]; then
+  if [ "${1:-}" != "" ] && [ "${1:-}" != "--macos" ] && [ "${1:-}" != "--telegram" ]; then
     PR_URL="$1"
     shift
   fi
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --macos)
+        MACOS_REQUESTED="true"
+        shift
+        ;;
       --telegram)
         TELEGRAM_REQUESTED="true"
         shift
@@ -200,7 +206,11 @@ if [ -n "$PR_URL" ]; then
   BODY="$BODY PR: $PR_URL"
 fi
 
-send_macos_notification "$BODY"
+if is_truthy "$MACOS_REQUESTED" || is_truthy "${HOCA_NOTIFY_MACOS:-}"; then
+  send_macos_notification "$BODY"
+else
+  MACOS_RESULT="skipped_disabled"
+fi
 
 if is_truthy "$TELEGRAM_REQUESTED" || is_truthy "${HOCA_NOTIFY_TELEGRAM:-}"; then
   send_telegram_notification "$BODY"

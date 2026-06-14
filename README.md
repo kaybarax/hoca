@@ -265,6 +265,7 @@ Both `run` and `issue` accept optional flags:
 
 - `--auto-merge` — enable guarded auto-merge (disabled by default)
 - `--notify-telegram` — send Telegram notifications on completion
+- `--notify-macos` — send macOS desktop notifications on completion
 - `--dev-branch BRANCH` — manager override for the target repo development branch
 
 ### Fleet Orchestration
