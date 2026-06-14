@@ -237,8 +237,14 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert "--workdir /workspace" in script
     assert 'PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"' in script
     assert 'RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"' in script
-    assert 'GIT_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --absolute-git-dir' in script
-    assert 'GIT_COMMON_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --git-common-dir' in script
+    assert (
+        'GIT_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --absolute-git-dir'
+        in script
+    )
+    assert (
+        'GIT_COMMON_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --git-common-dir'
+        in script
+    )
     assert 'GIT_DIR_MOUNTS+=("-v" "${GIT_DIR}:${GIT_DIR}")' in script
     assert 'GIT_DIR_MOUNTS+=("-v" "${GIT_COMMON_DIR}:${GIT_COMMON_DIR}")' in script
     assert 'SANDBOX_TASK="${TASK//$PROJECT_PATH/\\/workspace}"' in script
@@ -308,8 +314,8 @@ def test_sandbox_wrapper_syncs_yarn_lockfiles_without_npm() -> None:
 
     assert "elif [ -f yarn.lock ]" in script
     assert "yarn install --frozen-lockfile" in script
-    assert 'echo "  pnpm: $(command -v pnpm 2>/dev/null || echo \'not available\')"' in script
-    assert 'echo "  yarn: $(command -v yarn 2>/dev/null || echo \'not available\')"' in script
+    assert "echo \"  pnpm: $(command -v pnpm 2>/dev/null || echo 'not available')\"" in script
+    assert "echo \"  yarn: $(command -v yarn 2>/dev/null || echo 'not available')\"" in script
     assert re.search(r"(^|\s)npm\s+install\b", script) is None
 
 
