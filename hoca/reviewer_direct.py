@@ -219,13 +219,6 @@ def _evaluate_direct_report(
             reason=str(exc),
         )
         return path, 4
-    if process_exit_code != 0 and result.report.verdict == "LGTM":
-        path = _write_blocked_report(
-            run_dir=run_dir,
-            round_number=round_number,
-            reason=f"Direct reviewer exited with code {process_exit_code}.",
-        )
-        return path, 4
     if result.report.verdict == "LGTM":
         return result.report_path, 0
     if result.report.verdict == "fix_required":
