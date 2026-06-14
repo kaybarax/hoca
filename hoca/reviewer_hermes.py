@@ -24,7 +24,11 @@ from hoca.role_model_env import (
 from hoca.contracts import HocaReviewFinding, HocaReviewReport, HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_REVIEWER, hermes_installed, profile_exists
-from hoca.review_gate import ReviewGateError, evaluate_review_gate
+from hoca.review_gate import (
+    ReviewGateError,
+    evaluate_review_gate,
+    recover_review_report_from_alternate_paths,
+)
 from hoca.run_layout import ensure_run_layout, review_report_path, worker_attempt_path
 from hoca.run_timing import record_event
 from hoca.subprocess_utils import CommandResult, run_command
@@ -387,6 +391,8 @@ def _evaluate_profile_report(
     *, run_dir: Path, round_number: int, process_exit_code: int
 ) -> tuple[Path, int]:
     report_path = review_report_path(run_dir, round_number)
+    if not report_path.exists():
+        recover_review_report_from_alternate_paths(run_dir, round_number, report_path)
     if not report_path.exists():
         path = _write_blocked_report(
             run_dir=run_dir,

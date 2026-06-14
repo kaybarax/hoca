@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from hoca.review_gate import ReviewGateError, evaluate_review_gate
+from hoca.review_gate import (
+    ReviewGateError,
+    evaluate_review_gate,
+    recover_review_report_from_alternate_paths,
+    structured_report_ready,
+)
 from hoca.review_report_parser import try_extract_structured_report
 from hoca.run_layout import ensure_run_layout, review_report_path
 from hoca.subprocess_utils import CommandResult
@@ -35,13 +39,7 @@ def _direct_review_timeout_seconds(env: dict[str, str]) -> int:
 
 
 def _structured_report_ready(path: Path) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(loaded, dict) and loaded.get("verdict") in {"LGTM", "fix_required", "blocked"}
+    return structured_report_ready(path)
 
 
 def _recover_structured_report_from_log(log_path: Path, report_path: Path) -> bool:
@@ -70,20 +68,7 @@ def _recover_structured_report_from_logs(log_paths: list[Path], report_path: Pat
 def _recover_report_from_alternate_paths(
     run_dir: Path, round_number: int, report_path: Path
 ) -> bool:
-    # The review sandbox mounts the review dir at /hoca-run, so reviewers that
-    # write through the mount land the report beside the review artifacts
-    # instead of in reviews/.
-    candidates = (
-        run_dir / "review" / f"review-report-{round_number}.json",
-        run_dir / f"review-report-{round_number}.json",
-    )
-    for candidate in candidates:
-        if candidate == report_path or not _structured_report_ready(candidate):
-            continue
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(candidate.read_text(encoding="utf-8"), encoding="utf-8")
-        return True
-    return False
+    return recover_review_report_from_alternate_paths(run_dir, round_number, report_path)
 
 
 def _invoke_openhands_review_direct(
