@@ -133,7 +133,7 @@ RAM_GB="$(detect_ram_gb || true)"
 if [ -n "${RAM_GB:-}" ]; then
   ok "Detected RAM: ${RAM_GB} GB"
   if [ "$RAM_GB" -lt "$RECOMMENDED_RAM_GB" ]; then
-    warn "RAM is below ${RECOMMENDED_RAM_GB} GB. Prefer 7B or 14B Ollama models over 32B models."
+    warn "RAM is below ${RECOMMENDED_RAM_GB} GB. Prefer 7B or 14B models over 32B models."
   fi
 else
   warn "Could not determine system RAM."
@@ -208,7 +208,7 @@ if command -v ollama >/dev/null 2>&1; then
         warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
       fi
     else
-      warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
+      warn "No Ollama models are installed. Pull the exact model named in your HOCA role model blocks if you plan to use Ollama."
     fi
   else
     warn "Could not list Ollama models."

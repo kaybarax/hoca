@@ -105,11 +105,27 @@ def test_select_model_requires_explicit_requested_model(tmp_path: Path) -> None:
     result = run_script(
         "select-model.sh",
         fake_bin,
-        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "OLLAMA_MODEL": "qwen-14b-pro"},
+        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro"},
     )
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-7b-pro"
+
+
+def test_select_model_rejects_mismatched_requested_model_and_ollama_model(
+    tmp_path: Path,
+) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
+    make_fake_curl(fake_bin)
+
+    result = run_script(
+        "select-model.sh",
+        fake_bin,
+        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "OLLAMA_MODEL": "qwen-14b-pro"},
+    )
+
+    assert result.returncode == 1
+    assert "Requested HOCA model differs from configured OLLAMA_MODEL" in result.stderr
 
 
 def test_select_model_errors_when_requested_model_is_missing(tmp_path: Path) -> None:
@@ -150,6 +166,24 @@ def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> 
 
     assert result.returncode == 1
     assert "No model configured" in result.stderr
+
+
+def test_select_model_does_not_auto_detect_local_models(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl = fake_bin / "curl"
+    marker = tmp_path / "curl-invoked.txt"
+    curl.write_text(
+        f"#!/usr/bin/env bash\nset -euo pipefail\ntouch '{marker}'\nexit 99\n",
+        encoding="utf-8",
+    )
+    curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
+
+    result = run_script("select-model.sh", fake_bin)
+
+    assert result.returncode == 1
+    assert "No model configured" in result.stderr
+    assert not marker.exists()
 
 
 def test_select_model_errors_when_ollama_server_is_unreachable(tmp_path: Path) -> None:

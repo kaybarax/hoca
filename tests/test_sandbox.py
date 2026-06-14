@@ -191,19 +191,22 @@ def test_sandbox_wrapper_checks_image_once_per_run() -> None:
 def test_sandbox_wrapper_mounts_shared_pnpm_store_volume() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
-    assert 'PNPM_STORE_HOST_DIR="${HOCA_PNPM_STORE_HOST_DIR:-$HOCA_ROOT/.hoca-runtime/pnpm-store}"' in script
-    assert 'PNPM_STORE_DIR="${HOCA_PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
-    assert 'mkdir -p "$PNPM_STORE_HOST_DIR"' in script
-    assert '-v "${PNPM_STORE_HOST_DIR}:${PNPM_STORE_DIR}"' in script
-    assert '-e "PNPM_STORE_DIR=${PNPM_STORE_DIR}"' in script
-    assert 'pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
-    assert "/workspace/.pnpm-store" not in script
+    assert (
+        'DEPS_STORE_HOST_DIR="${HOCA_DEPS_STORE_HOST_DIR:-$HOCA_ROOT/.hoca-runtime/deps-store}"'
+        in script
+    )
+    assert 'DEPS_STORE_DIR="${HOCA_DEPS_STORE_DIR:-/hoca-deps-store}"' in script
+    assert 'mkdir -p "$DEPS_STORE_HOST_DIR"' in script
+    assert '-v "${DEPS_STORE_HOST_DIR}:${DEPS_STORE_DIR}"' in script
+    assert '-e "DEPS_STORE_DIR=${DEPS_STORE_DIR}"' in script
+    assert 'pnpm config set store-dir "${DEPS_STORE_DIR:-/hoca-deps-store}"' in script
+    assert "/workspace/.deps-store" not in script
 
 
 def test_sandbox_wrapper_skips_pnpm_install_when_cache_matches() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
-    assert 'INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-pnpm.sha256"' in script
+    assert 'INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-deps.sha256"' in script
     assert "INSTALL_CACHE_FINGERPRINT=\"$(python3 - <<'PY'" in script
     assert '[ "${HOCA_FORCE_INSTALL:-false}" = "true" ]' in script
     assert "[ ! -d node_modules ]" in script
@@ -349,7 +352,7 @@ def test_sandbox_wrapper_reuses_container_and_install_cache_across_two_invocatio
     assert pnpm_log.count("install --frozen-lockfile") == 1
     assert "Skipping pnpm install; install cache current." in second.stdout
     assert (run_dir / "sandbox-container-name.txt").is_file()
-    assert (project / ".hoca-runtime" / "install-cache" / "sandbox-pnpm.sha256").is_file()
+    assert (project / ".hoca-runtime" / "install-cache" / "sandbox-deps.sha256").is_file()
 
 
 def test_sandbox_wrapper_reinstalls_when_lockfile_changes(tmp_path: Path) -> None:

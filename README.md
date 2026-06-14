@@ -123,10 +123,10 @@ disappears into swap churn instead of useful agent work.
 Multi-model routing remains supported as an explicit opt-in. The manager can
 use a balanced planning model, the worker can use a coding-specialized model,
 and the reviewer can use a stronger reasoning model when the hardware or hosted
-provider can absorb the residency cost. Configure all three roles explicitly; if
-a role is empty while another role is active, HOCA uses the first active role
-model as the fallback. Only the selected role model's credentials are forwarded
-to that phase, and API keys are redacted from reports and logs.
+provider can absorb the residency cost. Configure all three roles explicitly;
+HOCA does not invent role models or provider endpoints for you. Only the
+selected role model's credentials are forwarded to that phase, and API keys are
+redacted from reports and logs.
 
 ### Backend Keep-Alive
 
@@ -197,8 +197,8 @@ provider.
 
 After installation:
 
-1. Start your selected model backend: for the default path, `ollama serve`; for
-   LM Studio, llama.cpp, MLX, or another local server, start its
+1. Start your selected model backend: for an Ollama-backed setup, `ollama serve`;
+   for LM Studio, llama.cpp, MLX, or another local server, start its
    OpenAI-compatible `/v1` endpoint.
 2. Start Docker: open Docker Desktop, or run `colima start --cpu 6 --memory 16`
 3. Authenticate GitHub: `gh auth login`

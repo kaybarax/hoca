@@ -298,7 +298,7 @@ main() {
   info ""
   info "Next steps:"
   info "1. Copy .env.example to .env and fill in local values."
-  info "2. Start Ollama with: ollama serve"
+  info "2. Start your configured model backend (for Ollama, ollama serve)."
   info "3. Start Docker Desktop or Colima."
 }
 

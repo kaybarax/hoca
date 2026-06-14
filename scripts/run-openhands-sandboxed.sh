@@ -26,14 +26,14 @@ HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/sandbox-docker-env.sh"
 
 SANDBOX_IMAGE="${HOCA_SANDBOX_IMAGE:-hoca-sandbox:latest}"
-PNPM_STORE_DIR="${HOCA_PNPM_STORE_DIR:-/hoca-pnpm-store}"
-PNPM_STORE_HOST_DIR="${HOCA_PNPM_STORE_HOST_DIR:-$HOCA_ROOT/.hoca-runtime/pnpm-store}"
+DEPS_STORE_DIR="${HOCA_DEPS_STORE_DIR:-/hoca-deps-store}"
+DEPS_STORE_HOST_DIR="${HOCA_DEPS_STORE_HOST_DIR:-$HOCA_ROOT/.hoca-runtime/deps-store}"
 RUN_ID="$(basename "$RUN_DIR")"
 
 PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd -P)"
 mkdir -p "$RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
-mkdir -p "$PNPM_STORE_HOST_DIR"
+mkdir -p "$DEPS_STORE_HOST_DIR"
 GIT_DIR_MOUNTS=()
 if GIT_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --absolute-git-dir 2>/dev/null)" && [ -n "$GIT_DIR" ]; then
   GIT_COMMON_DIR="$(git -C "$PROJECT_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || printf '%s' "$GIT_DIR")"
@@ -96,8 +96,8 @@ if [ "$NETWORK_MODE" != "offline" ]; then
   record_timing_event --type dependency_install --name sandbox-setup --role "$AGENT_ROLE"
   cat >> "$SETUP_SCRIPT" <<'SETUP_EOF'
 if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then
-  pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}" >/dev/null 2>&1 || true
-  INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-pnpm.sha256"
+  pnpm config set store-dir "${DEPS_STORE_DIR:-/hoca-deps-store}" >/dev/null 2>&1 || true
+  INSTALL_CACHE_MARKER=".hoca-runtime/install-cache/sandbox-deps.sha256"
   INSTALL_CACHE_FINGERPRINT="$(python3 - <<'PY'
 import hashlib
 import subprocess
@@ -169,8 +169,8 @@ DOCKER_RUN_ARGS=(
   -v "${RUN_DIR}:/hoca-runs"
   -v "${RUN_DIR}:${RUN_DIR}"
   -v "${SANDBOX_HOME}:/home/hoca-sandbox"
-  -v "${PNPM_STORE_HOST_DIR}:${PNPM_STORE_DIR}"
-  -e "PNPM_STORE_DIR=${PNPM_STORE_DIR}"
+  -v "${DEPS_STORE_HOST_DIR}:${DEPS_STORE_DIR}"
+  -e "DEPS_STORE_DIR=${DEPS_STORE_DIR}"
   -e "OPENHANDS_SUPPRESS_BANNER=1"
   -e "HOME=/home/hoca-sandbox"
   --security-opt=no-new-privileges
@@ -217,7 +217,7 @@ docker exec \
   -e "LLM_BASE_URL=${CONTAINER_BASE_URL}" \
   -e "LLM_API_KEY=${API_KEY}" \
   -e "HOCA_AGENT_ROLE=${AGENT_ROLE}" \
-  -e "PNPM_STORE_DIR=${PNPM_STORE_DIR}" \
+  -e "DEPS_STORE_DIR=${DEPS_STORE_DIR}" \
   -e "OPENHANDS_SUPPRESS_BANNER=1" \
   -e "HOME=/home/hoca-sandbox" \
   "$CONTAINER_NAME" \
