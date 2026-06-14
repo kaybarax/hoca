@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -156,6 +157,13 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
         HocaReviewReport.from_json(result.review_report_path.read_text(encoding="utf-8")).verdict
         == "LGTM"
     )
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    coordinator_loops = [
+        event
+        for event in timings["events"]
+        if event["type"] == "agent_loop" and event["name"] == "reviewer-hermes-coordinator"
+    ]
+    assert len(coordinator_loops) == 1
 
 
 def test_run_reviewer_hermes_dispatches_direct_mode_without_hermes(
@@ -194,6 +202,16 @@ def test_run_reviewer_hermes_dispatches_direct_mode_without_hermes(
 
     assert result.mode == "direct"
     assert result.review_report_path == report_path
+    timings_path = run_dir / "timings.json"
+    coordinator_loops = []
+    if timings_path.is_file():
+        timings = json.loads(timings_path.read_text(encoding="utf-8"))
+        coordinator_loops = [
+            event
+            for event in timings["events"]
+            if event["type"] == "agent_loop" and event["name"] == "reviewer-hermes-coordinator"
+        ]
+    assert coordinator_loops == []
 
 
 def test_run_reviewer_hermes_malformed_profile_report_is_blocked(

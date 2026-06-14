@@ -185,7 +185,12 @@ else
 fi
 
 set +e
-record_timing_event --type agent_loop --name openhands --role "$AGENT_ROLE"
+# The canonical per-role agent-loop markers are recorded by run-hoca-task.sh
+# (worker-<engine> and reviewer-<mode>) and, for hermes mode, by the Hermes
+# coordinator in worker_hermes/reviewer_hermes. Recording another agent_loop
+# here double-counts the direct worker (whose sandbox shares the main run dir)
+# while staying isolated for the reviewer/hermes paths, so the counter is left
+# to those authoritative sources.
 if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
   record_timing_event --type container_start --name docker-run --role "$AGENT_ROLE"
   docker run -d \

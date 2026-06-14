@@ -381,6 +381,13 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     assert (run_dir / "logs" / "worker-hermes-stderr.txt").is_file()
     report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
     assert report["status"] == "completed"
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    coordinator_loops = [
+        event
+        for event in timings["events"]
+        if event["type"] == "agent_loop" and event["name"] == "worker-hermes-coordinator"
+    ]
+    assert len(coordinator_loops) == 1
 
 
 def test_run_worker_hermes_dispatches_direct_mode_without_hermes(
@@ -419,6 +426,16 @@ def test_run_worker_hermes_dispatches_direct_mode_without_hermes(
 
     assert result.mode == "direct"
     assert result.worker_attempt_path == attempt_path
+    timings_path = run_dir / "timings.json"
+    coordinator_loops = []
+    if timings_path.is_file():
+        timings = json.loads(timings_path.read_text(encoding="utf-8"))
+        coordinator_loops = [
+            event
+            for event in timings["events"]
+            if event["type"] == "agent_loop" and event["name"] == "worker-hermes-coordinator"
+        ]
+    assert coordinator_loops == []
 
 
 def test_run_worker_hermes_dispatches_codex_engine_without_hermes(

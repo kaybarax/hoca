@@ -26,6 +26,7 @@ from hoca.paths import repo_root
 from hoca.profiles import PROFILE_REVIEWER, hermes_installed, profile_exists
 from hoca.review_gate import ReviewGateError, evaluate_review_gate
 from hoca.run_layout import ensure_run_layout, review_report_path, worker_attempt_path
+from hoca.run_timing import record_event
 from hoca.subprocess_utils import CommandResult, run_command
 from hoca.worker_hermes import load_task_spec
 
@@ -467,6 +468,16 @@ def run_reviewer_hermes(
     )
     (run_dir / f"reviewer-hermes-prompt-round-{round_number}.txt").write_text(
         prompt + "\n", encoding="utf-8"
+    )
+    # The Hermes reviewer coordinator is a distinct agent loop layered over the
+    # OpenHands reviewer loop; direct mode removes it. Record it so the
+    # agent-loop counter reflects the extra hermes-mode session.
+    record_event(
+        run_dir,
+        event_type="agent_loop",
+        name="reviewer-hermes-coordinator",
+        round_number=round_number,
+        role="reviewer",
     )
     result = _invoke_hermes_reviewer(
         prompt=prompt,

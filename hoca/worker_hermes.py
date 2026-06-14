@@ -25,6 +25,7 @@ from hoca.paths import repo_root
 from hoca.profiles import PROFILE_WORKER, hermes_installed, profile_exists
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
+from hoca.run_timing import record_event
 from hoca.subprocess_utils import CommandResult
 
 _SECRET_VALUE_PATTERN = re.compile(
@@ -582,6 +583,16 @@ def run_worker_hermes(
     prompt_path = run_dir / f"worker-hermes-prompt-round-{round_number}.txt"
     prompt_path.write_text(prompt + "\n", encoding="utf-8")
 
+    # The Hermes worker coordinator is a distinct agent loop layered over the
+    # OpenHands worker loop; direct mode removes it. Record it so the agent-loop
+    # counter reflects the extra hermes-mode session.
+    record_event(
+        run_dir,
+        event_type="agent_loop",
+        name="worker-hermes-coordinator",
+        round_number=round_number,
+        role="worker",
+    )
     result = _invoke_hermes_worker(
         prompt=prompt,
         run_dir=run_dir,
