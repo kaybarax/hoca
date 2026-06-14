@@ -220,6 +220,9 @@ docker exec \
   -e "DEPS_STORE_DIR=${DEPS_STORE_DIR}" \
   -e "OPENHANDS_SUPPRESS_BANNER=1" \
   -e "HOME=/home/hoca-sandbox" \
+  -e "GIT_PAGER=${GIT_PAGER:-cat}" \
+  -e "PAGER=${PAGER:-cat}" \
+  -e "LESS=${LESS:-FRSX}" \
   "$CONTAINER_NAME" \
   bash -c "
     set -euo pipefail

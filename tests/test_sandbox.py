@@ -178,6 +178,9 @@ def test_sandbox_wrapper_uses_run_scoped_container_with_exec_env() -> None:
     assert '-e "LLM_BASE_URL=${CONTAINER_BASE_URL}"' in script
     assert '-e "LLM_API_KEY=${API_KEY}"' in script
     assert '-e "HOCA_AGENT_ROLE=${AGENT_ROLE}"' in script
+    assert '-e "GIT_PAGER=${GIT_PAGER:-cat}"' in script
+    assert '-e "PAGER=${PAGER:-cat}"' in script
+    assert '-e "LESS=${LESS:-FRSX}"' in script
 
 
 def test_sandbox_wrapper_checks_image_once_per_run() -> None:

@@ -38,6 +38,10 @@ if [ -z "${HOCA_DOTENV_PATH:-}" ] && [ -f "$HOCA_ROOT/.env" ]; then
   export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"
 fi
 
+export GIT_PAGER="${GIT_PAGER:-cat}"
+export PAGER="${PAGER:-cat}"
+export LESS="${LESS:-FRSX}"
+
 case "$AGENT_ROLE" in
   worker|reviewer)
     unset GITHUB_TOKEN 2>/dev/null || true

@@ -180,6 +180,9 @@ def test_openhands_wrapper_defaults_dotenv_to_hoca_root_before_model_resolution(
 
     assert '[ -z "${HOCA_DOTENV_PATH:-}" ]' in content
     assert 'export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"' in content
+    assert 'export GIT_PAGER="${GIT_PAGER:-cat}"' in content
+    assert 'export PAGER="${PAGER:-cat}"' in content
+    assert 'export LESS="${LESS:-FRSX}"' in content
     assert content.index('export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"') < content.index(
         'source "$SCRIPT_DIR/resolve-role-model-env.sh"'
     )
