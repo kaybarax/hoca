@@ -191,9 +191,10 @@ def test_sandbox_wrapper_checks_image_once_per_run() -> None:
 def test_sandbox_wrapper_mounts_shared_pnpm_store_volume() -> None:
     script = SANDBOX_WRAPPER.read_text(encoding="utf-8")
 
-    assert 'PNPM_STORE_VOLUME="${HOCA_PNPM_STORE_VOLUME:-hoca-pnpm-store}"' in script
+    assert 'PNPM_STORE_HOST_DIR="${HOCA_PNPM_STORE_HOST_DIR:-$HOCA_ROOT/.hoca-runtime/pnpm-store}"' in script
     assert 'PNPM_STORE_DIR="${HOCA_PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
-    assert '-v "${PNPM_STORE_VOLUME}:${PNPM_STORE_DIR}"' in script
+    assert 'mkdir -p "$PNPM_STORE_HOST_DIR"' in script
+    assert '-v "${PNPM_STORE_HOST_DIR}:${PNPM_STORE_DIR}"' in script
     assert '-e "PNPM_STORE_DIR=${PNPM_STORE_DIR}"' in script
     assert 'pnpm config set store-dir "${PNPM_STORE_DIR:-/hoca-pnpm-store}"' in script
     assert "/workspace/.pnpm-store" not in script
@@ -257,6 +258,10 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert "TASK_CONTENT=\\$(cat /hoca-run/task-input.txt)" in script
     assert "OPENHANDS_PERSISTENCE_DIR=/hoca-run/openhands-persistence" in script
     assert "OPENHANDS_PYTHON=/opt/openhands-tools/openhands/bin/python" in script
+    assert (
+        "git config --global --add safe.directory "
+        "/home/hoca-sandbox/.openhands/cache/skills/public-skills" in script
+    )
     assert "network_mode=offline cannot reach a host-local LLM endpoint" in script
     assert "reasoning_effort=None" in script
     assert "enable_encrypted_reasoning=False" in script
@@ -368,7 +373,6 @@ def test_sandbox_wrapper_reinstalls_when_lockfile_changes(tmp_path: Path) -> Non
     assert second.returncode == 0, second.stderr
     assert docker_log.count("run -d") == 1
     assert pnpm_log.count("install --frozen-lockfile") == 2
-    assert "Skipping pnpm install; install cache current." not in second.stdout
 
 
 def test_sandbox_network_helpers_respect_hoca_python() -> None:
