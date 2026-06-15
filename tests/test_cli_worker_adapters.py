@@ -40,7 +40,9 @@ def test_run_claude_worker_records_standard_attempt(tmp_path: Path, monkeypatch)
     fake_bin = make_fake_cli(
         tmp_path,
         "claude",
-        "printf 'updated by claude\\n' > README.md\necho 'Claude completed implementation.'\n",
+        "[[ \"$*\" == *'--permission-mode bypassPermissions'* ]] || { echo 'missing permission mode' >&2; exit 2; }\n"
+        "printf 'updated by claude\\n' > README.md\n"
+        "echo 'Claude completed implementation.'\n",
     )
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("HOCA_OPENHANDS_STALL", "2")
@@ -75,7 +77,12 @@ def test_run_claude_worker_missing_cli_fails_cleanly(tmp_path: Path, monkeypatch
 
 def test_run_claude_worker_monitor_blocks_git_lifecycle_output(tmp_path: Path, monkeypatch) -> None:
     project, run_dir, task_spec_path = prepare_run(tmp_path)
-    fake_bin = make_fake_cli(tmp_path, "claude", "echo 'git commit -m bad'\n")
+    fake_bin = make_fake_cli(
+        tmp_path,
+        "claude",
+        "[[ \"$*\" == *'--permission-mode bypassPermissions'* ]] || { echo 'missing permission mode' >&2; exit 2; }\n"
+        "echo 'git commit -m bad'\n",
+    )
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("HOCA_OPENHANDS_STALL", "2")
 

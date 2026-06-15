@@ -35,7 +35,7 @@ class CliWorkerAdapterSpec:
 def claude_worker_adapter_spec() -> CliWorkerAdapterSpec:
     return CliWorkerAdapterSpec(
         engine="claude-code",
-        command=("claude", "-p"),
+        command=("claude", "-p", "--permission-mode", "bypassPermissions"),
         missing_cli_name="claude CLI",
     )
 

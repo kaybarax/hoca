@@ -272,9 +272,11 @@ def test_sandbox_wrapper_command_construction_is_static_and_monitored() -> None:
     assert "reasoning_effort=None" in script
     assert "enable_encrypted_reasoning=False" in script
     assert "extended_thinking_budget=None" in script
+    assert "from openhands.sdk import Agent, LLM" in script
     assert "load_user_skills=False" in script
     assert "load_public_skills=False" in script
     assert "marketplace_path=None" in script
+    assert "skills=[]" in script
     assert "cat > /hoca-run/sitecustomize.py <<'PY'" in script
     assert "'skills': []" in script
     assert "AgentStore._build_agent_context = _hoca_build_agent_context" in script

@@ -280,9 +280,8 @@ PY
 import sys
 from pathlib import Path
 
-from openhands.sdk import LLM
+from openhands.sdk import Agent, LLM
 from openhands.sdk.context.agent_context import AgentContext
-from openhands_cli.utils import get_default_cli_agent
 
 model, base_url, api_key, settings_path = sys.argv[1:5]
 llm = LLM(
@@ -295,14 +294,14 @@ llm = LLM(
     extended_thinking_budget=None,
     timeout=600,
 )
-agent = get_default_cli_agent(llm).model_copy(
-    update={
-        'agent_context': AgentContext(
-            load_user_skills=False,
-            load_public_skills=False,
-            marketplace_path=None,
-        )
-    }
+agent = Agent(
+    llm=llm,
+    agent_context=AgentContext(
+        skills=[],
+        load_user_skills=False,
+        load_public_skills=False,
+        marketplace_path=None,
+    ),
 )
 Path(settings_path).write_text(agent.model_dump_json(), encoding=\"utf-8\")
 PY
