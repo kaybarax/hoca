@@ -1144,17 +1144,42 @@ def issue(
 
 @main.command()
 @click.argument("project_path", type=click.Path(path_type=Path))
-@click.argument("run_id")
+@click.argument("run_id", required=False)
 @click.option(
     "--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts."
 )
 @click.option("--timing", is_flag=True, default=False, help="Print the timing report for this run.")
-def report(project_path: Path, run_id: str, regenerate: bool, timing: bool) -> None:
+@click.option(
+    "--timing-trends",
+    is_flag=True,
+    default=False,
+    help="Print the timing trend report across archived runs.",
+)
+def report(
+    project_path: Path,
+    run_id: str | None,
+    regenerate: bool,
+    timing: bool,
+    timing_trends: bool,
+) -> None:
     """Show or regenerate the task report for a past HOCA run."""
     from hoca.run_state import resolve_run_dir
     from hoca.task_report import build_task_report_markdown
 
     project_path = require_target_repo(project_path)
+
+    if timing and timing_trends:
+        raise click.ClickException("Use only one of --timing or --timing-trends.")
+
+    if timing_trends:
+        from hoca.timing_report import build_timing_trends_report
+
+        click.echo(build_timing_trends_report(project_path), nl=False)
+        return
+
+    if run_id is None:
+        raise click.ClickException("RUN_ID is required unless --timing-trends is used.")
+
     run_dir = resolve_run_dir(project_path, run_id)
 
     if run_dir is None:
