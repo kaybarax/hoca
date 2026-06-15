@@ -794,6 +794,20 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "completed"
         assert result.exit_code == 0
 
+    def test_dangerous_text_in_plain_output_prose_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO("working\nNo `rm -rf` anywhere.\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
     def test_dangerous_text_in_passive_arguments_fragment_is_ignored(self, tmp_path: Path):
         import io
 

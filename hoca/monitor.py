@@ -57,6 +57,9 @@ _VALIDATION_COMMAND = re.compile(
     r")"
 )
 _PASSIVE_ARGUMENT_KEYS = ("summary", "thought", "reasoning_content", "llm_message")
+_PLAIN_OUTPUT_COMMAND_PREFIX = re.compile(
+    r"^\s*(?:[$#>]\s*)?(?:`)?(?:rm|sudo|git|gh|docker|brew|chmod|chown)\b"
+)
 
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset(
@@ -352,6 +355,13 @@ def command_policy_scan_text(line: str) -> str:
     return command_policy_scan_context(line)[0]
 
 
+def _plain_output_looks_like_command(line: str) -> bool:
+    normalized = _ANSI_ESCAPE.sub("", line).strip(" │")
+    if not normalized:
+        return False
+    return bool(_PLAIN_OUTPUT_COMMAND_PREFIX.search(normalized))
+
+
 def check_unrelated_directory(
     line: str,
     project_path: str,
@@ -533,7 +543,11 @@ def monitor_process_stream(
 
             if should_scan_line_for_policy(line):
                 command_scan_text, command_source = command_policy_scan_context(line)
-                dangerous = check_dangerous_command(command_scan_text)
+                dangerous = None
+                if command_source != "plain_output" or _plain_output_looks_like_command(
+                    command_scan_text
+                ):
+                    dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(
                         events,
@@ -700,7 +714,11 @@ def monitor_process(
 
             if should_scan_line_for_policy(line):
                 command_scan_text, command_source = command_policy_scan_context(line)
-                dangerous = check_dangerous_command(command_scan_text)
+                dangerous = None
+                if command_source != "plain_output" or _plain_output_looks_like_command(
+                    command_scan_text
+                ):
+                    dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(
                         events,
