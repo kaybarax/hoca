@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from hoca.contracts import HocaReviewReport, HocaSandboxPolicy, HocaTaskSpec
 from hoca.run_artifacts import (
     init_run_layout,
@@ -28,6 +30,7 @@ from hoca.run_state import (
     read_optional_json,
     write_json_atomic,
 )
+from tests.model_env import set_dummy_role_model_env
 
 
 def test_ensure_run_layout_creates_subdirectories(tmp_path: Path) -> None:
@@ -50,7 +53,10 @@ def test_round_artifact_paths(tmp_path: Path) -> None:
     assert final_state_path(run_dir) == run_dir / "final-state.json"
 
 
-def test_init_run_layout_writes_task_spec_and_sandbox_policy(tmp_path: Path) -> None:
+def test_init_run_layout_writes_task_spec_and_sandbox_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_dummy_role_model_env(monkeypatch)
     run_dir = tmp_path / "run-3"
     init_run_layout(
         run_dir,

@@ -236,6 +236,7 @@ def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)
@@ -286,6 +287,7 @@ def test_run_reviewer_hermes_normalizes_multiline_pr_notes(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)
@@ -327,6 +329,7 @@ def test_run_reviewer_hermes_missing_profile_report_is_blocked(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)

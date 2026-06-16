@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "generate-task-spec.sh"
 HOCA_ROOT = SCRIPT.parents[1]
 
@@ -21,6 +23,7 @@ def init_repo(path: Path) -> None:
 
 def run_script(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
     return subprocess.run(

@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
 from tests.test_safe_staging_scripts import init_repo, staged_files
 
 
@@ -17,6 +18,7 @@ GENERATE_TASK_REPORT = HOCA_ROOT / "scripts" / "generate-task-report.sh"
 
 def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
     return subprocess.run(

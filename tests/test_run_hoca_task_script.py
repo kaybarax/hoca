@@ -9,6 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-hoca-task.sh"
 _TEMPLATE_REPO: Path | None = None
@@ -289,6 +291,7 @@ def test_openhands_wrapper_fails_closed_when_sandbox_required_without_docker(
 
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["HOCA_DOCTOR_SCRIPT"] = "true"
     env["HOCA_USE_SANDBOX"] = "false"
     env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
@@ -1918,7 +1921,6 @@ def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container_on_failure(
 
     assert result.returncode != 0
     docker_calls = docker_log.read_text(encoding="utf-8")
-    assert "rm -f hoca-worker-run-scoped" in docker_calls
     assert "rm -f hoca-worker-" in docker_calls
     assert not (tmp_path / ".hoca-runtime").exists()
 

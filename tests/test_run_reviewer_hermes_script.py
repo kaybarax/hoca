@@ -12,6 +12,7 @@ from tests.test_run_worker_hermes_script import (
     make_fake_ollama,
     write_task_spec,
 )
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-reviewer-hermes.sh"
 
@@ -65,6 +66,7 @@ def run_script(
     fake_bin: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
     env["HOCA_USE_SANDBOX"] = "false"
