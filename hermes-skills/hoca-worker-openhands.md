@@ -117,7 +117,7 @@ Build one precise prompt for OpenHands. Include:
   and required fixes; instruct OpenHands not to restart unrelated work
 
 Save the final prompt under the run directory when useful (for example
-`openhands-task-prompt.txt`) so the manager can audit what was sent. Never
+`$run_dir/openhands-task-prompt.txt`) so the manager can audit what was sent. Never
 embed API keys or secret values in the prompt file.
 
 ### 3a. Bounded iteration discipline

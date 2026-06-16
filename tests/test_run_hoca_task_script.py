@@ -9,6 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run-hoca-task.sh"
 _TEMPLATE_REPO: Path | None = None
@@ -18,6 +20,37 @@ def test_run_hoca_task_exports_hoca_dotenv_path() -> None:
     content = SCRIPT.read_text(encoding="utf-8")
 
     assert 'export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"' in content
+
+
+def test_run_hoca_task_invokes_definition_of_ready_once() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert (
+        content.count('run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID"') == 1
+    )
+    assert 'cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json"' in content
+
+
+def test_run_hoca_task_doctor_cache_can_be_disabled() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"' in content
+    assert "if ttl <= 0" in content
+    assert '[ "$HOCA_DOCTOR_CACHE_SECONDS" -gt 0 ]' in content
+
+
+def test_run_hoca_task_excludes_validation_side_effects_from_task_changes() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "is_validation_side_effect_path()" in content
+    assert "record_validation_side_effects()" in content
+    assert 'changed_files_for_task | sort -u > "$PRE_TEST_CHANGED_FILES"' in content
+    assert 'record_validation_side_effects "$PRE_TEST_CHANGED_FILES"' in content
+    assert content.index('"$SCRIPT_DIR/run-tests.sh"') < content.index(
+        'record_validation_side_effects "$PRE_TEST_CHANGED_FILES"'
+    )
+    review_script = (SCRIPT.parent / "review-with-openhands.sh").read_text(encoding="utf-8")
+    assert 'side_effects_file="$RUN_DIR/validation-side-effect-files.txt"' in review_script
 
 
 def test_run_hoca_task_uses_lane_id_in_timestamp_run_id() -> None:
@@ -34,6 +67,149 @@ def test_run_hoca_task_preserves_shared_runtime_in_fleet_lane_mode() -> None:
     assert 'if [ -n "${HOCA_LANE_ID:-}" ]; then' in content
     assert "Fleet lane mode: preserving shared target .hoca-runtime." in content
     assert 'rm -rf "$PROJECT_PATH/.hoca-runtime"' in content
+
+
+def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'find "$RUN_DIR" -name sandbox-container-name.txt -type f -print0' in content
+    assert 'docker rm -f "$container_name"' in content
+    assert 'docker rm -f "hoca-worker-${RUN_ID}"' in content
+    assert "trap cleanup EXIT" in content
+    assert "trap 'cleanup; exit 129' HUP" in content
+    assert "trap 'cleanup; exit 130' INT" in content
+    assert "trap 'cleanup; exit 143' TERM" in content
+
+
+def test_run_hoca_task_can_skip_pr_creation_after_commit() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "HOCA_SKIP_PR_CREATION:-false" in content
+    assert "pr-creation-skipped.txt" in content
+    assert 'update_status "completed" "commit_created_no_pr"' in content
+    assert content.index("HOCA_SKIP_PR_CREATION:-false") < content.index(
+        'echo "Creating pull request..."'
+    )
+
+
+def test_run_hoca_task_warms_reviewer_during_tests_without_failing_run() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "HOCA_REVIEW_WARMUP:-true" in content
+    assert "start_reviewer_warmup" in content
+    assert "wait_for_reviewer_warmup" in content
+    assert 'python" -m hoca.reviewer_warmup "$RUN_DIR"' not in content
+    assert '-m hoca.reviewer_warmup "$RUN_DIR"' in content
+    assert '2> "$RUN_DIR/logs/reviewer-warmup-stderr.txt" || true' in content
+    assert 'wait "$REVIEW_WARMUP_PID" || true' in content
+    assert content.index("start_reviewer_warmup") < content.index('"$SCRIPT_DIR/run-tests.sh"')
+    assert content.index("wait_for_reviewer_warmup") < content.index(
+        '"$SCRIPT_DIR/run-reviewer-hermes.sh"'
+    )
+
+
+def test_run_hoca_task_applies_task_scaled_budget() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "apply_run_budget()" in content
+    assert "-m hoca.run_budget export-shell" in content
+    assert 'eval "$budget_exports"' in content
+    assert "generate_run_task_spec\napply_express_mode\napply_run_budget 1" in content
+    assert 'apply_run_budget "$round_number"' in content
+
+
+def test_run_hoca_task_records_worker_engine_for_timing() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "print(load_config().worker_engine)" in content
+    assert "worker-$WORKER_ENGINE" in content
+    assert '--mode "$WORKER_ENGINE"' in content
+    assert "engine: $WORKER_ENGINE" in content
+
+
+def test_run_hoca_task_express_lane_preserves_gates_and_falls_back() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "--express" in content
+    assert 'EXPRESS_REQUESTED="false"' in content
+    assert "apply_express_mode()" in content
+    assert '"gates_preserved": [' in content
+    for gate in (
+        "definition_of_ready",
+        "validation",
+        "review",
+        "arbitration",
+        "safe_staging",
+        "manager_owned_pr",
+    ):
+        assert gate in content
+    assert 'spec.risk_level == "low" and expected_area_count <= 1' in content
+    assert "MAX_TOTAL_ROUNDS=1" in content
+    assert "export HOCA_WORKER_MODE=direct" in content
+    assert "export HOCA_REVIEWER_MODE=direct" in content
+    assert "export HOCA_REVIEW_WARMUP=true" in content
+    assert 'reason = "eligible" if eligible else "ineligible: high risk or wide scope"' in content
+
+
+def test_run_tests_uses_install_cache_for_pnpm() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-tests.sh").read_text(encoding="utf-8")
+
+    assert '"$PYTHON_BIN" -m hoca.install_cache current "$PROJECT_PATH" "$manager"' in content
+    assert '"$PYTHON_BIN" -m hoca.install_cache mark "$PROJECT_PATH" "$manager"' in content
+    assert '[ "${HOCA_FORCE_INSTALL:-false}" != "true" ]' in content
+    assert "Skipping: pnpm install (install cache current)" in content
+    assert "CI=true pnpm install --no-frozen-lockfile" in content
+
+
+def test_openhands_wrapper_uses_tighter_direct_mode_stall_defaults() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-openhands-task.sh").read_text(encoding="utf-8")
+
+    assert "DIRECT_MODE=false" in content
+    assert "HOCA_WORKER_MODE:-hermes" in content
+    assert "HOCA_REVIEWER_MODE:-hermes" in content
+    assert "HOCA_DIRECT_OPENHANDS_TIMEOUT:-420" in content
+    assert "HOCA_DIRECT_OPENHANDS_STALL:-120" in content
+    assert 'TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"' in content
+    assert 'STALL="${HOCA_OPENHANDS_STALL:-300}"' in content
+    assert 'echo "  DIRECT_MODE=$DIRECT_MODE"' in content
+
+
+def test_openhands_wrapper_defaults_dotenv_to_hoca_root_before_model_resolution() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "run-openhands-task.sh").read_text(encoding="utf-8")
+
+    assert '[ -z "${HOCA_DOTENV_PATH:-}" ]' in content
+    assert 'export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"' in content
+    assert 'export GIT_PAGER="${GIT_PAGER:-cat}"' in content
+    assert 'export PAGER="${PAGER:-cat}"' in content
+    assert 'export LESS="${LESS:-FRSX}"' in content
+    assert content.index('export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"') < content.index(
+        'source "$SCRIPT_DIR/resolve-role-model-env.sh"'
+    )
+
+
+def test_review_wrapper_inherits_task_spec_network_mode() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
+
+    assert "spec_network_mode=" in content
+    assert ".sandbox.network_mode // empty" in content
+    assert 'export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"' in content
+    assert content.index('export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"') < content.index(
+        'HOCA_AGENT_ROLE=reviewer "$SCRIPT_DIR/run-openhands-task.sh"'
+    )
+
+
+def test_review_wrapper_requires_file_report_before_finish() -> None:
+    root = Path(__file__).resolve().parents[1]
+    content = (root / "scripts" / "review-with-openhands.sh").read_text(encoding="utf-8")
+
+    assert "Required output order:" in content
+    assert "Write the structured JSON report to the exact path above" in content
+    assert "Verify the report file exists at that exact path" in content
+    assert "Do not finish with prose only" in content
 
 
 def test_hoca_scripts_honor_hoca_python_for_hoca_modules() -> None:
@@ -75,11 +251,58 @@ def test_openhands_wrapper_does_not_embed_api_key_in_python_command() -> None:
     assert "env_override['LLM_MODEL'] = '${MODEL}'" not in content
 
 
+def test_openhands_wrapper_fails_closed_when_sandbox_required_without_docker(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    init_repo(repo)
+    run_dir = tmp_path / "run"
+    fake_bin = tmp_path / "fake-bin-no-docker"
+    fake_bin.mkdir()
+    write_executable(
+        fake_bin / "docker",
+        "#!/usr/bin/env bash\nset -euo pipefail\nexit 1\n",
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOCA_SKIP_ROLE_MODEL_RESOLUTION": "true",
+            "HOCA_USE_SANDBOX": "true",
+            "LLM_MODEL": "ollama/test",
+            "LLM_BASE_URL": "http://127.0.0.1:11434",
+            "LLM_API_KEY": "ollama",
+            "PATH": f"{fake_bin}{os.pathsep}/usr/bin:/bin",
+        }
+    )
+
+    result = subprocess.run(
+        [
+            str(Path(__file__).resolve().parents[1] / "scripts" / "run-openhands-task.sh"),
+            str(repo),
+            "Update README",
+            str(run_dir),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert "Refusing to fall back to host execution" in result.stderr
+    assert (run_dir / "sandbox-required-error.txt").exists()
+    assert not (run_dir / "host-execution-warning.txt").exists()
+
+
 def base_env() -> dict[str, str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["HOCA_DOCTOR_SCRIPT"] = "true"
     env["HOCA_USE_SANDBOX"] = "false"
     env["HOCA_USE_WORKTREE_SANDBOX"] = "false"
+    env["HOCA_WORKER_MODE"] = "hermes"
+    env["HOCA_REVIEWER_MODE"] = "hermes"
     hermes_home = Path(tempfile.mkdtemp(prefix="hoca-test-hermes-home-"))
     (hermes_home / "profiles" / "hoca-worker").mkdir(parents=True)
     (hermes_home / "profiles" / "hoca-reviewer").mkdir(parents=True)
@@ -383,7 +606,7 @@ def test_run_hoca_task_uses_worker_profile(
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
 
 
 def test_basic_run_does_not_require_kanban_when_flag_is_default_false(
@@ -406,7 +629,7 @@ def test_basic_run_does_not_require_kanban_when_flag_is_default_false(
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
     assert "kanban" not in result.stderr.lower()
 
 
@@ -498,7 +721,7 @@ def test_run_hoca_task_routes_implementation_through_worker_hermes_when_profiles
 
     run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (implementation)" in result.stdout
+    assert "Running worker profile (implementation" in result.stdout
     assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
     assert (run_dir / "logs" / "worker-hermes-invoked-round-1.txt").is_file()
     assert (run_dir / "worker-hermes-prompt-round-1.txt").is_file()
@@ -578,7 +801,7 @@ def test_run_hoca_task_routes_repair_through_worker_hermes_when_profiles_enabled
 
     run_dir = latest_run_dir(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 2)" in result.stdout
+    assert "Running worker profile (repair round 2 of 2" in result.stdout
     assert (run_dir / "repair-attempt-1.md").is_file()
     assert (run_dir / "attempts" / "worker-attempt-2.json").is_file()
     assert (run_dir / "logs" / "worker-hermes-invoked-round-2.txt").is_file()
@@ -836,6 +1059,41 @@ def test_run_hoca_task_stops_when_doctor_preflight_fails(tmp_path: Path) -> None
     assert "type=failed" in latest_notification_result(tmp_path)
 
 
+def test_run_hoca_task_reuses_successful_doctor_cache(tmp_path: Path) -> None:
+    repo_one = tmp_path / "repo-one"
+    repo_two = tmp_path / "repo-two"
+    init_repo(repo_one)
+    init_repo(repo_two)
+    fake_bin = make_fake_preflight_bin(fake_tools_root(repo_one))
+    doctor_count = tmp_path / "doctor-count.txt"
+    doctor_script = tmp_path / "doctor.sh"
+    write_executable(
+        doctor_script,
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f'count_file="{doctor_count}"\n'
+        'count="0"\n'
+        '[ -f "$count_file" ] && count="$(cat "$count_file")"\n'
+        'count="$((count + 1))"\n'
+        'printf "%s\\n" "$count" > "$count_file"\n'
+        'echo "[OK] fake doctor"\n',
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DOCTOR_SCRIPT"] = str(doctor_script)
+    env["HOCA_DOCTOR_CACHE_DIR"] = str(tmp_path / "doctor-cache")
+    env["HOCA_DOCTOR_CACHE_SECONDS"] = "3600"
+    env["HOCA_AUTO_STAGE_REVIEWED_CHANGES"] = "false"
+
+    first = run_hoca_task_with_env(repo_one, "Update README", env)
+    second = run_hoca_task_with_env(repo_two, "Update README", env)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert doctor_count.read_text(encoding="utf-8") == "1\n"
+    assert "Using cached HOCA doctor preflight." in second.stdout
+
+
 def test_run_hoca_task_marks_openhands_failure_and_saves_logs(tmp_path: Path) -> None:
     init_repo(tmp_path)
     fake_bin = make_fake_preflight_bin(
@@ -963,7 +1221,7 @@ def test_run_hoca_task_repairs_current_task_test_failures(tmp_path: Path) -> Non
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 2)" in result.stdout
+    assert "Running worker profile (repair round 2 of 2" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "fixed\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
@@ -1061,7 +1319,9 @@ def test_run_hoca_task_fails_when_worker_reports_changes_but_git_is_clean(
     result = run_hoca_task_with_env(tmp_path, "Update CONTRIBUTING", env)
 
     assert result.returncode != 0
-    assert "Worker reported changed files, but the task worktree has no Git changes" in result.stderr
+    assert (
+        "Worker reported changed files, but the task worktree has no Git changes" in result.stderr
+    )
     assert '"status": "failed"' in latest_status(tmp_path)
     assert '"reason": "worker_report_mismatch"' in latest_status(tmp_path)
 
@@ -1152,7 +1412,7 @@ def test_run_hoca_task_repairs_review_rejections(tmp_path: Path) -> None:
     result = run_hoca_task_with_env(tmp_path, "Update README", env)
 
     assert result.returncode == 0, result.stderr
-    assert "Running worker profile (repair round 2 of 3)" in result.stdout
+    assert "Running worker profile (repair round 2 of 3" in result.stdout
     assert count_file.read_text(encoding="utf-8") == "2\n"
     assert review_count_file.read_text(encoding="utf-8") == "2\n"
     assert '"status": "needs_human_staging"' in latest_status(tmp_path)
@@ -1216,13 +1476,282 @@ def test_run_hoca_task_auto_stages_reviewed_changes_and_creates_pr(
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env["HOCA_KEEP_RUNTIME"] = "true"
 
-    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
 
     assert result.returncode == 0, result.stderr
     assert "Generating manager intended-file list from reviewed changed files" in result.stdout
     assert "HOCA run completed through pull request creation." in result.stdout
+    assert "HOCA Timing Report" in result.stdout
+    assert "Agent loops:" in result.stdout
     assert '"status": "pr_created"' in latest_status(tmp_path)
     assert '"reason": "pull_request_created"' in latest_status(tmp_path)
+    timings = json.loads((latest_run_dir(tmp_path) / "timings.json").read_text(encoding="utf-8"))
+    phase_names = {phase["name"] for phase in timings["phases"]}
+    worker_phase = next(phase for phase in timings["phases"] if phase["name"] == "worker_attempt")
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
+    assert {
+        "definition_of_ready",
+        "doctor",
+        "branch_worktree_setup",
+        "task_spec",
+        "worker_attempt",
+        "review_pass",
+        "arbitration",
+        "staging",
+        "commit",
+        "pr_creation",
+    }.issubset(phase_names)
+    assert worker_phase["mode"] == "openhands"
+    assert review_phase["mode"] == "hermes"
+    assert timings["counters"]["agent_loops"] >= 2
+
+
+def test_run_hoca_task_direct_mode_full_pipeline_with_fake_agents(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")"\n'
+            'cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],'
+            '"pr_notes":{"summary":["Direct reviewer completed"],"known_followups":[]}}\n'
+            "EOF\n"
+            "echo 'Review complete.'\n"
+            "echo 'LGTM'\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
+
+    run_dir = latest_run_dir(tmp_path)
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    worker_phase = next(phase for phase in timings["phases"] if phase["name"] == "worker_attempt")
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
+    agent_loop_names = {
+        event["name"] for event in timings["events"] if event["type"] == "agent_loop"
+    }
+
+    assert result.returncode == 0, result.stderr
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert '"status": "pr_created"' in latest_status(tmp_path)
+    assert '"reason": "pull_request_created"' in latest_status(tmp_path)
+    assert (run_dir / "attempts" / "worker-attempt-1.json").is_file()
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    assert (run_dir / "decisions" / "manager-decision-1.json").is_file()
+    assert (run_dir / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (run_dir / "commit-hash.txt").is_file()
+    assert (run_dir / "pr-url.txt").read_text(encoding="utf-8").strip() == (
+        "https://github.com/example/repo/pull/1"
+    )
+    assert (run_dir / "prompts" / "worker-direct-prompt-1.txt").is_file()
+    assert (run_dir / "logs" / "worker-direct-stdout.txt").is_file()
+    assert (run_dir / "logs" / "reviewer-direct-stdout.txt").is_file()
+    assert not (run_dir / "worker-hermes-prompt-round-1.txt").exists()
+    assert not (run_dir / "logs" / "worker-hermes-invoked-round-1.txt").exists()
+    assert not (run_dir / "logs" / "reviewer-hermes-invoked-round-1.txt").exists()
+    assert worker_phase["mode"] == "openhands"
+    assert review_phase["mode"] == "direct"
+    assert "worker-openhands" in agent_loop_names
+    assert "reviewer-direct" in agent_loop_names
+    assert "reviewer-hermes" not in agent_loop_names
+
+
+def test_run_hoca_task_direct_mode_recovers_misplaced_review_report_even_when_review_exits_nonzero(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    prepare_pr_ready_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'ALT_REPORT_DIR="$(dirname "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")")"\n'
+            'mkdir -p "$ALT_REPORT_DIR/reports"\n'
+            'cat > "$ALT_REPORT_DIR/reports/review-report-1.json" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"LGTM","findings":[],'
+            '"pr_notes":{"summary":["Direct reviewer completed"],"known_followups":[]}}\n'
+            "EOF\n"
+            "echo 'Review complete.'\n"
+            "echo 'LGTM'\n"
+            "exit 1\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_KEEP_RUNTIME"] = "true"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env, "--timing")
+
+    run_dir = latest_run_dir(tmp_path)
+    review_report = json.loads(
+        (run_dir / "reviews" / "review-report-1.json").read_text(encoding="utf-8")
+    )
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    review_phase = next(phase for phase in timings["phases"] if phase["name"] == "review_pass")
+
+    assert result.returncode == 0, result.stderr
+    assert "HOCA run completed through pull request creation." in result.stdout
+    assert review_report["verdict"] == "LGTM"
+    assert (run_dir / "reviews" / "review-report-1.json").is_file()
+    assert (run_dir / "decisions" / "manager-decision-1.json").is_file()
+    assert review_phase["mode"] == "direct"
+
+
+def test_run_hoca_task_direct_mode_preserves_gate_artifact_parity_with_hermes(
+    tmp_path: Path,
+) -> None:
+    direct_repo = tmp_path / "direct"
+    hermes_repo = tmp_path / "hermes"
+    common_artifacts = {
+        "attempts/worker-attempt-1.json",
+        "reviews/review-report-1.json",
+        "decisions/manager-decision-1.json",
+        "staged-files.txt",
+        "commit-hash.txt",
+        "pr-url.txt",
+        "status.json",
+        "timings.json",
+    }
+    required_phases = {
+        "definition_of_ready",
+        "doctor",
+        "branch_worktree_setup",
+        "task_spec",
+        "worker_attempt",
+        "review_pass",
+        "arbitration",
+        "staging",
+        "commit",
+        "pr_creation",
+    }
+
+    def run_pipeline(repo: Path, *, worker_mode: str, reviewer_mode: str) -> Path:
+        init_repo(repo)
+        prepare_pr_ready_repo(repo)
+        fake_bin = make_fake_preflight_bin(
+            fake_tools_root(repo),
+            openhands_body="printf 'agent edit\\n' > README.md\n",
+            review_body=(
+                'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:-$PWD/review.json}")"\n'
+                'if [[ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]]; then\n'
+                '  cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+                '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+                '"verdict":"LGTM","findings":[],'
+                '"pr_notes":{"summary":["Reviewer completed"],"known_followups":[]}}\n'
+                "EOF\n"
+                "fi\n"
+                "echo 'Review complete.'\n"
+                "echo 'LGTM'\n"
+            ),
+        )
+        env = base_env()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        env["HOCA_WORKER_MODE"] = worker_mode
+        env["HOCA_REVIEWER_MODE"] = reviewer_mode
+        env["HOCA_KEEP_RUNTIME"] = "true"
+        if worker_mode == "hermes" or reviewer_mode == "hermes":
+            hermes_home = repo / "hermes-home"
+            setup_fake_hermes_worker(fake_bin, hermes_home)
+            env["HERMES_HOME"] = str(hermes_home)
+            env["HERMES_TEST_PROJECT"] = str(repo)
+
+        result = run_hoca_task_with_env(repo, "Update README", env, "--timing")
+
+        assert result.returncode == 0, result.stderr
+        assert '"status": "pr_created"' in latest_status(repo)
+        assert '"reason": "pull_request_created"' in latest_status(repo)
+        return latest_run_dir(repo)
+
+    direct_run = run_pipeline(direct_repo, worker_mode="direct", reviewer_mode="direct")
+    hermes_run = run_pipeline(hermes_repo, worker_mode="hermes", reviewer_mode="hermes")
+
+    direct_artifacts = {path for path in common_artifacts if (direct_run / path).is_file()}
+    hermes_artifacts = {path for path in common_artifacts if (hermes_run / path).is_file()}
+    direct_timings = json.loads((direct_run / "timings.json").read_text(encoding="utf-8"))
+    hermes_timings = json.loads((hermes_run / "timings.json").read_text(encoding="utf-8"))
+    direct_phase_names = {phase["name"] for phase in direct_timings["phases"]}
+    hermes_phase_names = {phase["name"] for phase in hermes_timings["phases"]}
+
+    assert direct_artifacts == common_artifacts
+    assert hermes_artifacts == common_artifacts
+    assert required_phases.issubset(direct_phase_names)
+    assert required_phases.issubset(hermes_phase_names)
+    assert (direct_run / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (hermes_run / "staged-files.txt").read_text(encoding="utf-8") == "README.md\n"
+    assert (direct_run / "pr-url.txt").read_text(encoding="utf-8") == (
+        hermes_run / "pr-url.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_run_hoca_task_direct_mode_blocked_review_status(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        review_body=(
+            'mkdir -p "$(dirname "${HOCA_REVIEW_REPORT_PATH:?}")"\n'
+            'cat > "$HOCA_REVIEW_REPORT_PATH" <<EOF\n'
+            '{"schema_version":1,"run_id":"run-test","round":1,"role":"reviewer",'
+            '"verdict":"blocked",'
+            '"findings":[{"id":"B1","severity":"high","category":"correctness",'
+            '"file":"README.md","summary":"Blocked review",'
+            '"required_fix":"Human review is required"}],'
+            '"pr_notes":{"summary":["Blocked"],"known_followups":["Human review is required"]}}\n'
+            "EOF\n"
+            "echo 'Blocked review.'\n"
+        ),
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Manager blocked the run after round 1 of 1" in result.stderr
+    assert '"status": "blocked"' in latest_status(tmp_path)
+    assert '"final_state": "blocked"' in latest_status(tmp_path)
+
+
+def test_run_hoca_task_direct_mode_failed_tests_status(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add pyproject"], cwd=tmp_path, check=True, stdout=subprocess.PIPE
+    )
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body="printf 'direct agent edit\\n' > README.md\n",
+        pytest_body="echo 'tests failed'\nexit 3\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_WORKER_MODE"] = "direct"
+    env["HOCA_REVIEWER_MODE"] = "direct"
+    env["HOCA_MAX_TOTAL_ROUNDS"] = "1"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    assert "Tests still failed after round 1 of 1" in result.stderr
+    assert '"status": "failed"' in latest_status(tmp_path)
+    assert '"reason": "tests_failed"' in latest_status(tmp_path)
 
 
 def test_run_hoca_task_restores_dev_branch_after_pr_creation(tmp_path: Path) -> None:
@@ -1303,7 +1832,11 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
     )
     fake_bin = make_fake_preflight_bin(
         fake_tools_root(tmp_path),
-        openhands_body="printf 'agent edit\\n' > README.md\n",
+        openhands_body=(
+            "printf 'agent edit\\n' > README.md\n"
+            "mkdir -p .pnpm-store/v3/files/00\n"
+            "printf cache > .pnpm-store/v3/files/00/cache-entry\n"
+        ),
     )
     env = base_env()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
@@ -1316,6 +1849,7 @@ def test_run_hoca_task_ignores_own_runtime_artifacts_when_not_gitignored(
     assert "Working tree has existing changes:" not in result.stdout
     assert "README.md" in changed_files
     assert ".hoca-runtime" not in changed_files
+    assert ".pnpm-store" not in changed_files
 
 
 def test_duplicate_issue_lock_exits_successfully_with_notice(tmp_path: Path) -> None:
@@ -1366,6 +1900,35 @@ def test_run_hoca_task_cleanup_removes_runtime_even_when_lock_was_replaced(
     assert result.returncode == 0
     assert not (tmp_path / ".hoca-runtime").exists()
     assert (run_dir(tmp_path, "issue-42") / "status.json").is_file()
+
+
+def test_run_hoca_task_cleanup_removes_run_scoped_sandbox_container_on_failure(
+    tmp_path: Path,
+) -> None:
+    init_repo(tmp_path)
+    fake_bin = make_fake_preflight_bin(
+        fake_tools_root(tmp_path),
+        openhands_body=(
+            'run_dir="$(find .hoca-runtime/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"\n'
+            'printf "hoca-worker-run-scoped\\n" > "$run_dir/sandbox-container-name.txt"\n'
+            "echo 'OpenHands crashed after sandbox start.' >&2\n"
+            "exit 1\n"
+        ),
+    )
+    docker_log = tmp_path / "docker-cleanup.log"
+    write_executable(
+        fake_bin / "docker",
+        f"#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >> {docker_log}\nexit 0\n",
+    )
+    env = base_env()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = run_hoca_task_with_env(tmp_path, "Update README", env)
+
+    assert result.returncode != 0
+    docker_calls = docker_log.read_text(encoding="utf-8")
+    assert "rm -f hoca-worker-" in docker_calls
+    assert not (tmp_path / ".hoca-runtime").exists()
 
 
 def test_run_hoca_task_cleanup_removes_unpublished_worktree_branch_on_failure(

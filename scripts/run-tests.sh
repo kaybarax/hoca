@@ -9,6 +9,8 @@ fi
 PROJECT_PATH="$(cd "$1" && pwd)"
 RUN_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOCA_ROOT="${HOCA_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 cd "$PROJECT_PATH"
 
@@ -27,6 +29,24 @@ TEST_COMMAND=""
 FAILED_COMMAND=""
 FAILURE_TYPE=""
 TASK_SPEC_PATH="$RUN_DIR/task-spec.json"
+
+record_timing_event() {
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
+}
+
+install_cache_current() {
+  local manager="$1"
+  [ "${HOCA_FORCE_INSTALL:-false}" != "true" ] || return 1
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON_BIN" -m hoca.install_cache current "$PROJECT_PATH" "$manager"
+}
+
+mark_install_cache_current() {
+  local manager="$1"
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON_BIN" -m hoca.install_cache mark "$PROJECT_PATH" "$manager" >/dev/null 2>&1 || true
+}
 
 run_test_command() {
   local name="$1"
@@ -183,8 +203,18 @@ pick_node_runner() {
 if [ -f "package.json" ]; then
   runner="$(pick_node_runner)"
   if [ "$runner" = "pnpm" ] && [ -f "pnpm-lock.yaml" ]; then
-    echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
-    CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
+    if install_cache_current "pnpm"; then
+      echo "Skipping: pnpm install (install cache current)" | tee -a "$STDOUT_LOG"
+    else
+      echo "Running: pnpm install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
+      record_timing_event --type dependency_install --name test-pnpm-install
+      CI=true pnpm install --no-frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
+      mark_install_cache_current "pnpm"
+    fi
+  elif [ "$runner" = "yarn" ] && [ -f "yarn.lock" ]; then
+    echo "Running: yarn install (pre-test dependency sync)" | tee -a "$STDOUT_LOG"
+    record_timing_event --type dependency_install --name test-yarn-install
+    CI=true yarn install --frozen-lockfile >> "$STDOUT_LOG" 2>> "$STDERR_LOG" || true
   fi
   # Capture task-spec commands once so we can check coverage below.
   _spec_commands="$(load_task_spec_commands 2>/dev/null || true)"

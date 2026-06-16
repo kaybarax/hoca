@@ -44,6 +44,7 @@ from hoca.run_state import (
     write_final_state,
     write_initial_status,
     write_json_atomic,
+    write_status,
 )
 
 
@@ -122,6 +123,21 @@ def _profile_failure_log_excerpt(run_dir: Path) -> str | None:
         ]
         if lines:
             return _redact_secret_like_values(" ".join(lines[:3]))
+    return None
+
+
+def _openhands_edit_tool_failure(run_dir: Path) -> str | None:
+    output_path = run_dir / "openhands-output.jsonl"
+    if not output_path.is_file():
+        return None
+    try:
+        text = output_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "Parameter `new_str` is required for command: insert." in text:
+        return "OpenHands file_editor insert omitted required new_str and produced no changes."
+    if "Parameter `old_str` is required" in text or "Parameter `new_str` is required" in text:
+        return "OpenHands file_editor omitted a required edit argument and produced no changes."
     return None
 
 
@@ -263,6 +279,7 @@ def record_worker_attempt(
 ) -> Path:
     ensure_run_layout(run_dir)
     run_id = run_dir.name
+    report_mode = "hermes" if mode == "profile" else mode
 
     changed_files = _read_lines(run_dir / "changed-files-after-openhands.txt")
     if not changed_files:
@@ -305,7 +322,10 @@ def record_worker_attempt(
 
     blocked_reason = None
     if status != "completed":
-        if monitor.get("stop_reason"):
+        edit_tool_failure = _openhands_edit_tool_failure(run_dir)
+        if edit_tool_failure:
+            blocked_reason = edit_tool_failure
+        elif monitor.get("stop_reason") and monitor.get("stop_reason") != "completed":
             blocked_reason = str(monitor["stop_reason"])
         elif (run_dir / "openhands-error.txt").is_file():
             blocked_reason = (run_dir / "openhands-error.txt").read_text(encoding="utf-8").strip()
@@ -316,7 +336,12 @@ def record_worker_attempt(
         if blocked_reason:
             blocked_reason = _redact_secret_like_values(blocked_reason)
 
-    commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
+    if report_mode == "direct":
+        commands_run = ["run-openhands-task.sh"]
+    elif report_mode in {"claude-code", "codex"}:
+        commands_run = [report_mode]
+    else:
+        commands_run = ["run-worker-hermes.sh", "run-openhands-task.sh"]
 
     auto_summary = summary or [f"Worker attempt {round_number} recorded with status {status}."]
     monitor_lines = _build_monitor_summary(monitor)
@@ -328,6 +353,7 @@ def record_worker_attempt(
         run_id=run_id,
         round=round_number,
         role="worker",
+        mode=report_mode,
         status=status,
         changed_files=changed_files,
         summary=auto_summary,
@@ -595,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_parser.add_argument("run_dir")
     worker_parser.add_argument("--round", type=int, required=True)
     worker_parser.add_argument("--status", default="completed")
-    worker_parser.add_argument("--mode", default="profile", choices=["profile"])
+    worker_parser.add_argument("--mode", default="profile", choices=["profile", "hermes", "direct"])
     worker_parser.add_argument("--project-path", default=None)
 
     validation_parser = subparsers.add_parser("record-validation", help="Write validation report.")
@@ -631,6 +657,13 @@ def main(argv: list[str] | None = None) -> int:
         "sync-status", help="Refresh artifact-backed status.json fields."
     )
     sync_status_parser.add_argument("run_dir")
+
+    write_status_parser = subparsers.add_parser(
+        "write-status", help="Write status.json status and refresh derived fields."
+    )
+    write_status_parser.add_argument("run_dir")
+    write_status_parser.add_argument("--status", required=True)
+    write_status_parser.add_argument("--reason", default="")
 
     args = parser.parse_args(argv)
     run_dir = Path(args.run_dir).resolve()
@@ -694,6 +727,13 @@ def main(argv: list[str] | None = None) -> int:
             if path is None:
                 print("status.json not found", file=sys.stderr)
                 return 1
+            print(path)
+        elif args.command == "write-status":
+            path = write_status(
+                run_dir,
+                args.status,
+                **({"reason": args.reason} if args.reason else {}),
+            )
             print(path)
     except Exception as exc:
         print(str(exc), file=sys.stderr)

@@ -86,6 +86,87 @@ def test_scheduler_launches_only_capacity(tmp_path: Path) -> None:
     assert tasks["task-b"].status == "queued"
 
 
+def test_scheduler_records_model_residency_capacity_reason(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    registry = FleetRegistry(control_root=tmp_path / "control")
+    registry.create_project(
+        HocaProject(
+            project_id="project-a",
+            repo_path=str(repo),
+            default_branch="main",
+            max_parallel_tasks=4,
+        )
+    )
+    registry.create_task(
+        HocaFleetTask(
+            task_id="task-a",
+            project_id="project-a",
+            status="queued",
+            readiness="ready",
+            priority=1,
+            metadata={"required_models": ["third-model"]},
+        )
+    )
+    for task_id in ("running-a", "running-b"):
+        registry.create_task(
+            HocaFleetTask(
+                task_id=task_id,
+                project_id="project-a",
+                status="running",
+                readiness="ready",
+                priority=1,
+            )
+        )
+    registry.create_lane(
+        HocaLane(
+            lane_id="lane-1",
+            task_id="running-a",
+            project_id="project-a",
+            status="running",
+            branch="hoca/lane-1",
+            attempt_number=0,
+            metadata={"required_models": ["first-model"]},
+        )
+    )
+    registry.create_lane(
+        HocaLane(
+            lane_id="lane-2",
+            task_id="running-b",
+            project_id="project-a",
+            status="running",
+            branch="hoca/lane-2",
+            attempt_number=0,
+            metadata={"required_models": ["second-model"]},
+        )
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=4,
+        max_parallel_lanes=4,
+        max_agents=10,
+        memory_limit_mb=0,
+        cpu_limit_percent=0,
+        metadata={"max_resident_models": 2},
+    )
+    scheduler = FleetScheduler(
+        registry=registry,
+        governor=ResourceGovernor(budget=budget),
+        control_root=tmp_path / "control",
+    )
+
+    decisions = scheduler.tick()
+
+    decision = next(item for item in decisions if item.task_id == "task-a")
+    assert decision.decision_type == "wait_capacity"
+    assert decision.reason == "model residency cap reached (3/2); added=third-model"
+    assert registry.get_task("task-a").status == "queued"
+    assert registry.get_lane("lane-1").status == "running"
+    assert registry.get_lane("lane-2").status == "running"
+
+
 def test_scheduler_ignores_pr_created_lanes_for_launch_capacity(tmp_path: Path) -> None:
     registry = _registry_with_project_and_tasks(tmp_path)
     registry.update_project(
@@ -198,6 +279,11 @@ printf 'github=%s gh=%s\\n' "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"
     )
     monkeypatch.setenv("GITHUB_TOKEN", "manager-token")
     monkeypatch.setenv("GH_TOKEN", "manager-gh-token")
+    for role in ("MANAGER", "WORKER", "REVIEWER"):
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_NAME", role.lower())
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_MODEL", "ollama/qwen-14b-pro")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_BASE_URL", "http://127.0.0.1:11434")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_API_KEY", "ollama")
     budget = HocaResourceBudget(
         budget_id="default",
         max_parallel_projects=1,

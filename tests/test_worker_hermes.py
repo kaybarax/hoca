@@ -17,9 +17,15 @@ from hoca.contracts import (
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
 from hoca.worker_hermes import (
+    WorkerRunResult,
     build_worker_hermes_prompt,
+    _ensure_worker_attempt_report,
     _infer_worker_status,
     _missing_profile_attempt_status,
+    _openhands_completed_successfully,
+    _relocate_leaked_attempt_reports,
+    _relocate_leaked_openhands_prompt,
+    _timeout_stream_to_text,
     load_task_spec,
     run_worker_hermes,
     verify_profile_prerequisites,
@@ -38,6 +44,10 @@ def clear_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for role in ("MANAGER", "WORKER", "REVIEWER"):
         for suffix in ("NAME", "MODEL", "BASE_URL", "API_KEY"):
             monkeypatch.delenv(f"HOCA_{role}_MODEL_{suffix}", raising=False)
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_NAME", role.lower())
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_MODEL", "ollama/qwen-14b-pro")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_BASE_URL", "http://127.0.0.1:11434")
+        monkeypatch.setenv(f"HOCA_{role}_MODEL_API_KEY", "ollama")
 
 
 def sample_task_spec(**overrides: object) -> HocaTaskSpec:
@@ -88,6 +98,8 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "[redacted: possible secret]" in prompt
     assert "run-openhands-task.sh" in prompt
     assert "HOCA_LOCK_ROLE_MODEL=true" in prompt
+    assert 'HOCA_USE_SANDBOX="true"' in prompt
+    assert 'HOCA_NETWORK_MODE="offline"' in prompt
     assert "HOCA_PYTHON=" in prompt
     assert "HOCA_DOTENV_PATH=" in prompt
     assert "Do not set or override HOCA_REQUESTED_MODEL" in prompt
@@ -95,11 +107,16 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "Manager-owned Git lifecycle only" in prompt
     assert "git add, git commit, git push" in prompt
     assert "Do not stage, commit, push" in prompt
+    assert "clean up only the exact files or temp directory you created" in prompt
     assert "access only that exact path" in prompt
     assert "never use .env* globs" in prompt
     assert "Bounded iteration discipline" in prompt
     assert "completion is genuinely true" in prompt
     assert "Inspect current repository state and prior round artifacts" in prompt
+    assert "do not recursively list the repository" in prompt
+    assert "After one relevant validation command passes" in prompt
+    assert "Do not continue exploring" in prompt
+    assert "excluding manager-owned .hoca-runtime/ artifacts" in prompt
     assert "Implementation quality principles" in prompt
     assert "Name the data shape first" in prompt
     assert "Subtract before adding" in prompt
@@ -109,6 +126,21 @@ def test_build_worker_hermes_prompt_excludes_secret_values() -> None:
     assert "task_spec_repo_root_for_reference_only: /tmp/project" in prompt
     assert "- repo_root: /tmp/project" not in prompt
     assert "rewrite validation commands to run from project_path" in prompt
+
+
+def test_build_worker_hermes_prompt_preserves_docker_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKER_CONTEXT", "colima")
+    prompt = build_worker_hermes_prompt(
+        spec=sample_task_spec(),
+        project_path=Path(f"{MAC_HOME}/project"),
+        run_dir=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test"),
+        round_number=1,
+        task_spec_path=Path(f"{MAC_HOME}/project/.hoca-runtime/runs/run-test/task-spec.json"),
+    )
+
+    assert 'DOCKER_CONTEXT="colima"' in prompt
 
 
 def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
@@ -128,6 +160,7 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
 
     assert "project_path as the only executable repository root" in prompt
     assert "do not cd to the original checkout" in prompt
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false" in prompt
     assert (
         "Do not read, write, or run commands in any repository path other than project_path"
         in prompt
@@ -137,6 +170,7 @@ def test_build_worker_hermes_prompt_pins_openhands_to_worktree_root() -> None:
         in prompt
     )
     assert f"task_spec_repo_root_for_reference_only: {MAC_HOME}/original-checkout" in prompt
+    assert 'save it only as "$run_dir/openhands-task-prompt.txt"' in prompt
     assert f"- repo_root: {MAC_HOME}/original-checkout" not in prompt
 
 
@@ -234,6 +268,17 @@ def init_repo(path: Path) -> None:
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE)
 
 
+def _project_has_untracked_files(path: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return bool(completed.stdout.strip())
+
+
 def test_run_worker_hermes_profile_mode_invokes_hermes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -303,6 +348,7 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HOCA_USE_SANDBOX", "false")
+    monkeypatch.setenv("HOCA_WORKER_MODE", "hermes")
     clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
@@ -335,6 +381,101 @@ def test_run_worker_hermes_profile_mode_invokes_hermes(
     assert (run_dir / "logs" / "worker-hermes-stderr.txt").is_file()
     report = json.loads(result.worker_attempt_path.read_text(encoding="utf-8"))
     assert report["status"] == "completed"
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    coordinator_loops = [
+        event
+        for event in timings["events"]
+        if event["type"] == "agent_loop" and event["name"] == "worker-hermes-coordinator"
+    ]
+    assert len(coordinator_loops) == 1
+
+
+def test_run_worker_hermes_dispatches_direct_mode_without_hermes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    attempt_path = worker_attempt_path(run_dir, 1)
+
+    def fake_run_worker_direct(**kwargs):
+        return type(
+            "Result",
+            (),
+            {
+                "mode": "direct",
+                "exit_code": 0,
+                "worker_attempt_path": attempt_path,
+                "hermes_stdout_path": None,
+                "hermes_stderr_path": None,
+            },
+        )()
+
+    monkeypatch.setenv("HOCA_WORKER_MODE", "direct")
+    monkeypatch.setattr("hoca.worker_direct.run_worker_direct", fake_run_worker_direct)
+
+    result = run_worker_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "direct"
+    assert result.worker_attempt_path == attempt_path
+    timings_path = run_dir / "timings.json"
+    coordinator_loops = []
+    if timings_path.is_file():
+        timings = json.loads(timings_path.read_text(encoding="utf-8"))
+        coordinator_loops = [
+            event
+            for event in timings["events"]
+            if event["type"] == "agent_loop" and event["name"] == "worker-hermes-coordinator"
+        ]
+    assert coordinator_loops == []
+
+
+def test_run_worker_hermes_dispatches_codex_engine_without_hermes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    attempt_path = worker_attempt_path(run_dir, 1)
+    captured: dict[str, object] = {}
+
+    def fake_run_codex_worker(**kwargs):
+        captured.update(kwargs)
+        return WorkerRunResult(
+            mode="codex",
+            exit_code=0,
+            worker_attempt_path=attempt_path,
+            hermes_stdout_path=None,
+            hermes_stderr_path=None,
+        )
+
+    monkeypatch.setenv("HOCA_DOTENV_PATH", os.devnull)
+    monkeypatch.setenv("HOCA_WORKER_ENGINE", "codex")
+    monkeypatch.setattr("hoca.cli_worker_adapters.run_codex_worker", fake_run_codex_worker)
+
+    result = run_worker_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "codex"
+    assert result.worker_attempt_path == attempt_path
+    assert captured["project_path"] == project.resolve()
+    assert captured["task_spec_path"] == task_spec_path.resolve()
+    assert captured["run_dir"] == run_dir.resolve()
 
 
 def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path: Path) -> None:
@@ -356,6 +497,34 @@ def test_record_worker_attempt_monitor_stopped_produces_blocked_report(tmp_path:
     assert report.blocked_reason == "secret_detected"
     assert any("Monitor stop reason: secret_detected" in s for s in report.summary)
     assert any("secret_access" in s for s in report.summary)
+
+
+def test_worker_status_blocks_on_any_monitor_stop(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "monitor-result.json").write_text(
+        json.dumps({"exit_code": 1, "stop_reason": "unrelated_directory"}),
+        encoding="utf-8",
+    )
+
+    assert _infer_worker_status(run_dir, process_exit_code=0) == "blocked"
+
+
+def test_existing_completed_attempt_is_overwritten_by_monitor_block(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    record_worker_attempt(run_dir, round_number=1, status="completed")
+    (run_dir / "monitor-result.json").write_text(
+        json.dumps({"exit_code": 1, "stop_reason": "unrelated_directory"}),
+        encoding="utf-8",
+    )
+    status = _infer_worker_status(run_dir, process_exit_code=0)
+
+    path = _ensure_worker_attempt_report(run_dir, round_number=1, status=status)
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert report.status == "blocked"
+    assert report.blocked_reason == "unrelated_directory"
 
 
 def test_record_worker_attempt_failed_openhands_produces_report(tmp_path: Path) -> None:
@@ -446,6 +615,7 @@ def test_record_worker_attempt_profile_mode_captures_log_artifacts(tmp_path: Pat
 
     assert "run-worker-hermes.sh" in report.commands_run
     assert "run-openhands-task.sh" in report.commands_run
+    assert report.mode == "hermes"
     assert "worker_hermes_stdout" in report.artifact_paths
     assert "worker_hermes_stderr" in report.artifact_paths
 
@@ -488,6 +658,99 @@ def test_missing_profile_attempt_report_is_blocked(tmp_path: Path) -> None:
     assert status == "blocked"
     assert report.status == "blocked"
     assert report.blocked_reason == "Hermes worker did not write a structured attempt report."
+
+
+def test_missing_profile_attempt_after_successful_openhands_noop_is_completed(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-exit-code.txt").write_text("0\n", encoding="utf-8")
+    (run_dir / "monitor-result.json").write_text(
+        '{"stop_reason":"completed","exit_code":0}\n',
+        encoding="utf-8",
+    )
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+        project_path=project,
+    )
+
+    assert status == "completed"
+    assert _openhands_completed_successfully(run_dir) is True
+
+
+def test_timeout_stream_to_text_accepts_bytes() -> None:
+    assert _timeout_stream_to_text(b"hello \xe2\x9c\x93") == "hello \u2713"
+    assert _timeout_stream_to_text("plain") == "plain"
+    assert _timeout_stream_to_text(None) == ""
+
+
+def test_relocate_leaked_openhands_prompt_moves_artifact_out_of_repo(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    leaked_prompt = project / "openhands-task-prompt.txt"
+    leaked_prompt.write_text("prompt body\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    _relocate_leaked_openhands_prompt(project_path=project, run_dir=run_dir)
+
+    assert not leaked_prompt.exists()
+    assert (run_dir / "openhands-task-prompt.txt").read_text(encoding="utf-8") == "prompt body\n"
+    assert not _project_has_untracked_files(project)
+
+
+def test_relocate_leaked_attempt_reports_moves_artifacts_out_of_repo(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    leaked_attempts = project / "attempts"
+    leaked_attempts.mkdir()
+    (leaked_attempts / "worker-attempt-1.json").write_text('{"status":"completed"}\n')
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+
+    _relocate_leaked_attempt_reports(project_path=project, run_dir=run_dir)
+
+    assert not leaked_attempts.exists()
+    assert (run_dir / "attempts" / "worker-attempt-1.json").read_text(
+        encoding="utf-8"
+    ) == '{"status":"completed"}\n'
+    assert not _project_has_untracked_files(project)
+
+
+def test_missing_profile_attempt_with_file_editor_argument_error_is_failed(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    ensure_run_layout(run_dir)
+    (run_dir / "openhands-output.jsonl").write_text(
+        '{"observation":{"content":[{"text":"Parameter `new_str` is required for command: insert."}]}}\n',
+        encoding="utf-8",
+    )
+
+    status = _missing_profile_attempt_status(
+        run_dir,
+        round_number=1,
+        process_exit_code=0,
+        inferred_status="completed",
+    )
+    path = record_worker_attempt(run_dir, round_number=1, status=status, mode="direct")
+    report = HocaAttemptReport.from_json(path.read_text(encoding="utf-8"))
+
+    assert status == "failed"
+    assert report.status == "failed"
+    assert (
+        report.blocked_reason
+        == "OpenHands file_editor insert omitted required new_str and produced no changes."
+    )
 
 
 def test_missing_profile_attempt_report_uses_hermes_log_failure_detail(

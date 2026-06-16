@@ -35,6 +35,7 @@ run_review_gate() {
 }
 
 changed_files_for_review() {
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
   {
     git diff --name-only --diff-filter=ACMRTUXB
     git ls-files --others --exclude-standard
@@ -43,6 +44,9 @@ changed_files_for_review() {
     case "$changed_path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
     esac
+    if [ -s "$side_effects_file" ] && grep -Fxq -- "$changed_path" "$side_effects_file"; then
+      continue
+    fi
     [ -e "$changed_path" ] || continue
     printf '%s\n' "$changed_path"
   done | sort -u
@@ -62,12 +66,64 @@ mkdir -p "$REVIEW_DIR"
 REVIEW_ROUND="${HOCA_REVIEW_ROUND:-1}"
 RUN_ID="$(basename "$RUN_DIR")"
 STRUCTURED_REPORT_PATH="$RUN_DIR/reviews/review-report-${REVIEW_ROUND}.json"
+if [ -n "${HOCA_REVIEW_REPORT_PATH:-}" ]; then
+  STRUCTURED_REPORT_PATH="$HOCA_REVIEW_REPORT_PATH"
+fi
 mkdir -p "$RUN_DIR/reviews"
+ALT_STRUCTURED_REPORT_PATH="$RUN_DIR/review-report-${REVIEW_ROUND}.json"
 
 CHANGED_FILES_FILE="$REVIEW_DIR/changed-files.txt"
-DIFF_FILE="$REVIEW_DIR/git-diff.patch"
+FULL_DIFF_FILE="$REVIEW_DIR/git-diff.patch"
+DIFF_FILE="$FULL_DIFF_FILE"
+DIFF_VIEW_FILE="$DIFF_FILE"
+TEST_SUMMARY_FILE="$RUN_DIR/tests-summary.md"
+TEST_SUMMARY_VIEW_FILE="$TEST_SUMMARY_FILE"
+TEST_SUMMARY_INLINE="(test summary file is missing)"
+TRUNCATION_FILE="$REVIEW_DIR/context-truncation.json"
+REVIEW_DIFF_MAX_LINES="${HOCA_REVIEW_DIFF_MAX_LINES:-1200}"
+REVIEW_DIFF_CONTEXT_LINES="${HOCA_REVIEW_DIFF_CONTEXT_LINES:-3}"
+REVIEW_LOG_TAIL_LINES="${HOCA_REVIEW_LOG_TAIL_LINES:-200}"
 printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_FILE"
-git diff > "$DIFF_FILE"
+git diff -U"$REVIEW_DIFF_CONTEXT_LINES" > "$FULL_DIFF_FILE"
+
+DIFF_TRUNCATED=false
+DIFF_LINE_COUNT="$(wc -l < "$FULL_DIFF_FILE" | tr -d ' ')"
+if [ "$DIFF_LINE_COUNT" -gt "$REVIEW_DIFF_MAX_LINES" ]; then
+  DIFF_VIEW_FILE="$REVIEW_DIR/git-diff.capped.patch"
+  head -n "$REVIEW_DIFF_MAX_LINES" "$FULL_DIFF_FILE" > "$DIFF_VIEW_FILE"
+  {
+    echo ""
+    echo "[HOCA truncated diff view at ${REVIEW_DIFF_MAX_LINES} of ${DIFF_LINE_COUNT} lines; full diff: ${FULL_DIFF_FILE}]"
+  } >> "$DIFF_VIEW_FILE"
+  DIFF_TRUNCATED=true
+fi
+
+TEST_SUMMARY_TRUNCATED=false
+TEST_SUMMARY_LINE_COUNT=0
+if [ -f "$TEST_SUMMARY_FILE" ]; then
+  TEST_SUMMARY_LINE_COUNT="$(wc -l < "$TEST_SUMMARY_FILE" | tr -d ' ')"
+  if [ "$TEST_SUMMARY_LINE_COUNT" -gt "$REVIEW_LOG_TAIL_LINES" ]; then
+    TEST_SUMMARY_VIEW_FILE="$REVIEW_DIR/tests-summary-tail.md"
+    tail -n "$REVIEW_LOG_TAIL_LINES" "$TEST_SUMMARY_FILE" > "$TEST_SUMMARY_VIEW_FILE"
+    TEST_SUMMARY_TRUNCATED=true
+  fi
+  TEST_SUMMARY_INLINE="$(cat "$TEST_SUMMARY_VIEW_FILE")"
+fi
+
+cat > "$TRUNCATION_FILE" <<EOF
+{
+  "diff_truncated": ${DIFF_TRUNCATED},
+  "diff_full_path": "${FULL_DIFF_FILE}",
+  "diff_view_path": "${DIFF_VIEW_FILE}",
+  "diff_line_count": ${DIFF_LINE_COUNT},
+  "diff_line_cap": ${REVIEW_DIFF_MAX_LINES},
+  "test_summary_truncated": ${TEST_SUMMARY_TRUNCATED},
+  "test_summary_full_path": "${TEST_SUMMARY_FILE}",
+  "test_summary_view_path": "${TEST_SUMMARY_VIEW_FILE}",
+  "test_summary_line_count": ${TEST_SUMMARY_LINE_COUNT},
+  "test_summary_line_cap": ${REVIEW_LOG_TAIL_LINES}
+}
+EOF
 
 REVIEW_GOAL="$TASK"
 ACCEPTANCE_BLOCK=""
@@ -91,16 +147,30 @@ if [ -f "$TASK_SPEC_FILE" ] && command -v jq >/dev/null 2>&1; then
   if [ -n "$expected_area_lines" ]; then
     EXPECTED_AREAS_BLOCK="$(printf '%s\n' "$expected_area_lines" | sed 's/^/- /')"
   fi
+  spec_network_mode="$(jq -r '.sandbox.network_mode // empty' "$TASK_SPEC_FILE" 2>/dev/null || true)"
+  if [ -z "${HOCA_REVIEWER_NETWORK_MODE:-}" ] && [ -n "$spec_network_mode" ]; then
+    export HOCA_REVIEWER_NETWORK_MODE="$spec_network_mode"
+  fi
 fi
 
 REVIEW_TASK="Review the current repository changes for the following task: ${REVIEW_GOAL}
 
 The changed-file list and diff are saved in:
 - ${CHANGED_FILES_FILE}
-- ${DIFF_FILE}
+- ${DIFF_VIEW_FILE}
+
+Test summary view and context truncation metadata:
+- ${TEST_SUMMARY_VIEW_FILE}
+- ${TRUNCATION_FILE}
+
+Test summary contents:
+\`\`\`
+${TEST_SUMMARY_INLINE}
+\`\`\`
 
 Inspect those files and the working tree directly. Do not rely on this prompt
-as a complete copy of the diff."
+as a complete copy of the diff. If context-truncation.json says a view was
+capped, mention that limitation in pr_notes.summary."
 
 if [ -n "$ACCEPTANCE_BLOCK" ]; then
   REVIEW_TASK="${REVIEW_TASK}
@@ -130,28 +200,40 @@ Review-only constraints:
 - Do not modify, stage, commit, push, merge, or open pull requests.
 - Do not implement fixes or edit repository files during this review pass.
 - Inspect the changed files, diff, and working tree only to judge the submitted work.
+- Use the provided test summary as the primary validation evidence. Do not rerun
+  build, lint, or test commands unless the summary is missing, failed, or clearly
+  inconsistent with the diff.
+- Judge tool and script behavior from the diff, the existing checkout, and
+  documented semantics. Do not build side experiments: never create temporary
+  git repositories or fixture trees, and never use rm -rf, rm -Rf, or other
+  recursive deletion anywhere, including cleanup.
+- Never place shell commands inside delegated task or subagent instructions;
+  the deterministic safety monitor scans all streamed text and stops the
+  review when it sees dangerous command text.
 
 Structural quality bar:
-- Look for behavior-preserving simplifications that delete complexity instead of
-  merely rearranging it.
-- Treat ad-hoc conditionals, scattered special cases, one-off modes, and flag
-  growth in busy flows as maintainability risks when a cleaner abstraction or
-  model is visible.
-- Flag thin wrappers, pass-through helpers, cast-heavy or loosely typed
-  boundaries, and generic magic that obscure the real invariant.
-- Prefer canonical helpers, existing ownership boundaries, and the package or
-  module that already owns the concept over bespoke near-duplicates.
-- Watch for files pushed past roughly 1000 lines, or large busy files made harder
-  to scan, and ask for decomposition when the split is obvious.
-- Separate orchestration from business logic; flag unnecessarily sequential
-  orchestration or partial-update flows when a clearer atomic structure is
-  available.
-- Do not block on personal taste, but do block on structural regressions that
-  make future changes materially less safe or more difficult.
+- Block correctness, security, scope, test, and material maintainability regressions.
+- Prefer existing helpers and ownership boundaries over bespoke near-duplicates.
+- Treat needless wrappers, one-off modes, scattered special cases, and avoidable
+  file growth as risks only when they materially reduce future safety.
+- Do not block on personal taste, naming preference, or formatting alone.
 
 Produce a structured HocaReviewReport as JSON (YAML is acceptable only if JSON is
 not practical). Write the report to:
 - ${STRUCTURED_REPORT_PATH}
+
+Required output order:
+1. Inspect the changed files, diff, and test summary.
+2. Write the structured JSON report to the exact path above using the available
+   file editing or shell writing tool.
+3. Verify the report file exists at that exact path.
+4. Only after the report file exists, finish with the same JSON inside a fenced
+   \`\`\`json block. Do not finish with prose only.
+
+This path is exact. Do not create, delete, rename, or inspect alternate report
+directories such as /workspace/hoca-runs. If running inside the sandbox, the
+run directory is mounted and writable at both /hoca-run and the absolute path
+shown above; use the shown path directly.
 
 Include these fields:
 - schema_version: 1
@@ -184,9 +266,7 @@ Distinguish blockers from PR tech debt:
 - Do not block on pure preference, naming taste, or formatting when correctness,
   safety, tests, and scope are sound.
 - Do not approve merely because behavior works: LGTM also requires no clear
-  structural regression, no obvious simpler reframing left on the table, no
-  unjustified file-size expansion, no spaghetti growth, and no needless
-  abstraction or boundary drift.
+  structural regression or unjustified scope growth.
 
 Also include the structured JSON in your final response inside a fenced \`\`\`json block."
 
@@ -215,6 +295,19 @@ if [ -f "$REVIEW_DIR/openhands-exit-code.txt" ]; then
   cp "$REVIEW_DIR/openhands-exit-code.txt" "$RUN_DIR/openhands-review-exit-code.txt"
 fi
 
+REVIEW_REPORT_RECOVERED=false
+ALT_STRUCTURED_REPORT_PATHS=(
+  "$RUN_DIR/review-report-${REVIEW_ROUND}.json"
+  "$RUN_DIR/reports/review-report-${REVIEW_ROUND}.json"
+)
+for ALT_STRUCTURED_REPORT_PATH in "${ALT_STRUCTURED_REPORT_PATHS[@]}"; do
+  if [ ! -f "$STRUCTURED_REPORT_PATH" ] && [ -f "$ALT_STRUCTURED_REPORT_PATH" ]; then
+    mv "$ALT_STRUCTURED_REPORT_PATH" "$STRUCTURED_REPORT_PATH"
+    REVIEW_REPORT_RECOVERED=true
+    break
+  fi
+done
+
 if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.review_gate \
     "$RUN_DIR" \
@@ -223,6 +316,13 @@ if [ ! -f "$STRUCTURED_REPORT_PATH" ]; then
     --round "$REVIEW_ROUND" \
     --output "$STRUCTURED_REPORT_PATH" \
     >/dev/null 2>&1 || true
+  if [ -f "$STRUCTURED_REPORT_PATH" ]; then
+    REVIEW_REPORT_RECOVERED=true
+  fi
+fi
+
+if [ "$REVIEW_EXIT" -ne 0 ] && [ "$REVIEW_REPORT_RECOVERED" = true ]; then
+  REVIEW_EXIT=0
 fi
 
 if [ "$REVIEW_EXIT" -ne 0 ]; then

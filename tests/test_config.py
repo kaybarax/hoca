@@ -70,6 +70,9 @@ class TestLoadConfigDefaults:
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
+            "HOCA_WORKER_MODE",
+            "HOCA_WORKER_ENGINE",
+            "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
             "HOCA_WORKSPACE_ROOT",
             "OLLAMA_HOST",
@@ -94,6 +97,9 @@ class TestLoadConfigDefaults:
         assert cfg.use_worktree_sandbox is True
         assert cfg.network_mode == "offline"
         assert cfg.max_total_rounds == 3
+        assert cfg.worker_mode == "direct"
+        assert cfg.worker_engine == "openhands"
+        assert cfg.reviewer_mode == "direct"
         assert cfg.model_pool.is_active is False
         assert cfg.auto_merge is False
         assert cfg.require_tests is True
@@ -106,9 +112,23 @@ class TestLoadConfigDefaults:
         assert cfg.ollama_host == "http://127.0.0.1:11434"
         assert cfg.ollama_base_url == "http://127.0.0.1:11434"
         assert cfg.ollama_api_base == "http://127.0.0.1:11434"
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""
         assert cfg.webhook_secret == ""
         assert cfg.notify_telegram is False
+
+    def test_fast_defaults_keep_openhands_worker_engine(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty_env = tmp_path / ".env"
+        empty_env.write_text("")
+        for key in ("HOCA_WORKER_MODE", "HOCA_WORKER_ENGINE", "HOCA_REVIEWER_MODE"):
+            monkeypatch.delenv(key, raising=False)
+
+        cfg = load_config(dotenv_path=empty_env)
+
+        assert cfg.worker_mode == "direct"
+        assert cfg.worker_engine == "openhands"
+        assert cfg.reviewer_mode == "direct"
 
     def test_loads_from_dotenv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
@@ -124,6 +144,9 @@ class TestLoadConfigDefaults:
             "HOCA_USE_SANDBOX=false\n"
             "HOCA_USE_WORKTREE_SANDBOX=false\n"
             "HOCA_MAX_TOTAL_ROUNDS=5\n"
+            "HOCA_WORKER_MODE=direct\n"
+            "HOCA_WORKER_ENGINE=codex\n"
+            "HOCA_REVIEWER_MODE=hermes\n"
         )
         for key in [
             "HOCA_AUTO_MERGE",
@@ -137,6 +160,9 @@ class TestLoadConfigDefaults:
             "HOCA_USE_SANDBOX",
             "HOCA_USE_WORKTREE_SANDBOX",
             "HOCA_NETWORK_MODE",
+            "HOCA_WORKER_MODE",
+            "HOCA_WORKER_ENGINE",
+            "HOCA_REVIEWER_MODE",
             "HOCA_MAX_TOTAL_ROUNDS",
         ]:
             monkeypatch.delenv(key, raising=False)
@@ -155,6 +181,30 @@ class TestLoadConfigDefaults:
         assert cfg.use_sandbox is False
         assert cfg.use_worktree_sandbox is False
         assert cfg.max_total_rounds == 5
+        assert cfg.worker_mode == "direct"
+        assert cfg.worker_engine == "codex"
+        assert cfg.reviewer_mode == "hermes"
+
+    def test_invalid_worker_mode_fails_clearly(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_WORKER_MODE=fast\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="HOCA_WORKER_MODE must be one of"):
+            load_config(dotenv_path=env_file)
+
+    def test_invalid_worker_engine_fails_clearly(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_WORKER_ENGINE=fast\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="HOCA_WORKER_ENGINE must be one of"):
+            load_config(dotenv_path=env_file)
+
+    def test_invalid_reviewer_mode_fails_clearly(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOCA_REVIEWER_MODE=fast\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="HOCA_REVIEWER_MODE must be one of"):
+            load_config(dotenv_path=env_file)
 
     def test_env_var_overrides_dotenv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -169,7 +219,7 @@ class TestLoadConfigDefaults:
 
 
 class TestModelPoolConfig:
-    def test_empty_model_pool_uses_ollama_fallback_config(
+    def test_empty_model_pool_preserves_explicit_ollama_config_without_activating_pool(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -401,7 +451,7 @@ class TestCurrentEnvVars:
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert not hasattr(cfg, "llm_model")
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""
 
     def test_ollama_host_alias(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
@@ -476,7 +526,7 @@ class TestCurrentEnvVars:
         assert cfg.max_webhook_bytes == 32768
         assert cfg.workspace_root is not None
 
-    def test_empty_model_pool_uses_ollama_defaults(
+    def test_empty_model_pool_has_no_implicit_ollama_model(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         env_file = tmp_path / ".env"
@@ -488,4 +538,4 @@ class TestCurrentEnvVars:
         self._clear_current_env(monkeypatch)
         cfg = load_config(dotenv_path=env_file)
         assert cfg.model_pool.is_active is False
-        assert cfg.ollama_model == "qwen-14b-pro"
+        assert cfg.ollama_model == ""

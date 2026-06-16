@@ -17,14 +17,20 @@ from hoca.role_model_env import (
     apply_role_to_env,
     hermes_provider_for_model,
     log_line_for_selection,
+    openai_compatible_model_for_selection,
     resolve_role_llm,
     strip_pool_credentials,
 )
 from hoca.contracts import HocaReviewFinding, HocaReviewReport, HocaTaskSpec
 from hoca.paths import repo_root
 from hoca.profiles import PROFILE_REVIEWER, hermes_installed, profile_exists
-from hoca.review_gate import ReviewGateError, evaluate_review_gate
+from hoca.review_gate import (
+    ReviewGateError,
+    evaluate_review_gate,
+    recover_review_report_from_alternate_paths,
+)
 from hoca.run_layout import ensure_run_layout, review_report_path, worker_attempt_path
+from hoca.run_timing import record_event
 from hoca.subprocess_utils import CommandResult, run_command
 from hoca.worker_hermes import load_task_spec
 
@@ -188,6 +194,20 @@ def build_reviewer_hermes_prompt(
     hoca_root = repo_root()
     report_path = review_report_path(run_dir, round_number)
     worker_report = str(inputs.worker_report_path) if inputs.worker_report_path else "(missing)"
+    python_bin = os.environ.get("HOCA_PYTHON", sys.executable)
+    dotenv_path = os.environ.get("HOCA_DOTENV_PATH", str(hoca_root / ".env"))
+    sandbox_mode = os.environ.get("HOCA_USE_SANDBOX", "true")
+    network_mode = os.environ.get("HOCA_NETWORK_MODE", "offline")
+    review_command = (
+        "HOCA_LOCK_ROLE_MODEL=true "
+        "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false "
+        f'HOCA_USE_SANDBOX="{sandbox_mode}" '
+        f'HOCA_NETWORK_MODE="{network_mode}" '
+        f'HOCA_PYTHON="{python_bin}" '
+        f'HOCA_DOTENV_PATH="{dotenv_path}" '
+        f'"{hoca_root / "scripts" / "review-with-openhands.sh"}" '
+        '"$project_path" "$task" "$run_dir"'
+    )
     prompt = (
         "Execute one bounded HOCA reviewer pass using the hoca-reviewer-qa skill.\n\n"
         "Assignment parameters:\n"
@@ -210,6 +230,8 @@ def build_reviewer_hermes_prompt(
         "5. Do not implement changes, stage files, commit, push, merge, or open pull requests.\n"
         "6. Write exactly one structured HocaReviewReport JSON file at required_review_report_path.\n"
         "7. Use verdict LGTM only when there are no blocking findings. Use fix_required or blocked otherwise.\n\n"
+        "Required review wrapper command:\n"
+        f"{review_command}\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
         f"- goal: {spec.goal.strip()}\n"
         f"- acceptance_criteria: {', '.join(spec.acceptance_criteria) or '(none)'}\n"
@@ -246,13 +268,18 @@ def _invoke_hermes_reviewer(
     ]
     cfg = load_config()
     selection = resolve_role_llm("reviewer", cfg)
-    if selection.llm_model.strip():
-        command.extend(["--model", selection.llm_model])
-    provider = hermes_provider_for_model(selection.llm_model)
+    hermes_model = selection.llm_model.strip()
+    nested_openhands_model = openai_compatible_model_for_selection(selection)
+    if hermes_model:
+        command.extend(["--model", hermes_model])
+    provider = hermes_provider_for_model(hermes_model)
+    if not provider and selection.base_url.strip():
+        provider = "custom"
     if provider:
         command.extend(["--provider", provider])
     env = strip_pool_credentials(apply_role_to_env("reviewer", cfg, os.environ.copy()))
     env.update(selection.env_vars())
+    env["LLM_MODEL"] = nested_openhands_model
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "reviewer"
     # The reviewer profile invokes the OpenHands review wrapper as a child.
@@ -260,6 +287,8 @@ def _invoke_hermes_reviewer(
     # re-resolving or falling back to local defaults inside the profile shell.
     env["HOCA_SKIP_ROLE_MODEL_RESOLUTION"] = "true"
     env = filter_env(env, "reviewer")
+    if provider == "custom":
+        env["CUSTOM_BASE_URL"] = selection.base_url.strip()
     if cfg.model_pool.is_active:
         print(log_line_for_selection(selection), file=sys.stderr)
 
@@ -363,6 +392,8 @@ def _evaluate_profile_report(
 ) -> tuple[Path, int]:
     report_path = review_report_path(run_dir, round_number)
     if not report_path.exists():
+        recover_review_report_from_alternate_paths(run_dir, round_number, report_path)
+    if not report_path.exists():
         path = _write_blocked_report(
             run_dir=run_dir,
             round_number=round_number,
@@ -419,6 +450,16 @@ def run_reviewer_hermes(
     task_spec_path = task_spec_path.resolve()
     ensure_run_layout(run_dir)
     spec = load_task_spec(task_spec_path)
+    cfg = load_config()
+    if cfg.reviewer_mode == "direct":
+        from hoca.reviewer_direct import run_reviewer_direct
+
+        return run_reviewer_direct(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+        )
     inputs = prepare_reviewer_inputs(
         project_path=project_path, run_dir=run_dir, round_number=round_number
     )
@@ -433,6 +474,16 @@ def run_reviewer_hermes(
     )
     (run_dir / f"reviewer-hermes-prompt-round-{round_number}.txt").write_text(
         prompt + "\n", encoding="utf-8"
+    )
+    # The Hermes reviewer coordinator is a distinct agent loop layered over the
+    # OpenHands reviewer loop; direct mode removes it. Record it so the
+    # agent-loop counter reflects the extra hermes-mode session.
+    record_event(
+        run_dir,
+        event_type="agent_loop",
+        name="reviewer-hermes-coordinator",
+        round_number=round_number,
+        role="reviewer",
     )
     result = _invoke_hermes_reviewer(
         prompt=prompt,

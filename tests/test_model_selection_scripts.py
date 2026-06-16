@@ -74,6 +74,7 @@ def run_script(
 ):
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["HOCA_DOTENV_PATH"] = str(fake_bin.parent / "missing.env")
     for key in ("LLM_MODEL", "OLLAMA_MODEL"):
         env.pop(key, None)
     if extra_env:
@@ -104,11 +105,27 @@ def test_select_model_requires_explicit_requested_model(tmp_path: Path) -> None:
     result = run_script(
         "select-model.sh",
         fake_bin,
-        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "OLLAMA_MODEL": "qwen-14b-pro"},
+        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro"},
     )
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-7b-pro"
+
+
+def test_select_model_rejects_mismatched_requested_model_and_ollama_model(
+    tmp_path: Path,
+) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
+    make_fake_curl(fake_bin)
+
+    result = run_script(
+        "select-model.sh",
+        fake_bin,
+        {"HOCA_REQUESTED_MODEL": "qwen-7b-pro", "OLLAMA_MODEL": "qwen-14b-pro"},
+    )
+
+    assert result.returncode == 1
+    assert "Requested HOCA model differs from configured OLLAMA_MODEL" in result.stderr
 
 
 def test_select_model_errors_when_requested_model_is_missing(tmp_path: Path) -> None:
@@ -121,11 +138,11 @@ def test_select_model_errors_when_requested_model_is_missing(tmp_path: Path) -> 
     assert "Requested HOCA model not found" in result.stderr
 
 
-def test_select_model_falls_back_to_supported_models(tmp_path: Path) -> None:
+def test_select_model_requires_explicit_ollama_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
     make_fake_curl(fake_bin)
 
-    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "missing-model"})
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-7b-pro"})
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-7b-pro"
@@ -135,7 +152,7 @@ def test_select_model_accepts_latest_tagged_aliases(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro:latest"])
     make_fake_curl(fake_bin)
 
-    result = run_script("select-model.sh", fake_bin)
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-14b-pro"})
 
     assert result.returncode == 0
     assert result.stdout.strip() == "qwen-14b-pro"
@@ -148,14 +165,32 @@ def test_select_model_errors_when_no_compatible_model_exists(tmp_path: Path) -> 
     result = run_script("select-model.sh", fake_bin)
 
     assert result.returncode == 1
-    assert "No HOCA-compatible Ollama model found" in result.stderr
+    assert "No model configured" in result.stderr
+
+
+def test_select_model_does_not_auto_detect_local_models(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl = fake_bin / "curl"
+    marker = tmp_path / "curl-invoked.txt"
+    curl.write_text(
+        f"#!/usr/bin/env bash\nset -euo pipefail\ntouch '{marker}'\nexit 99\n",
+        encoding="utf-8",
+    )
+    curl.chmod(curl.stat().st_mode | stat.S_IXUSR)
+
+    result = run_script("select-model.sh", fake_bin)
+
+    assert result.returncode == 1
+    assert "No model configured" in result.stderr
+    assert not marker.exists()
 
 
 def test_select_model_errors_when_ollama_server_is_unreachable(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-7b-pro"])
     make_fake_curl(fake_bin, succeeds=False)
 
-    result = run_script("select-model.sh", fake_bin)
+    result = run_script("select-model.sh", fake_bin, {"OLLAMA_MODEL": "qwen-7b-pro"})
 
     assert result.returncode == 1
     assert "Start it with: ollama serve" in result.stderr
@@ -174,7 +209,7 @@ def test_openhands_wrapper_uses_selected_model(tmp_path: Path) -> None:
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
         args=[str(project), "Summarize project", str(run_dir)],
     )
 
@@ -215,7 +250,7 @@ def test_openhands_wrapper_accepts_task_file_path(tmp_path: Path) -> None:
     result = run_script(
         "run-openhands-task.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
         args=[str(project), str(task_file), str(run_dir)],
     )
 
@@ -249,6 +284,37 @@ def test_openhands_wrapper_uses_requested_model_env(tmp_path: Path) -> None:
     assert "MODEL=ollama/qwen-7b-pro" in result.stdout
 
 
+def test_openhands_wrapper_prefixes_openai_compatible_local_model(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+    env_capture = run_dir / "openhands-env.txt"
+    make_fake_openhands(fake_bin, env_capture=env_capture)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_SKIP_ROLE_MODEL_RESOLUTION": "true",
+            "LLM_MODEL": "ggml-org/gpt-oss-20b-GGUF",
+            "LLM_BASE_URL": "http://127.0.0.1:8080/v1",
+            "LLM_API_KEY": "local",
+            "HOCA_USE_SANDBOX": "false",
+        },
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in result.stdout
+    captured = env_capture.read_text(encoding="utf-8")
+    assert "LLM_MODEL=openai/ggml-org/gpt-oss-20b-GGUF" in captured
+    assert "LLM_BASE_URL=http://127.0.0.1:8080/v1" in captured
+    assert "deepseek" not in captured.lower()
+
+
 def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) -> None:
     fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro", "qwen-7b-pro"])
     make_fake_curl(fake_bin)
@@ -264,6 +330,10 @@ def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) ->
         fake_bin,
         extra_env={
             "HOCA_LOCK_ROLE_MODEL": "true",
+            "HOCA_WORKER_MODEL_NAME": "worker",
+            "HOCA_WORKER_MODEL_MODEL": "ollama/qwen-14b-pro",
+            "HOCA_WORKER_MODEL_BASE_URL": "http://127.0.0.1:11434",
+            "HOCA_WORKER_MODEL_API_KEY": "worker-key",
             "HOCA_REQUESTED_MODEL": "qwen-7b-pro",
             "OLLAMA_MODEL": "qwen-7b-pro",
             "LLM_MODEL": "ollama/qwen-7b-pro",
@@ -277,6 +347,42 @@ def test_openhands_wrapper_lock_ignores_agent_requested_model(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr
     assert "MODEL=ollama/qwen-14b-pro" in result.stdout
     assert "qwen-7b-pro" not in result.stdout
+
+
+def test_openhands_wrapper_fails_without_env_override_support(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-14b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "echo 'should not run'\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    init_repo(project)
+
+    result = run_script(
+        "run-openhands-task.sh",
+        fake_bin,
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-14b-pro"},
+        args=[str(project), "Summarize project", str(run_dir)],
+    )
+
+    assert result.returncode == 1
+    assert "Cannot safely enforce HOCA-selected role model" in result.stdout
+    assert "resolved model was: ollama/qwen-14b-pro" in result.stdout
+    assert "should not run" not in result.stdout
+    assert "Cannot safely enforce HOCA-selected role model" in (
+        run_dir / "openhands-error.txt"
+    ).read_text(encoding="utf-8")
 
 
 def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> None:
@@ -295,6 +401,7 @@ def test_openhands_wrapper_strips_github_token_for_worker(tmp_path: Path) -> Non
         fake_bin,
         extra_env={
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-14b-pro",
             "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
         },
         args=[str(project), "Summarize project", str(run_dir)],
@@ -322,6 +429,7 @@ def test_openhands_wrapper_strips_github_token_for_reviewer(tmp_path: Path) -> N
         extra_env={
             "HOCA_AGENT_ROLE": "reviewer",
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-14b-pro",
             "GITHUB_TOKEN": "ghp_test_token_must_not_leak",
         },
         args=[str(project), "Review changes", str(run_dir)],
@@ -359,7 +467,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     result = run_script(
         "review-with-openhands.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-32b-pro"},
         args=[str(project), "Review project", str(run_dir)],
     )
 
@@ -372,6 +480,7 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     )
     assert (run_dir / "review" / "changed-files.txt").read_text(encoding="utf-8") == "README.md\n"
     assert (run_dir / "review" / "git-diff.patch").is_file()
+    assert (run_dir / "review" / "context-truncation.json").is_file()
     assert (run_dir / "reviews" / "review-report-1.json").is_file()
     prompt = (run_dir / "review" / "openhands-review-prompt.txt").read_text(encoding="utf-8")
     assert "HocaReviewReport" in prompt
@@ -379,6 +488,69 @@ def test_review_with_openhands_calls_run_openhands_task(tmp_path: Path) -> None:
     assert "Severity rubric:" in prompt
     assert "PR tech debt" in prompt
     assert "structured JSON" in prompt
+    assert "context-truncation.json" in prompt
+    truncation = json.loads((run_dir / "review" / "context-truncation.json").read_text())
+    assert truncation["diff_truncated"] is False
+
+
+def test_review_with_openhands_caps_large_diff_context(tmp_path: Path) -> None:
+    fake_bin = make_fake_ollama(tmp_path, ["qwen-32b-pro"])
+    make_fake_curl(fake_bin)
+    openhands = fake_bin / "openhands"
+    openhands.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        'if [[ "${1:-}" == "--help" ]]; then\n'
+        '  echo "openhands --headless --task --override-with-envs --json"\n'
+        "  exit 0\n"
+        "fi\n"
+        "cat <<'EOF'\n"
+        "```json\n"
+        "{\n"
+        '  "schema_version": 1,\n'
+        '  "run_id": "run-test",\n'
+        '  "round": 1,\n'
+        '  "role": "reviewer",\n'
+        '  "verdict": "LGTM",\n'
+        '  "findings": [],\n'
+        '  "pr_notes": {"summary": ["Looks good."], "known_followups": []}\n'
+        "}\n"
+        "```\n"
+        "LGTM\n"
+        "EOF\n",
+        encoding="utf-8",
+    )
+    openhands.chmod(openhands.stat().st_mode | stat.S_IXUSR)
+    project = tmp_path / "project"
+    project.mkdir()
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    run_dir.mkdir(parents=True)
+    (project / "README.md").write_text("\n".join(f"line {i}" for i in range(80)), encoding="utf-8")
+    (run_dir / "tests-summary.md").write_text(
+        "\n".join(f"test line {i}" for i in range(40)), encoding="utf-8"
+    )
+
+    result = run_script(
+        "review-with-openhands.sh",
+        fake_bin,
+        extra_env={
+            "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-32b-pro",
+            "HOCA_REVIEW_DIFF_MAX_LINES": "12",
+            "HOCA_REVIEW_LOG_TAIL_LINES": "10",
+        },
+        args=[str(project), "Review project", str(run_dir)],
+    )
+
+    assert result.returncode == 0, result.stderr
+    truncation = json.loads((run_dir / "review" / "context-truncation.json").read_text())
+    assert truncation["diff_truncated"] is True
+    assert truncation["test_summary_truncated"] is True
+    assert (run_dir / "review" / "git-diff.capped.patch").is_file()
+    assert (run_dir / "review" / "tests-summary-tail.md").is_file()
+    prompt = (run_dir / "review" / "openhands-review-prompt.txt").read_text(encoding="utf-8")
+    assert "git-diff.capped.patch" in prompt
+    assert "tests-summary-tail.md" in prompt
 
 
 def test_review_with_openhands_materializes_structured_json_from_output(tmp_path: Path) -> None:
@@ -418,7 +590,7 @@ def test_review_with_openhands_materializes_structured_json_from_output(tmp_path
     result = run_script(
         "review-with-openhands.sh",
         fake_bin,
-        extra_env={"HOCA_USE_SANDBOX": "false"},
+        extra_env={"HOCA_USE_SANDBOX": "false", "OLLAMA_MODEL": "qwen-32b-pro"},
         args=[str(project), "Review project", str(run_dir)],
     )
 
@@ -468,6 +640,7 @@ def test_review_with_openhands_prefers_structured_report(tmp_path: Path) -> None
         fake_bin,
         extra_env={
             "HOCA_USE_SANDBOX": "false",
+            "OLLAMA_MODEL": "qwen-32b-pro",
             "HOCA_REVIEW_REPORT_PATH": str(structured_report),
         },
         args=[str(project), "Review project", str(run_dir)],

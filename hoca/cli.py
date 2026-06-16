@@ -20,7 +20,7 @@ from hoca.fleet_contracts import (
 )
 from hoca.fleet_registry import FleetRegistry
 from hoca.fleet_reconcile import sync_registry_from_run_artifacts
-from hoca.fleet_resources import write_resource_monitor_report
+from hoca.fleet_resources import model_residency_summary, write_resource_monitor_report
 from hoca.legacy_tools import scan_removed_tool_references
 from hoca.paths import repo_root
 from hoca.redaction import redact_public_evidence_lines
@@ -526,7 +526,12 @@ def _default_resource_budget() -> HocaResourceBudget:
         cpu_limit_percent=0,
         created_at=timestamp,
         updated_at=timestamp,
-        metadata={},
+        metadata={
+            "model_residency_mb": 0,
+            "docker_vm_memory_mb": 0,
+            "sandbox_memory_mb": 0,
+            "max_resident_models": 0,
+        },
     )
 
 
@@ -563,13 +568,42 @@ def _fleet_state_summary() -> list[str]:
     ]
     blocked_lanes = [lane for lane in lanes if lane.status == "blocked"]
     ready_prs = [lane for lane in lanes if lane.status in {"pr_created", "ready_for_human"}]
-    return [
+    lines = [
         f"Projects: {len(projects)}",
         f"Queued Tasks: {len(queued_tasks)}",
         f"Running Lanes: {len(running_lanes)}",
         f"Blocked Lanes: {len(blocked_lanes)}",
         f"Ready PRs: {len(ready_prs)}",
     ]
+    lines.extend(_fleet_memory_budget_lines(registry, _default_resource_budget()))
+    return lines
+
+
+def _fleet_memory_budget_lines(
+    registry: FleetRegistry,
+    budget: HocaResourceBudget,
+) -> list[str]:
+    summary = model_residency_summary(registry, budget=budget)
+    resident_models = summary["resident_models"]
+    resident_label = ", ".join(resident_models) if resident_models else "none"
+    limit = summary["max_resident_models"] or "unlimited"
+    lines = [
+        "Memory Budget:",
+        f"- Resident models: {summary['resident_model_count']}/{limit} ({resident_label})",
+        f"- Estimated model residency MB: {summary['model_residency_mb']}",
+        f"- Docker VM reservation MB: {summary['docker_vm_memory_mb']}",
+        (
+            f"- Per-lane sandbox cap MB: {summary['sandbox_memory_mb']} "
+            f"x {summary['active_lane_count']} = {summary['sandbox_total_mb']}"
+        ),
+        (
+            f"- Total estimated MB: {summary['total_estimated_mb']}"
+            f" / {summary['memory_limit_mb'] or 'unlimited'}"
+        ),
+    ]
+    if summary["binding_reason"]:
+        lines.append(f"- Binding limit: {summary['binding_reason']}")
+    return lines
 
 
 @main.group()
@@ -991,7 +1025,9 @@ def fleet_cleanup(dry_run: bool) -> None:
 
 @fleet.command("monitor")
 @click.option("--resources", is_flag=True, default=False, help="Collect fleet resource metrics.")
-@click.option("--interval", default=1.0, type=float, show_default=True, help="Seconds between samples.")
+@click.option(
+    "--interval", default=1.0, type=float, show_default=True, help="Seconds between samples."
+)
 @click.option("--samples", default=1, type=click.IntRange(min=1), show_default=True)
 @click.option(
     "--output",
@@ -1037,9 +1073,7 @@ def fleet_legacy_check(root: Path | None) -> None:
     if findings:
         for finding in findings:
             click.echo(f"{finding.path}:{finding.line_number}: removed tool reference")
-        raise click.ClickException(
-            f"Legacy removed-tool check found {len(findings)} finding(s)."
-        )
+        raise click.ClickException(f"Legacy removed-tool check found {len(findings)} finding(s).")
     click.echo("Legacy removed-tool check passed.")
 
 
@@ -1049,12 +1083,20 @@ def fleet_legacy_check(root: Path | None) -> None:
 @click.option("--auto-merge", is_flag=True, default=False)
 @click.option("--notify-telegram", is_flag=True, default=False)
 @click.option("--dev-branch", help="Target repository development branch override.")
+@click.option(
+    "--timing", is_flag=True, default=False, help="Print the run timing summary at completion."
+)
+@click.option(
+    "--express", is_flag=True, default=False, help="Use the low-risk express lane when eligible."
+)
 def run(
     project_path: Path,
     task: str,
     auto_merge: bool,
     notify_telegram: bool,
     dev_branch: str | None,
+    timing: bool,
+    express: bool,
 ) -> None:
     """Run a HOCA task against a target repository."""
     project_path = require_target_repo(project_path)
@@ -1065,6 +1107,10 @@ def run(
         args.append("--notify-telegram")
     if dev_branch:
         args.extend(["--dev-branch", dev_branch])
+    if timing:
+        args.append("--timing")
+    if express:
+        args.append("--express")
     run_script("run-hoca-task.sh", args)
 
 
@@ -1098,22 +1144,54 @@ def issue(
 
 @main.command()
 @click.argument("project_path", type=click.Path(path_type=Path))
-@click.argument("run_id")
+@click.argument("run_id", required=False)
 @click.option(
     "--regenerate", is_flag=True, default=False, help="Regenerate the report from run artifacts."
 )
-def report(project_path: Path, run_id: str, regenerate: bool) -> None:
+@click.option("--timing", is_flag=True, default=False, help="Print the timing report for this run.")
+@click.option(
+    "--timing-trends",
+    is_flag=True,
+    default=False,
+    help="Print the timing trend report across archived runs.",
+)
+def report(
+    project_path: Path,
+    run_id: str | None,
+    regenerate: bool,
+    timing: bool,
+    timing_trends: bool,
+) -> None:
     """Show or regenerate the task report for a past HOCA run."""
     from hoca.run_state import resolve_run_dir
     from hoca.task_report import build_task_report_markdown
 
     project_path = require_target_repo(project_path)
+
+    if timing and timing_trends:
+        raise click.ClickException("Use only one of --timing or --timing-trends.")
+
+    if timing_trends:
+        from hoca.timing_report import build_timing_trends_report
+
+        click.echo(build_timing_trends_report(project_path), nl=False)
+        return
+
+    if run_id is None:
+        raise click.ClickException("RUN_ID is required unless --timing-trends is used.")
+
     run_dir = resolve_run_dir(project_path, run_id)
 
     if run_dir is None:
         raise click.ClickException(
             f"Run directory not found for {run_id} (checked .hoca-runtime and runtime archive)"
         )
+
+    if timing:
+        from hoca.timing_report import build_timing_report
+
+        click.echo(build_timing_report(run_dir), nl=False)
+        return
 
     report_path = run_dir / "task-report.md"
 
@@ -1131,6 +1209,69 @@ def kanban_init(project_path: Path) -> None:
     """[Experimental] Initialize a HOCA Kanban board for a target repository."""
     project_path = require_target_repo(project_path)
     run_script("kanban-init.sh", [str(project_path)])
+
+
+@main.group()
+def bench() -> None:
+    """Run and compare HOCA benchmark scenarios."""
+
+
+@bench.command("run")
+@click.argument("benchmark_id")
+@click.option("--repo", "repo_path", required=True, type=click.Path(path_type=Path))
+@click.option("--runs", "run_count", default=2, show_default=True, type=click.IntRange(min=1))
+@click.option("--output", required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--resource-samples",
+    default=1,
+    show_default=True,
+    type=click.IntRange(min=0),
+    help="Resource samples to collect with the fleet resource sampler.",
+)
+@click.option(
+    "--hoca-arg",
+    "hoca_args",
+    multiple=True,
+    help="Additional argument to pass to run-hoca-task.sh, e.g. --express.",
+)
+def bench_run(
+    benchmark_id: str,
+    repo_path: Path,
+    run_count: int,
+    output: Path,
+    resource_samples: int,
+    hoca_args: tuple[str, ...],
+) -> None:
+    """Run a canonical benchmark against disposable repository clones."""
+    from hoca.benchmark import BENCHMARK_TASKS, render_benchmark_table, run_benchmark
+
+    if benchmark_id not in BENCHMARK_TASKS:
+        choices = ", ".join(sorted(BENCHMARK_TASKS))
+        raise click.ClickException(f"Unknown benchmark: {benchmark_id}. Choices: {choices}")
+    repo_path = require_target_repo(repo_path)
+    result = run_benchmark(
+        benchmark_id=benchmark_id,
+        repo=repo_path,
+        runs=run_count,
+        output=output,
+        hoca_script=repo_root() / "scripts" / "run-hoca-task.sh",
+        resource_samples=resource_samples,
+        hoca_args=hoca_args,
+    )
+    click.echo(f"Benchmark result written: {output}")
+    click.echo(render_benchmark_table(result), nl=False)
+
+
+@bench.command("compare")
+@click.argument("baseline", type=click.Path(exists=True, path_type=Path))
+@click.argument("candidate", type=click.Path(exists=True, path_type=Path))
+def bench_compare(baseline: Path, candidate: Path) -> None:
+    """Compare two benchmark result JSON files."""
+    from hoca.benchmark import render_benchmark_comparison
+
+    baseline_payload = json.loads(baseline.read_text(encoding="utf-8"))
+    candidate_payload = json.loads(candidate.read_text(encoding="utf-8"))
+    click.echo(render_benchmark_comparison(baseline_payload, candidate_payload), nl=False)
 
 
 @main.command("kanban-run")

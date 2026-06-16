@@ -12,6 +12,7 @@ from hoca.monitor import (
     MonitorEvent,
     MonitorResult,
     check_manager_only_git_lifecycle_command,
+    check_reviewer_redundant_validation_command,
     command_policy_scan_context,
     check_dangerous_command,
     check_secret_access,
@@ -21,6 +22,7 @@ from hoca.monitor import (
     save_events,
     save_stop_reason,
     should_scan_line_for_policy,
+    watchdog_check_interval,
 )
 
 
@@ -69,6 +71,13 @@ class TestCheckDangerousCommand:
 
     def test_git_add_A(self):
         assert check_dangerous_command("git add -A") is not None
+
+    def test_git_add_A_inside_temp_repo_allowed(self):
+        command = "cd /tmp/repo-clean-test && git init && git add -A && git commit -m test"
+        assert check_dangerous_command(command) is None
+
+    def test_git_add_A_inside_project_still_blocked(self):
+        assert check_dangerous_command("cd /workspace && git add -A") is not None
 
     def test_git_commit_am(self):
         assert check_dangerous_command("git commit -am 'msg'") is not None
@@ -225,6 +234,25 @@ class TestCheckUnrelatedDirectory:
         result = check_unrelated_directory("cd /project/src", "/project")
         assert result is None
 
+    def test_sandbox_mount_aliases_are_allowed(self):
+        assert check_unrelated_directory("cd /workspace/src", "/project") is None
+        assert check_unrelated_directory("cat /hoca-run/task-input.txt", "/project") is None
+        assert check_unrelated_directory("cat /hoca-runs/review-report-1.json", "/project") is None
+        assert check_unrelated_directory("cat /hoca-runsx/file.txt", "/project") is not None
+
+    def test_json_escape_sequences_do_not_extend_extracted_paths(self):
+        line = r'{"command": "cd /workspace\nls -la"}'
+        assert check_unrelated_directory(line, "/project") is None
+        assert check_unrelated_directory(r'"command": "cd /workspace\"', "/project") is None
+        assert check_unrelated_directory(r'{"command": "cat /etc\npasswd"}', "/project") is not None
+        assert (
+            check_unrelated_directory(
+                'file_editor: {"command": "view", "path": "/hoca-run/context-truncation.json"}',
+                "/project",
+            )
+            is None
+        )
+
     def test_allowed_run_artifact_access(self):
         result = check_unrelated_directory(
             "cat /runs/run-1/review/git-diff.patch",
@@ -275,6 +303,23 @@ class TestShouldScanLineForPolicy:
             }
         )
         assert should_scan_line_for_policy(line) is False
+
+    def test_pretty_printed_message_text_fragment_is_not_scanned(self):
+        line = '"text": "Safety prompt says never run gh pr merge."'
+        assert should_scan_line_for_policy(line) is False
+
+    def test_pretty_printed_summary_fragment_is_not_scanned(self):
+        line = '"summary": "file_editor old_str contains rm -rf build/"'
+        assert should_scan_line_for_policy(line) is False
+
+    def test_pretty_printed_command_fragment_is_still_scanned(self):
+        line = '"command": "rm -rf /"'
+        assert should_scan_line_for_policy(line) is True
+
+    def test_pretty_printed_file_content_fragment_is_not_scanned(self):
+        for field in ("old_content", "new_content"):
+            line = f'"{field}": "{{\\"scripts\\":{{\\"clean\\":\\"rm -rf build/\\"}}}}"'
+            assert should_scan_line_for_policy(line) is False
 
 
 class TestMonitorEvent:
@@ -413,6 +458,26 @@ class TestMonitorProcess:
         assert result.stop_reason == "timeout"
         assert any(e.kind == "timeout" for e in result.events)
 
+    def test_short_stall_window_stops_silent_process(self, tmp_path: Path):
+        assert watchdog_check_interval(1) <= 1
+        proc = subprocess.Popen(
+            ["bash", "-c", "sleep 5"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        started = time.perf_counter()
+        result = monitor_process(
+            proc,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=1,
+        )
+        elapsed = time.perf_counter() - started
+        assert result.stop_reason == "stall"
+        assert elapsed < 2.5
+
     def test_worker_git_add_stops(self, tmp_path: Path):
         proc = subprocess.Popen(
             ["printf", "editing files\ngit add src/main.py\n"],
@@ -459,8 +524,32 @@ class TestRmRfSafeTargets:
     def test_rm_rf_coverage_allowed(self):
         assert check_dangerous_command("rm -rf coverage") is None
 
+    def test_rm_rf_generated_test_artifact_allowed(self):
+        assert check_dangerous_command("rm -rf test-dist") is None
+
+    def test_rm_rf_generated_test_artifact_with_redirection_allowed(self):
+        command = "rm -rf test-dist 2>/dev/null; exit $EXIT_CODE"
+        assert check_dangerous_command(command) is None
+
+    def test_rm_rf_temp_git_reset_allowed(self):
+        command = "mkdir -p /tmp/artifact-test && cd /tmp/artifact-test && rm -rf .git"
+        assert check_dangerous_command(command) is None
+
+    def test_rm_rf_local_git_blocked(self):
+        assert check_dangerous_command("rm -rf .git") is not None
+
+    def test_rm_rf_temp_child_allowed(self):
+        assert check_dangerous_command("rm -rf /tmp/test-repo-clean") is None
+        assert check_dangerous_command("rm -rf /private/tmp/test-repo-clean") is None
+        assert check_dangerous_command("rm -rf /var/tmp/test-repo-clean") is None
+
     def test_rm_rf_root_blocked(self):
         assert check_dangerous_command("rm -rf /") is not None
+
+    def test_rm_rf_temp_root_blocked(self):
+        assert check_dangerous_command("rm -rf /tmp") is not None
+        assert check_dangerous_command("rm -rf /private/tmp") is not None
+        assert check_dangerous_command("rm -rf /var/tmp") is not None
 
     def test_rm_rf_etc_blocked(self):
         assert check_dangerous_command("rm -rf /etc") is not None
@@ -533,6 +622,30 @@ class TestMonitorProcessStream:
         assert result.stop_reason == "dangerous_command"
         assert result.exit_code == 1
 
+    def test_stream_timeout_invokes_cancel_callback(self, tmp_path: Path):
+        class SlowEmptyStream:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                time.sleep(1.2)
+                raise StopIteration
+
+        reasons: list[str] = []
+
+        result = monitor_process_stream(
+            SlowEmptyStream(),
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=0,
+            stall_seconds=0.1,
+            on_cancel=reasons.append,
+        )
+
+        assert result.stop_reason == "timeout"
+        assert result.exit_code == 1
+        assert reasons == ["timeout"]
+
     def test_safe_rm_rf_in_stream(self, tmp_path: Path):
         import io
 
@@ -579,6 +692,131 @@ class TestMonitorProcessStream:
             }
         )
         stream = io.StringIO(f"reading\n{thought}\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_message_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            'working\n        "text": "HOCA safety prompt says do NOT run gh pr merge."\ndone\n'
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_summary_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            'working\n        "summary": "file_editor old_str contains rm -rf build/"\ndone\n'
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_pretty_printed_file_content_fragment_is_ignored(
+        self, tmp_path: Path
+    ):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '        "old_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
+            '        "new_content": "{\\"scripts\\":{\\"clean\\":\\"rm -rf build/\\"}}"\n'
+            "done\n"
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_file_editor_arguments_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '    "arguments": "{\\"command\\": \\"str_replace\\", '
+            '\\"summary\\": \\"Add repo-clean script\\", '
+            '\\"old_str\\": \\"    \\\\\\"clean\\\\\\": \\\\\\"rm -rf build/ && rm -rf dist/\\\\\\"\\"}"\n'
+            "done\n"
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_final_message_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '    "message": "\\n**Summary**\\n\\nCreated a repo-clean check that fails when '
+            'committed artifacts exist; it guards against rm -rf build/ style cleanup."\n'
+            "done\n"
+        )
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_plain_output_prose_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO("working\nNo `rm -rf` anywhere.\ndone\n")
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+        )
+        assert result.stop_reason == "completed"
+        assert result.exit_code == 0
+
+    def test_dangerous_text_in_passive_arguments_fragment_is_ignored(self, tmp_path: Path):
+        import io
+
+        stream = io.StringIO(
+            "working\n"
+            '    "arguments": "{\\"summary\\": \\"Planning the repo-clean verification command\\", '
+            '\\"thought\\": \\"The task mentions rm -rf, but this is only reasoning text.\\"}"\n'
+            "done\n"
+        )
         result = monitor_process_stream(
             stream,
             project_path="/tmp/test",
@@ -670,8 +908,7 @@ class TestMonitorProcessStream:
         import io
 
         partial_action = (
-            '{"id":"event-1","source":"agent","kind":"ActionEvent",'
-            '"action":{"command":"rm -rf /"'
+            '{"id":"event-1","source":"agent","kind":"ActionEvent","action":{"command":"rm -rf /"'
         )
         stream = io.StringIO(f"working\n{partial_action}\ndone\n")
         result = monitor_process_stream(
@@ -700,3 +937,47 @@ class TestMonitorProcessStream:
         )
         assert result.stop_reason == "manager_only_git_lifecycle"
         assert result.exit_code == 1
+
+    def test_reviewer_redundant_validation_in_stream_stops_after_passing_summary(
+        self, tmp_path: Path
+    ):
+        import io
+
+        (tmp_path / "tests-summary.md").write_text(
+            "# Test Summary\n\n- **Status**: passed\n- **Exit code**: 0\n",
+            encoding="utf-8",
+        )
+        stream = io.StringIO(
+            'reviewing\n{"source":"agent","action":{"command":"npx playwright test"}}\n'
+        )
+
+        result = monitor_process_stream(
+            stream,
+            project_path="/tmp/test",
+            run_dir=tmp_path,
+            timeout_seconds=10,
+            stall_seconds=10,
+            actor_role="reviewer",
+        )
+
+        assert result.stop_reason == "reviewer_redundant_validation"
+        assert result.exit_code == 1
+
+    def test_shell_wrapped_reviewer_validation_stops_after_passing_summary(self, tmp_path: Path):
+        (tmp_path / "tests-summary.md").write_text(
+            "# Test Summary\n\n- **Status**: passed\n- **Exit code**: 0\n",
+            encoding="utf-8",
+        )
+
+        assert (
+            check_reviewer_redundant_validation_command(
+                'bash -lc "yarn build"', "reviewer", tmp_path
+            )
+            is not None
+        )
+
+    def test_reviewer_validation_allowed_without_passing_summary(self, tmp_path: Path):
+        assert (
+            check_reviewer_redundant_validation_command("npx playwright test", "reviewer", tmp_path)
+            is None
+        )

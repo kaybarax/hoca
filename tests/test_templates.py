@@ -207,3 +207,52 @@ def test_template_avoids_secret_like_paths(
         assert fragment not in content, (
             f"{filename} must not include secret-like example content: {fragment!r}"
         )
+
+
+def test_fleet_task_template_documents_worker_engine_policy() -> None:
+    content = (TEMPLATES_DIR / "HocaFleetTask.yaml").read_text(encoding="utf-8")
+
+    assert "worker_engine: openhands" in content
+    assert "worker_engine_policy: project-allowlist-required" in content
+
+
+def test_security_docs_cover_native_cli_worker_posture() -> None:
+    root = TEMPLATES_DIR.parent
+    security = (root / "docs" / "security-model.md").read_text(encoding="utf-8")
+    fleet = (root / "docs" / "fleet-orchestration.md").read_text(encoding="utf-8")
+
+    assert "HOCA_WORKER_ENGINE=openhands" in security
+    assert "HOCA_WORKER_ENGINE=claude-code" in security
+    assert "HOCA_WORKER_ENGINE=codex" in security
+    assert "host-native execution" in security
+    assert "not OpenHands Docker-sandboxed execution" in security
+    assert "HOCA_REVIEW_WARMUP=true" in security
+    assert "warm-up failure does not fail a run or bypass review" in security
+    assert "Unchanged Gates In v1.1.0" in security
+    assert "definition-of-ready checks before execution" in security
+    assert "manager-owned commit, push, and PR creation" in security
+    assert "agent_policy.worker_engine" in fleet
+    assert "metadata.worker_engine" in fleet
+    assert "OpenHands-sandboxed lanes from host-native CLI lanes" in fleet
+
+
+def test_performance_docs_cover_v11_knobs_and_benchmarks() -> None:
+    root = TEMPLATES_DIR.parent
+    performance = (root / "docs" / "performance.md").read_text(encoding="utf-8")
+
+    for expected in (
+        "Run Cost Anatomy",
+        "HOCA_WORKER_MODE=hermes",
+        "HOCA_WORKER_MODE=direct",
+        "HOCA_REVIEWER_MODE=direct",
+        "HOCA_WORKER_ENGINE=openhands",
+        "claude-code",
+        "codex",
+        "bin/hoca run --express",
+        "run-budget-round-N.json",
+        "HOCA_REVIEW_WARMUP=true",
+        "Install caching",
+        "bin/hoca bench run",
+        "bin/hoca bench compare",
+    ):
+        assert expected in performance

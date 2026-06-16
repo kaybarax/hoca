@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -31,6 +32,40 @@ class ReviewGateResult:
 
 def default_report_path(run_dir: Path, round_number: int) -> Path:
     return run_dir / "reviews" / f"review-report-{round_number}.json"
+
+
+def structured_report_ready(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(loaded, dict) and loaded.get("verdict") in {"LGTM", "fix_required", "blocked"}
+
+
+def recover_review_report_from_alternate_paths(
+    run_dir: Path, round_number: int, report_path: Path
+) -> bool:
+    """Copy a structured report a reviewer wrote through a sandbox mount alias.
+
+    The review sandbox mounts the run dir at ``/hoca-run`` (and the
+    ``/hoca-runs`` alias), so a reviewer that writes to that path lands the
+    report in the run's ``review/`` subdir or root instead of ``reviews/``.
+    Both the direct and hermes reviewers rely on this recovery before
+    concluding a report is missing.
+    """
+    candidates = (
+        run_dir / "review" / f"review-report-{round_number}.json",
+        run_dir / f"review-report-{round_number}.json",
+    )
+    for candidate in candidates:
+        if candidate == report_path or not structured_report_ready(candidate):
+            continue
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(candidate.read_text(encoding="utf-8"), encoding="utf-8")
+        return True
+    return False
 
 
 def _read_changed_files(run_dir: Path) -> list[str]:

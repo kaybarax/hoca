@@ -41,8 +41,10 @@ WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
         "USER",
         "LOGNAME",
         "SHELL",
+        "DOCKER_CONTEXT",
         "PYTHONPATH",
         "HOCA_AGENT_ROLE",
+        "HOCA_WORKER_ENGINE",
         "HOCA_SELECTED_MODEL_SLOT",
         "HOCA_REQUESTED_MODEL",
         "HOCA_HERMES_TIMEOUT",
@@ -57,6 +59,8 @@ WORKER_REVIEWER_ALLOWLIST: frozenset[str] = frozenset(
         "HOCA_ROOT",
         "HOCA_USE_SANDBOX",
         "HOCA_NETWORK_MODE",
+        "HOCA_WORKER_NETWORK_MODE",
+        "HOCA_REVIEWER_NETWORK_MODE",
     }
 )
 

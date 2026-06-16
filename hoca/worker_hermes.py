@@ -16,6 +16,7 @@ from hoca.role_model_env import (
     apply_role_to_env,
     hermes_provider_for_model,
     log_line_for_selection,
+    openai_compatible_model_for_selection,
     resolve_role_llm,
     strip_pool_credentials,
 )
@@ -24,6 +25,7 @@ from hoca.paths import repo_root
 from hoca.profiles import PROFILE_WORKER, hermes_installed, profile_exists
 from hoca.run_artifacts import record_worker_attempt
 from hoca.run_layout import ensure_run_layout, worker_attempt_path
+from hoca.run_timing import record_event
 from hoca.subprocess_utils import CommandResult
 
 _SECRET_VALUE_PATTERN = re.compile(
@@ -119,6 +121,9 @@ def build_worker_hermes_prompt(
 ) -> str:
     hoca_root = repo_root()
     hoca_python = sys.executable
+    use_sandbox = os.environ.get("HOCA_USE_SANDBOX", "true")
+    network_mode = os.environ.get("HOCA_NETWORK_MODE", "offline")
+    docker_context = os.environ.get("DOCKER_CONTEXT", "")
     hoca_dotenv = Path(os.environ.get("HOCA_DOTENV_PATH", hoca_root / ".env")).expanduser()
     if not hoca_dotenv.is_absolute():
         hoca_dotenv = (hoca_root / hoca_dotenv).resolve()
@@ -143,22 +148,30 @@ def build_worker_hermes_prompt(
         "Required steps:\n"
         "1. Read the manager task spec at task_spec_path.\n"
         "   Inspect current repository state and prior round artifacts before changing files.\n"
+        "   Keep inspection targeted: use git status/diff and the task's expected files; do not recursively list the repository, dependency directories, or generated artifacts.\n"
         "2. Build a precise OpenHands implementation prompt from goal, non_goals, "
         "expected_areas, acceptance_criteria, and test_commands.\n"
         "   Treat project_path as the only executable repository root. If the task spec "
         "or test_commands mention a different repo_root, rewrite validation commands to "
         "run from project_path and do not cd to the original checkout.\n"
+        '   If saving the OpenHands prompt for audit, save it only as "$run_dir/openhands-task-prompt.txt".\n'
         "3. Run implementation only through:\n"
-        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_PYTHON="{hoca_python}" '
+        f'   HOCA_LOCK_ROLE_MODEL=true HOCA_SKIP_ROLE_MODEL_RESOLUTION=false HOCA_USE_SANDBOX="{use_sandbox}" '
+        f'HOCA_NETWORK_MODE="{network_mode}" '
+        f"{f'DOCKER_CONTEXT="{docker_context}" ' if docker_context else ''}"
+        f'HOCA_PYTHON="{hoca_python}" '
         f'HOCA_DOTENV_PATH="{hoca_dotenv}" '
         f"{hoca_root / 'scripts' / 'run-openhands-task.sh'} "
         '"$project_path" "$openhands_prompt" "$run_dir"\n'
-        "4. Inspect repository changes read-only (git status, git diff).\n"
-        "5. Apply the bounded iteration discipline before marking the attempt complete.\n"
+        "4. Inspect repository changes read-only (git status, git diff), excluding manager-owned "
+        ".hoca-runtime/ artifacts from the changed-file assessment.\n"
+        "5. After one relevant validation command passes for the changed scope, stop working immediately. "
+        "Do not continue exploring, re-running broader validation, or making optional edits.\n"
+        "6. Apply the bounded iteration discipline before marking the attempt complete.\n"
         f"{ITERATIVE_WORKER_RUBRIC}\n"
-        "6. Apply the implementation quality principles while shaping the diff.\n"
+        "7. Apply the implementation quality principles while shaping the diff.\n"
         f"{PSTACK_WORKER_PRINCIPLES}\n"
-        "7. Write attempts/worker-attempt-<round>.json or run:\n"
+        "8. Write attempts/worker-attempt-<round>.json or run:\n"
         f'   python3 -m hoca.run_artifacts record-worker "$run_dir" '
         f"--round {round_number} --status <completed|failed|blocked>\n\n"
         "Safety constraints:\n"
@@ -168,6 +181,7 @@ def build_worker_hermes_prompt(
         "- If the task mentions .env.example, access only that exact path; never use .env* globs or inspect .env files.\n"
         "- Do not embed API keys, tokens, or passwords in prompts or reports.\n"
         "- Do not set or override HOCA_REQUESTED_MODEL, OLLAMA_MODEL, LLM_MODEL, LLM_BASE_URL, or LLM_API_KEY.\n"
+        "- If you create temporary verification files, clean up only the exact files or temp directory you created; do not use broad recursive cleanup in the project tree.\n"
         "- Do not read, write, or run commands in any repository path other than project_path.\n"
         "- Stay within expected_areas unless the repair brief explicitly widens scope.\n\n"
         "Task spec summary (read the JSON file for full fields):\n"
@@ -247,16 +261,23 @@ def _invoke_hermes_worker(
 
     cfg = load_config()
     selection = resolve_role_llm("worker", cfg)
-    if selection.llm_model.strip():
-        command.extend(["--model", selection.llm_model])
-    provider = hermes_provider_for_model(selection.llm_model)
+    hermes_model = selection.llm_model.strip()
+    nested_openhands_model = openai_compatible_model_for_selection(selection)
+    if hermes_model:
+        command.extend(["--model", hermes_model])
+    provider = hermes_provider_for_model(hermes_model)
+    if not provider and selection.base_url.strip():
+        provider = "custom"
     if provider:
         command.extend(["--provider", provider])
     env = strip_pool_credentials(apply_role_to_env("worker", cfg, os.environ.copy()))
     env.update(selection.env_vars())
+    env["LLM_MODEL"] = nested_openhands_model
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     env["HOCA_AGENT_ROLE"] = "worker"
     env = filter_env(env, "worker")
+    if provider == "custom":
+        env["CUSTOM_BASE_URL"] = selection.base_url.strip()
     if cfg.model_pool.is_active:
         print(log_line_for_selection(selection), file=sys.stderr)
 
@@ -271,10 +292,20 @@ def _invoke_hermes_worker(
             cwd=run_dir,
         )
     except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = (exc.stderr or "") + f"\nHermes worker timed out after {timeout_seconds}s."
+        stdout = _timeout_stream_to_text(exc.stdout)
+        stderr = (
+            _timeout_stream_to_text(exc.stderr)
+            + f"\nHermes worker timed out after {timeout_seconds}s."
+        )
         stdout_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
+        if _openhands_completed_successfully(run_dir):
+            return CommandResult(
+                command=tuple(command),
+                returncode=0,
+                stdout=stdout,
+                stderr=stderr,
+            )
         return CommandResult(
             command=tuple(command),
             returncode=124,
@@ -292,6 +323,14 @@ def _invoke_hermes_worker(
     )
 
 
+def _timeout_stream_to_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
     monitor_path = run_dir / "monitor-result.json"
     if monitor_path.is_file():
@@ -301,9 +340,7 @@ def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
             monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
             stop_reason = monitor.get("stop_reason")
             if isinstance(stop_reason, str) and stop_reason and stop_reason != "completed":
-                if stop_reason in {"secret_detected", "dangerous_command", "scope_violation"}:
-                    return "blocked"
-                return "failed"
+                return "blocked"
         except (OSError, ValueError, TypeError):
             pass
 
@@ -319,6 +356,56 @@ def _infer_worker_status(run_dir: Path, *, process_exit_code: int) -> str:
     return "failed"
 
 
+def _monitor_stop_reason(run_dir: Path) -> str | None:
+    monitor_path = run_dir / "monitor-result.json"
+    if not monitor_path.is_file():
+        return None
+    try:
+        import json
+
+        monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    stop_reason = monitor.get("stop_reason")
+    return stop_reason if isinstance(stop_reason, str) and stop_reason else None
+
+
+def _openhands_completed_successfully(run_dir: Path) -> bool:
+    exit_code_path = run_dir / "openhands-exit-code.txt"
+    if not exit_code_path.is_file():
+        return False
+    try:
+        exit_code = exit_code_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return exit_code == "0" and _monitor_stop_reason(run_dir) == "completed"
+
+
+def _completed_despite_finalization_stall(
+    run_dir: Path, *, process_exit_code: int, project_path: Path
+) -> bool:
+    return (
+        process_exit_code != 0
+        and _monitor_stop_reason(run_dir) == "stall"
+        and _project_has_changes(project_path)
+    )
+
+
+def _openhands_edit_tool_failure(run_dir: Path) -> str | None:
+    output_path = run_dir / "openhands-output.jsonl"
+    if not output_path.is_file():
+        return None
+    try:
+        text = output_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "Parameter `new_str` is required for command: insert." in text:
+        return "OpenHands file_editor insert omitted required new_str and produced no changes."
+    if "Parameter `old_str` is required" in text or "Parameter `new_str` is required" in text:
+        return "OpenHands file_editor omitted a required edit argument and produced no changes."
+    return None
+
+
 def _ensure_worker_attempt_report(
     run_dir: Path,
     *,
@@ -329,6 +416,27 @@ def _ensure_worker_attempt_report(
 ) -> Path:
     attempt_path = worker_attempt_path(run_dir, round_number)
     if attempt_path.is_file():
+        if status != "completed":
+            try:
+                import json
+
+                existing = json.loads(attempt_path.read_text(encoding="utf-8"))
+                if existing.get("status") == "completed":
+                    return record_worker_attempt(
+                        run_dir,
+                        round_number=round_number,
+                        status=status,
+                        mode=mode,
+                        project_path=project_path,
+                    )
+            except (OSError, ValueError, TypeError):
+                return record_worker_attempt(
+                    run_dir,
+                    round_number=round_number,
+                    status=status,
+                    mode=mode,
+                    project_path=project_path,
+                )
         return attempt_path
     return record_worker_attempt(
         run_dir,
@@ -353,6 +461,10 @@ def _missing_profile_attempt_status(
         return inferred_status
     if project_path is not None and _project_has_changes(project_path):
         return inferred_status
+    if _openhands_completed_successfully(run_dir):
+        return inferred_status
+    if _openhands_edit_tool_failure(run_dir):
+        return "failed"
     return "blocked"
 
 
@@ -376,6 +488,40 @@ def _project_has_changes(project_path: Path) -> bool:
     )
 
 
+def _relocate_leaked_openhands_prompt(*, project_path: Path, run_dir: Path) -> None:
+    leaked_prompt = project_path / "openhands-task-prompt.txt"
+    if not leaked_prompt.is_file():
+        return
+    destination = run_dir / "openhands-task-prompt.txt"
+    try:
+        text = leaked_prompt.read_text(encoding="utf-8", errors="replace")
+        if not destination.exists():
+            destination.write_text(text, encoding="utf-8")
+        leaked_prompt.unlink()
+    except OSError:
+        return
+
+
+def _relocate_leaked_attempt_reports(*, project_path: Path, run_dir: Path) -> None:
+    leaked_attempts_dir = project_path / "attempts"
+    if not leaked_attempts_dir.is_dir():
+        return
+    destination_dir = run_dir / "attempts"
+    try:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        for leaked_attempt in leaked_attempts_dir.glob("worker-attempt-*.json"):
+            destination = destination_dir / leaked_attempt.name
+            if not destination.exists():
+                destination.write_text(
+                    leaked_attempt.read_text(encoding="utf-8", errors="replace"),
+                    encoding="utf-8",
+                )
+            leaked_attempt.unlink()
+        leaked_attempts_dir.rmdir()
+    except OSError:
+        return
+
+
 def run_worker_hermes(
     *,
     project_path: Path,
@@ -394,6 +540,37 @@ def run_worker_hermes(
     ensure_run_layout(run_dir)
 
     spec = load_task_spec(task_spec_path)
+    cfg = load_config()
+    if cfg.worker_engine == "claude-code":
+        from hoca.cli_worker_adapters import run_claude_worker
+
+        return run_claude_worker(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
+    if cfg.worker_engine == "codex":
+        from hoca.cli_worker_adapters import run_codex_worker
+
+        return run_codex_worker(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
+    if cfg.worker_mode == "direct":
+        from hoca.worker_direct import run_worker_direct
+
+        return run_worker_direct(
+            project_path=project_path,
+            task_spec_path=task_spec_path,
+            run_dir=run_dir,
+            round_number=round_number,
+            repair_brief=repair_brief,
+        )
     verify_profile_prerequisites(hermes_home=hermes_home)
     prompt = build_worker_hermes_prompt(
         spec=spec,
@@ -406,12 +583,24 @@ def run_worker_hermes(
     prompt_path = run_dir / f"worker-hermes-prompt-round-{round_number}.txt"
     prompt_path.write_text(prompt + "\n", encoding="utf-8")
 
+    # The Hermes worker coordinator is a distinct agent loop layered over the
+    # OpenHands worker loop; direct mode removes it. Record it so the agent-loop
+    # counter reflects the extra hermes-mode session.
+    record_event(
+        run_dir,
+        event_type="agent_loop",
+        name="worker-hermes-coordinator",
+        round_number=round_number,
+        role="worker",
+    )
     result = _invoke_hermes_worker(
         prompt=prompt,
         run_dir=run_dir,
         timeout_seconds=_resolve_timeout_seconds(),
         max_turns=_resolve_max_turns(),
     )
+    _relocate_leaked_openhands_prompt(project_path=project_path, run_dir=run_dir)
+    _relocate_leaked_attempt_reports(project_path=project_path, run_dir=run_dir)
     status = _infer_worker_status(run_dir, process_exit_code=result.returncode)
     status = _missing_profile_attempt_status(
         run_dir,

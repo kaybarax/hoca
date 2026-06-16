@@ -159,9 +159,7 @@ def test_sync_registry_uses_latest_project_run_when_lane_points_at_adapter_dir(
     assert synced_lane.metadata["pr_url"] == "https://example.test/pull/adapter"
 
 
-def test_sync_registry_ignores_old_failed_run_after_lane_rerun(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_sync_registry_ignores_old_failed_run_after_lane_rerun(tmp_path: Path, monkeypatch) -> None:
     registry, _ = _seed_running_lane(tmp_path)
     lane = registry.get_lane("lane-1")
     assert lane is not None
@@ -315,7 +313,9 @@ def test_sync_registry_blocks_stale_running_lane_with_dead_session(
     stale_lane = registry.get_lane("lane-1")
     assert stale_lane is not None
     assert stale_lane.status == "blocked"
-    assert stale_lane.metadata["status_reason"] == "adapter process exited before final run artifact"
+    assert (
+        stale_lane.metadata["status_reason"] == "adapter process exited before final run artifact"
+    )
     stale_task = registry.get_task("task-1")
     assert stale_task is not None
     assert stale_task.status == "blocked"

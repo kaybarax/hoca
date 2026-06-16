@@ -29,6 +29,26 @@ bin/hoca fleet status
 The scheduler only launches queued tasks when the registry, project caps, and
 fleet caps all say the lane is allowed to start.
 
+## Worker Engine Policy
+
+Single runs choose the worker engine with `HOCA_WORKER_ENGINE`. Fleet runs should
+choose the same value from project or task policy before launching a lane:
+
+- `openhands` is the default and should remain the policy default for fleet
+  tasks.
+- `claude-code` and `codex` are native host CLI engines. Use them only when a
+  project `agent_policy.worker_engine` or task `metadata.worker_engine` permits
+  that host execution posture.
+- If both project and task policy specify an engine, the task value should be
+  treated as a narrower override and still pass project allowlist review.
+- Record the selected engine in the run status and timing artifacts so fleet
+  reports can distinguish OpenHands-sandboxed lanes from host-native CLI lanes.
+
+Native CLI engines keep HOCA's prompt, environment allowlist, monitor, review,
+and manager-owned Git lifecycle gates, but they are not Docker-sandboxed by the
+OpenHands wrapper. See `docs/security-model.md` before enabling them in fleet
+policy.
+
 ## Conservative Parallelism
 
 HOCA keeps parallelism intentionally low by default:

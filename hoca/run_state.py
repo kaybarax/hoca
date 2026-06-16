@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import os
 import re
@@ -52,6 +53,7 @@ RUN_STATE_DIRNAME = ".hoca-runtime"
 
 _held_locks: list[Path] = []
 _held_lock_ids: dict[Path, tuple[int, int]] = {}
+_held_lock_digests: dict[Path, str] = {}
 
 
 def now_epoch() -> int:
@@ -327,6 +329,9 @@ def workflow_fields_from_config(cfg: HocaConfig | None = None) -> dict[str, Any]
     return {
         "workflow_version": WORKFLOW_VERSION,
         "max_total_rounds": cfg.max_total_rounds,
+        "worker_mode": cfg.worker_mode,
+        "worker_engine": cfg.worker_engine,
+        "reviewer_mode": cfg.reviewer_mode,
         "sandbox_mode": "docker" if cfg.use_sandbox else "host",
         "worktree_mode": cfg.use_worktree_sandbox,
     }
@@ -441,7 +446,6 @@ def acquire_lock(lock_path: Path, metadata: dict[str, Any]) -> bool:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         return False
-    stat_result = os.fstat(fd)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, sort_keys=True)
@@ -452,24 +456,31 @@ def acquire_lock(lock_path: Path, metadata: dict[str, Any]) -> bool:
         except OSError:
             pass
         raise
+    stat_result = lock_path.stat()
     _held_locks.append(lock_path)
     _held_lock_ids[lock_path] = (stat_result.st_dev, stat_result.st_ino)
+    _held_lock_digests[lock_path] = hashlib.sha256(lock_path.read_bytes()).hexdigest()
     return True
 
 
 def release_lock(lock_path: Path) -> None:
     if lock_path in _held_locks:
         expected_id = _held_lock_ids.get(lock_path)
+        expected_digest = _held_lock_digests.get(lock_path)
         try:
             current = lock_path.stat()
         except FileNotFoundError:
             pass
         else:
             current_id = (current.st_dev, current.st_ino)
-            if expected_id is None or current_id == expected_id:
+            current_digest = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+            same_file = expected_id is None or current_id == expected_id
+            same_content = expected_digest is None or current_digest == expected_digest
+            if same_file and same_content:
                 lock_path.unlink()
         _held_locks.remove(lock_path)
         _held_lock_ids.pop(lock_path, None)
+        _held_lock_digests.pop(lock_path, None)
 
 
 def _cleanup_locks() -> None:
@@ -477,6 +488,7 @@ def _cleanup_locks() -> None:
         release_lock(lp)
     _held_locks.clear()
     _held_lock_ids.clear()
+    _held_lock_digests.clear()
 
 
 def _signal_handler(signum: int, _frame: Any) -> None:

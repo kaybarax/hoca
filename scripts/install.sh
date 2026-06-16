@@ -216,27 +216,17 @@ create_ollama_alias() {
   fi
 }
 
-print_model_fallback_status() {
-  local selected_model=""
-  local alias_name
+print_ollama_model_status() {
+  local selected_model="${OLLAMA_MODEL:-}"
 
   info ""
-  info "Ollama model fallback status:"
-  for alias_name in qwen-14b-pro qwen-7b-pro qwen-32b-pro; do
-    if ollama_has_model "$alias_name"; then
-      info "- $alias_name available"
-      if [[ -z "$selected_model" ]]; then
-        selected_model="$alias_name"
-      fi
-    else
-      info "- $alias_name unavailable"
-    fi
-  done
-
-  if [[ -n "$selected_model" ]]; then
-    info "Selected fallback model: $selected_model"
+  info "Ollama model status:"
+  if [[ -z "$selected_model" ]]; then
+    info "No OLLAMA_MODEL configured. Configure HOCA role model blocks in .env."
+  elif ollama_has_model "$selected_model"; then
+    info "Configured OLLAMA_MODEL is available: $selected_model"
   else
-    fail_soft "No HOCA Ollama model aliases are available."
+    fail_soft "Configured OLLAMA_MODEL is not available in Ollama: $selected_model"
   fi
 }
 
@@ -258,15 +248,7 @@ setup_ollama_models() {
 
   info "Ollama server responded at http://127.0.0.1:11434/api/tags"
 
-  pull_ollama_model qwen2.5-coder:32b optional
-  pull_ollama_model qwen2.5-coder:14b required
-  pull_ollama_model qwen2.5-coder:7b required
-
-  create_ollama_alias qwen-32b-pro "$REPO_ROOT/models/Modelfile" optional
-  create_ollama_alias qwen-14b-pro "$REPO_ROOT/models/Modelfile.14b" required
-  create_ollama_alias qwen-7b-pro "$REPO_ROOT/models/Modelfile.7b" required
-
-  print_model_fallback_status
+  print_ollama_model_status
 }
 
 main() {
@@ -316,7 +298,7 @@ main() {
   info ""
   info "Next steps:"
   info "1. Copy .env.example to .env and fill in local values."
-  info "2. Start Ollama with: ollama serve"
+  info "2. Start your configured model backend (for Ollama, ollama serve)."
   info "3. Start Docker Desktop or Colima."
 }
 

@@ -71,6 +71,18 @@ def test_reviewer_prefers_offline_even_when_task_spec_is_broader(tmp_path: Path)
     assert resolve_network_mode(role="reviewer", run_dir=run_dir) == "offline"
 
 
+def test_reviewer_accepts_explicit_network_override(tmp_path: Path) -> None:
+    assert (
+        resolve_network_mode(
+            role="reviewer",
+            run_dir=tmp_path,
+            explicit_mode="package-install",
+            env_mode="offline",
+        )
+        == "package-install"
+    )
+
+
 def test_full_requires_explicit_opt_in_from_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

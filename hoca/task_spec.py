@@ -30,7 +30,7 @@ MAX_FILE_EXCERPT_CHARS = 4000
 MAX_TOTAL_INSTRUCTION_CHARS = 12000
 RELEVANT_EXCERPT_CONTEXT_LINES = 2
 _PATH_LIKE_PATTERN = re.compile(
-    r"(?:^|[\s'\"`])([\w./-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|rb|md|yaml|yml|json|toml))(?:$|[\s'\"`,:;])"
+    r"(?:^|[\s'\"`(])([\w./-]+\.(?:tsx|jsx|yaml|py|ts|js|go|rs|java|rb|md|yml|json|toml))(?:$|[\s'\"`,:;.)\]])"
 )
 _SECRET_LINE_PATTERN = re.compile(
     r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*\S+"
@@ -211,16 +211,20 @@ def infer_test_commands(repo_root: Path) -> list[str]:
         scripts = pkg.get("scripts") or {}
         if (repo_root / "pnpm-lock.yaml").is_file():
             runner = "pnpm"
+        elif (repo_root / "yarn.lock").is_file():
+            runner = "yarn"
         elif (repo_root / "package-lock.json").is_file():
             runner = "npm"
         else:
             runner = "npm"
         if "test" in scripts:
-            commands.append(f"{runner} test")
+            commands.append(_package_script_command(runner, "test"))
         if "lint" in scripts:
-            commands.append(f"{runner} lint")
+            commands.append(_package_script_command(runner, "lint"))
         if "typecheck" in scripts:
-            commands.append(f"{runner} typecheck")
+            commands.append(_package_script_command(runner, "typecheck"))
+        if "build" in scripts:
+            commands.append(_package_script_command(runner, "build"))
 
     if (repo_root / "pyproject.toml").is_file() or (repo_root / "requirements.txt").is_file():
         commands.append("pytest")
@@ -271,6 +275,12 @@ def extract_explicit_test_commands(task: str) -> list[str]:
         if command and not is_secret_like_path(command) and command not in commands:
             commands.append(command)
     return commands
+
+
+def _package_script_command(runner: str, script_name: str) -> str:
+    if runner == "npm":
+        return f"npm run {script_name}"
+    return f"{runner} {script_name}"
 
 
 def infer_expected_areas(task: str, repo_root: Path) -> list[str]:

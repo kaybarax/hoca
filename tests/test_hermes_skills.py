@@ -178,6 +178,7 @@ def test_worker_skill_is_implementation_focused() -> None:
     assert "disposable worktree" in content
     assert "Treat `HocaTaskSpec.repo_root` as reference metadata only" in content
     assert "Do not `cd` to `HocaTaskSpec.repo_root`" in content
+    assert "$run_dir/openhands-task-prompt.txt" in content
 
 
 def test_worker_skill_defines_manual_procedures() -> None:

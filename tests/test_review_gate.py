@@ -12,10 +12,50 @@ from hoca.review_gate import (
     evaluate_review_gate,
     main,
     materialize_structured_report_from_text,
+    recover_review_report_from_alternate_paths,
+    structured_report_ready,
     task_report_review_status,
     try_extract_structured_report,
     try_resolve_review_gate,
 )
+
+
+_VALID_REPORT = (
+    '{"schema_version":1,"run_id":"run-1","round":1,"role":"reviewer",'
+    '"verdict":"LGTM","findings":[],"pr_notes":{"summary":["Looks good."],'
+    '"known_followups":[]}}\n'
+)
+
+
+def test_recover_review_report_from_review_subdir_mount(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    (run_dir / "review").mkdir(parents=True)
+    (run_dir / "review" / "review-report-1.json").write_text(_VALID_REPORT, encoding="utf-8")
+    report_path = run_dir / "reviews" / "review-report-1.json"
+
+    assert recover_review_report_from_alternate_paths(run_dir, 1, report_path) is True
+    assert HocaReviewReport.from_json(report_path.read_text(encoding="utf-8")).verdict == "LGTM"
+
+
+def test_recover_review_report_ignores_malformed_alternate(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    (run_dir / "review").mkdir(parents=True)
+    (run_dir / "review" / "review-report-1.json").write_text("not json", encoding="utf-8")
+    report_path = run_dir / "reviews" / "review-report-1.json"
+
+    assert recover_review_report_from_alternate_paths(run_dir, 1, report_path) is False
+    assert not report_path.exists()
+
+
+def test_structured_report_ready_validates_verdict(tmp_path: Path) -> None:
+    good = tmp_path / "good.json"
+    good.write_text(_VALID_REPORT, encoding="utf-8")
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"verdict":"maybe"}', encoding="utf-8")
+
+    assert structured_report_ready(good) is True
+    assert structured_report_ready(bad) is False
+    assert structured_report_ready(tmp_path / "missing.json") is False
 
 
 def test_unstructured_lgtm_text_is_rejected(tmp_path: Path) -> None:
@@ -284,6 +324,23 @@ def test_try_extract_structured_report_from_openhands_message_event() -> None:
     assert report is not None
     assert report.verdict == "fix_required"
     assert report.findings[0].id == "F1"
+
+
+def test_try_extract_structured_report_from_openhands_fenced_message_event() -> None:
+    review_text = (
+        '{"kind":"MessageEvent","source":"agent","llm_message":{"content":[{"text":'
+        '"```json\\n{\\n  \\"schema_version\\": 1,\\n  \\"run_id\\": \\"run-1\\",'
+        '\\n  \\"round\\": 1,\\n  \\"role\\": \\"reviewer\\",'
+        '\\n  \\"verdict\\": \\"LGTM\\",\\n  \\"findings\\": [],'
+        '\\n  \\"pr_notes\\": {\\n    \\"summary\\": \\"Looks good.\\",'
+        '\\n    \\"known_followups\\": []\\n  }\\n}\\n```"}]}}\n'
+    )
+
+    report = try_extract_structured_report(review_text)
+
+    assert report is not None
+    assert report.verdict == "LGTM"
+    assert report.pr_notes["summary"] == ["Looks good."]
 
 
 def test_try_extract_structured_report_from_dependency_free_yaml() -> None:

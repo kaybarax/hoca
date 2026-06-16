@@ -6,10 +6,12 @@ import pytest
 
 from hoca.config import HocaConfig, ModelPoolConfig, ModelSlot, load_config
 from hoca.role_model_env import (
+    RoleLlmSelection,
     apply_role_to_env,
     export_shell,
     hermes_provider_for_model,
     model_pool_doctor_lines,
+    openai_compatible_model_for_selection,
     pool_credential_env_keys,
     resolve_role_llm,
     should_resolve_role_model,
@@ -46,16 +48,14 @@ def _active_pool_config() -> ModelPoolConfig:
 
 
 class TestRoleModelResolution:
-    def test_inactive_pool_uses_ollama_fallback(self) -> None:
+    def test_inactive_pool_fails_closed(self) -> None:
         cfg = HocaConfig(
             ollama_model="qwen-14b-pro",
             ollama_base_url="http://127.0.0.1:11434",
         )
 
-        selection = resolve_role_llm("worker", cfg)
-
-        assert selection.llm_model == "ollama/qwen-14b-pro"
-        assert selection.api_key == "ollama"
+        with pytest.raises(ValueError, match="No HOCA role model pool is configured"):
+            resolve_role_llm("worker", cfg)
         assert should_resolve_role_model(cfg) is False
 
     def test_active_pool_resolves_worker_and_reviewer_slots(self) -> None:
@@ -157,10 +157,12 @@ class TestRoleModelResolution:
 
 
 class TestModelPoolDoctorLines:
-    def test_inactive_pool_reports_ollama_fallback_mode(self) -> None:
+    def test_inactive_pool_reports_fail_closed_configuration(self) -> None:
         lines = model_pool_doctor_lines(HocaConfig())
 
-        assert any(status == "ok" and "inactive" in message for status, message in lines)
+        assert any(
+            status == "fail" and "Model pool inactive" in message for status, message in lines
+        )
 
     def test_active_pool_validates_roles(self) -> None:
         lines = model_pool_doctor_lines(HocaConfig(model_pool=_active_pool_config()))
@@ -169,7 +171,7 @@ class TestModelPoolDoctorLines:
         assert any("worker resolves" in message for _, message in lines)
         assert not any(status == "fail" for status, _ in lines)
 
-    def test_same_worker_and_reviewer_slot_warns(self) -> None:
+    def test_same_worker_and_reviewer_slot_is_ok(self) -> None:
         pool = ModelPoolConfig(
             slots=(ModelSlot(name="shared", model="ollama/qwen-14b-pro", api_key="x"),),
             worker_model="shared",
@@ -178,7 +180,9 @@ class TestModelPoolDoctorLines:
         )
         lines = model_pool_doctor_lines(HocaConfig(model_pool=pool))
 
-        assert any(status == "warn" and "same model slot" in message for status, message in lines)
+        assert any(
+            status == "ok" and "share one model slot" in message for status, message in lines
+        )
 
 
 class TestRunnerCredentialIsolation:
@@ -247,7 +251,7 @@ def test_strip_pool_credentials_removes_configured_keys() -> None:
     ]
 
 
-def test_load_config_empty_pool_ignores_direct_llm_env(
+def test_load_config_empty_pool_ignores_direct_llm_env_and_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -263,10 +267,23 @@ def test_load_config_empty_pool_ignores_direct_llm_env(
     cfg = load_config(dotenv_path=env_file)
 
     assert cfg.model_pool.is_active is False
-    assert resolve_role_llm("worker", cfg).llm_model == "ollama/qwen-14b-pro"
+    with pytest.raises(ValueError, match="No HOCA role model pool is configured"):
+        resolve_role_llm("worker", cfg)
 
 
 def test_hermes_provider_for_model_maps_cloud_prefixes() -> None:
     assert hermes_provider_for_model("deepseek/deepseek-v4-flash") == "deepseek"
     assert hermes_provider_for_model("openrouter/openai/gpt-4o-mini") == "openrouter"
     assert hermes_provider_for_model("ollama/qwen-14b-pro") == ""
+
+
+def test_openai_compatible_model_for_selection_prefixes_local_base_url() -> None:
+    selection = RoleLlmSelection(
+        role="worker",
+        slot_name="worker",
+        llm_model="ggml-org/gpt-oss-20b-GGUF",
+        base_url="http://127.0.0.1:8080/v1",
+        api_key="local",
+    )
+
+    assert openai_compatible_model_for_selection(selection) == ("openai/ggml-org/gpt-oss-20b-GGUF")

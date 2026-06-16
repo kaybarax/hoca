@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -64,6 +65,11 @@ def test_build_reviewer_hermes_prompt_includes_review_artifact_paths(
     assert "ad-hoc conditionals" in prompt
     assert "canonical helpers" in prompt
     assert "roughly 1000 lines" in prompt
+    assert "Required review wrapper command" in prompt
+    assert "HOCA_LOCK_ROLE_MODEL=true" in prompt
+    assert "HOCA_SKIP_ROLE_MODEL_RESOLUTION=false" in prompt
+    assert "HOCA_DOTENV_PATH=" in prompt
+    assert "scripts/review-with-openhands.sh" in prompt
     assert "secret-value" not in prompt
     assert "[redacted: possible secret]" in prompt
 
@@ -120,6 +126,7 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
     hermes.chmod(hermes.stat().st_mode | 0o100)
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
     monkeypatch.setenv("HERMES_TEST_RUN_DIR", str(tmp_path / "project/.hoca-runtime/runs/run-test"))
     monkeypatch.setenv("HERMES_TEST_ROUND", "2")
     clear_model_env(monkeypatch)
@@ -150,6 +157,61 @@ def test_run_reviewer_hermes_profile_mode_invokes_hermes_and_uses_report(
         HocaReviewReport.from_json(result.review_report_path.read_text(encoding="utf-8")).verdict
         == "LGTM"
     )
+    timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
+    coordinator_loops = [
+        event
+        for event in timings["events"]
+        if event["type"] == "agent_loop" and event["name"] == "reviewer-hermes-coordinator"
+    ]
+    assert len(coordinator_loops) == 1
+
+
+def test_run_reviewer_hermes_dispatches_direct_mode_without_hermes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    init_repo(project)
+    run_dir = project / ".hoca-runtime" / "runs" / "run-test"
+    ensure_run_layout(run_dir)
+    task_spec_path = run_dir / "task-spec.json"
+    task_spec_path.write_text(sample_task_spec(repo_root=str(project)).to_json(), encoding="utf-8")
+    report_path = review_report_path(run_dir, 1)
+
+    def fake_run_reviewer_direct(**kwargs):
+        return type(
+            "Result",
+            (),
+            {
+                "mode": "direct",
+                "exit_code": 0,
+                "review_report_path": report_path,
+                "hermes_stdout_path": None,
+                "hermes_stderr_path": None,
+            },
+        )()
+
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "direct")
+    monkeypatch.setattr("hoca.reviewer_direct.run_reviewer_direct", fake_run_reviewer_direct)
+
+    result = run_reviewer_hermes(
+        project_path=project,
+        task_spec_path=task_spec_path,
+        run_dir=run_dir,
+        round_number=1,
+    )
+
+    assert result.mode == "direct"
+    assert result.review_report_path == report_path
+    timings_path = run_dir / "timings.json"
+    coordinator_loops = []
+    if timings_path.is_file():
+        timings = json.loads(timings_path.read_text(encoding="utf-8"))
+        coordinator_loops = [
+            event
+            for event in timings["events"]
+            if event["type"] == "agent_loop" and event["name"] == "reviewer-hermes-coordinator"
+        ]
+    assert coordinator_loops == []
 
 
 def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
@@ -173,6 +235,8 @@ def test_run_reviewer_hermes_malformed_profile_report_is_blocked(
     hermes.chmod(hermes.stat().st_mode | 0o100)
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)
@@ -222,6 +286,8 @@ def test_run_reviewer_hermes_normalizes_multiline_pr_notes(
     hermes.chmod(hermes.stat().st_mode | 0o100)
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)
@@ -262,6 +328,8 @@ def test_run_reviewer_hermes_missing_profile_report_is_blocked(
     hermes.chmod(hermes.stat().st_mode | 0o100)
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setenv("HOCA_REVIEWER_MODE", "hermes")
+    clear_model_env(monkeypatch)
 
     project = tmp_path / "project"
     init_repo(project)

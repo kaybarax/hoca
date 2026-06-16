@@ -19,3 +19,5 @@ completed_at: null
 priority: 1
 metadata:
   team: platform
+  worker_engine: openhands
+  worker_engine_policy: project-allowlist-required

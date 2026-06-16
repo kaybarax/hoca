@@ -24,6 +24,34 @@ class ResourceStats:
     load_avg: float | None
 
 
+def _metadata_models(metadata: dict | None) -> set[str]:
+    if not metadata:
+        return set()
+    raw = (
+        metadata.get("required_models")
+        or metadata.get("resident_models")
+        or metadata.get("models")
+        or metadata.get("model")
+        or metadata.get("worker_model")
+    )
+    if raw is None:
+        return set()
+    if isinstance(raw, str):
+        return {raw.strip()} if raw.strip() else set()
+    if isinstance(raw, list | tuple | set):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    return set()
+
+
+def _metadata_int(metadata: dict | None, key: str, default: int = 0) -> int:
+    if not metadata:
+        return default
+    try:
+        return int(metadata.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
 def _memory_mb() -> int | None:
     # Portable best effort; callers treat missing data as advisory-only.
     if hasattr(os, "sysconf") and hasattr(os, "SC_PAGE_SIZE"):
@@ -69,11 +97,29 @@ class ResourceGovernor:
         return max(adapter_weight, 0.1) * max(task_weight, 0.1)
 
     @staticmethod
+    def task_required_models(task: HocaFleetTask) -> set[str]:
+        return _metadata_models(task.metadata)
+
+    @staticmethod
+    def lane_required_models(lane: HocaLane) -> set[str]:
+        return _metadata_models(lane.metadata)
+
+    def resident_model_limit(self) -> int:
+        return _metadata_int(self.budget.metadata, "max_resident_models", 0)
+
+    def resident_models_for_lanes(self, lanes: list[HocaLane]) -> set[str]:
+        models: set[str] = set()
+        for lane in self.active_lanes(lanes):
+            models.update(self.lane_required_models(lane))
+        return models
+
+    @staticmethod
     def active_lanes(lanes: list[HocaLane]) -> list[HocaLane]:
         return [
             lane
             for lane in lanes
-            if lane.status in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
+            if lane.status
+            in {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
         ]
 
     def can_launch(
@@ -116,6 +162,21 @@ class ResourceGovernor:
                 running_load,
                 projected_load,
             )
+
+        resident_limit = self.resident_model_limit()
+        if resident_limit > 0:
+            running_models = self.resident_models_for_lanes(running_lanes)
+            candidate_models = self.task_required_models(task)
+            projected_models = running_models | candidate_models
+            if len(projected_models) > resident_limit:
+                added = sorted(projected_models - running_models)
+                detail = f"; added={','.join(added)}" if added else ""
+                return ResourceAssessment(
+                    False,
+                    f"model residency cap reached ({len(projected_models)}/{resident_limit}){detail}",
+                    running_load,
+                    projected_load,
+                )
 
         if self.budget.memory_limit_mb > 0:
             free_memory = _memory_mb()

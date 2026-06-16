@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from hoca.security import is_secret_like_path
 
@@ -38,8 +39,27 @@ GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS: list[re.Pattern[str]] = [
 ]
 
 MANAGER_ONLY_GIT_LIFECYCLE_ROLES = frozenset({"worker", "reviewer", "openhands"})
+REDUNDANT_REVIEW_VALIDATION_ROLES = frozenset({"reviewer"})
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _COMMAND_LINE_PREFIX = re.compile(r"^\s*(?:[$#>]\s*)?(?:`)?(?:git|gh)\s+")
+_VALIDATION_COMMAND = re.compile(
+    r"^\s*(?:[$#>]\s*)?(?:`)?(?:"
+    r"(?:bash|sh|zsh)\s+-lc\s+[\"']?(?:"
+    r"(?:npm|yarn|pnpm|bun)\s+(?:run\s+)?(?:build|lint|test|check)\b|"
+    r"npx\s+playwright\s+test\b|"
+    r"pytest\b|"
+    r"python(?:3)?\s+-m\s+pytest\b"
+    r")|"
+    r"(?:npm|yarn|pnpm|bun)\s+(?:run\s+)?(?:build|lint|test|check)\b|"
+    r"npx\s+playwright\s+test\b|"
+    r"pytest\b|"
+    r"python(?:3)?\s+-m\s+pytest\b"
+    r")"
+)
+_PASSIVE_ARGUMENT_KEYS = ("summary", "thought", "reasoning_content", "llm_message")
+_PLAIN_OUTPUT_COMMAND_PREFIX = re.compile(
+    r"^\s*(?:[$#>]\s*)?(?:`)?(?:rm|sudo|git|gh|docker|brew|chmod|chown)\b"
+)
 
 # Relative paths that rm -rf is allowed to target within the project.
 _SAFE_RM_TARGETS = frozenset(
@@ -80,6 +100,10 @@ _SAFE_RM_TARGETS = frozenset(
         "tmp/",
         "./tmp",
         "./tmp/",
+        "test-dist",
+        "test-dist/",
+        "./test-dist",
+        "./test-dist/",
     }
 )
 
@@ -91,6 +115,10 @@ _RM_RF_BARE = re.compile(r"\brm\s+(-\w*[rR]\w*\s+.*-\w*f|.*-\w*f\w*\s+.*-\w*[rR]
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_STALL_SECONDS = 300
 STALL_CHECK_INTERVAL = 30
+
+
+def watchdog_check_interval(stall_seconds: int) -> float:
+    return max(0.1, min(float(STALL_CHECK_INTERVAL), max(1.0, float(stall_seconds))))
 
 
 @dataclass
@@ -137,7 +165,12 @@ def _is_safe_rm_target(line: str) -> bool:
     if not match:
         return False
     targets_str = match.group(2).strip()
-    targets = targets_str.split()
+    targets_str = re.split(r"\s*(?:;|\|\||&&)\s*", targets_str, maxsplit=1)[0]
+    targets = [
+        target
+        for target in targets_str.split()
+        if not target.startswith((">", "1>", "2>")) and ">" not in target
+    ]
     if not targets:
         return False
     for target in targets:
@@ -146,13 +179,39 @@ def _is_safe_rm_target(line: str) -> bool:
         # e.g., "apps/api-gateway/dist" is safe because basename is "dist"
         parts = base.split("/")
         leaf = parts[-1] if parts else ""
+        if target == ".git" and re.search(
+            r"\bcd\s+(?:/tmp|/private/tmp|/var/tmp)/[^\s;&|]+.*\brm\s+.*\s+\.git\b",
+            line,
+        ):
+            continue
+        if base.startswith("/"):
+            if target.startswith(("/tmp/", "/private/tmp/", "/var/tmp/")):
+                continue
+            return False
         if target in _SAFE_RM_TARGETS:
             continue
         if leaf in {t.rstrip("/") for t in _SAFE_RM_TARGETS}:
             continue
-        # Block anything that starts with / (absolute) or looks unsafe
+        # Block anything else that looks unsafe.
         return False
     return True
+
+
+def _is_temp_repo_git_add_all(line: str) -> bool:
+    return bool(
+        re.search(
+            r"\bcd\s+(?:/tmp|/private/tmp|/var/tmp)/[^\s;&|]+.*\bgit\s+add\s+-A\b",
+            line,
+        )
+    )
+
+
+def _arguments_fragment_should_be_skipped(line: str) -> bool:
+    if '"arguments":' not in line:
+        return False
+    if '"command"' in line:
+        return False
+    return any(key in line for key in _PASSIVE_ARGUMENT_KEYS)
 
 
 def check_dangerous_command(line: str) -> str | None:
@@ -162,6 +221,8 @@ def check_dangerous_command(line: str) -> str | None:
             return _RM_RF_BARE.pattern
 
     for pattern in DANGEROUS_COMMANDS:
+        if pattern.pattern == r"\bgit\s+add\s+-A\b" and _is_temp_repo_git_add_all(line):
+            continue
         if pattern.search(line):
             return pattern.pattern
     return None
@@ -177,6 +238,31 @@ def check_manager_only_git_lifecycle_command(line: str, actor_role: str) -> str 
     for pattern in GIT_LIFECYCLE_MANAGER_ONLY_COMMANDS:
         if pattern.search(normalized):
             return pattern.pattern
+    return None
+
+
+def _run_has_passing_test_summary(run_dir: Path) -> bool:
+    summary_path = run_dir / "tests-summary.md"
+    if not summary_path.is_file():
+        return False
+    try:
+        summary = summary_path.read_text(encoding="utf-8", errors="replace").lower()
+    except OSError:
+        return False
+    return "- **status**: passed" in summary and "- **exit code**: 0" in summary
+
+
+def check_reviewer_redundant_validation_command(
+    line: str, actor_role: str, run_dir: Path
+) -> str | None:
+    role = actor_role.strip().lower()
+    if role not in REDUNDANT_REVIEW_VALIDATION_ROLES:
+        return None
+    if not _run_has_passing_test_summary(run_dir):
+        return None
+    normalized = _ANSI_ESCAPE.sub("", line).strip(" │")
+    if _VALIDATION_COMMAND.search(normalized):
+        return _VALIDATION_COMMAND.pattern
     return None
 
 
@@ -269,6 +355,13 @@ def command_policy_scan_text(line: str) -> str:
     return command_policy_scan_context(line)[0]
 
 
+def _plain_output_looks_like_command(line: str) -> bool:
+    normalized = _ANSI_ESCAPE.sub("", line).strip(" │")
+    if not normalized:
+        return False
+    return bool(_PLAIN_OUTPUT_COMMAND_PREFIX.search(normalized))
+
+
 def check_unrelated_directory(
     line: str,
     project_path: str,
@@ -277,8 +370,15 @@ def check_unrelated_directory(
     abs_refs = re.findall(r"(?:cd|cat|ls|rm|cp|mv|vi|vim|nano|open)\s+(/[^\s;|&]+)", line)
     allowed_roots = [os.path.realpath(project_path)]
     allowed_roots.extend(os.path.realpath(path) for path in allowed_paths)
+    allowed_roots.extend(("/workspace", "/hoca-run", "/hoca-runs"))
     tmp_prefixes = ("/tmp", "/private/tmp", "/var/tmp")
     for ref in abs_refs:
+        ref = ref.rstrip("\"',]}")
+        # JSON-encoded stream lines glue literal escape sequences onto the
+        # path (e.g. cd /workspace\nls); cut the ref at the first escape.
+        ref = re.split(r"(?:\\+[nrt])", ref)[0].rstrip("\\")
+        if not ref:
+            continue
         ref_resolved = os.path.realpath(ref)
         if not any(
             ref_resolved == root or ref_resolved.startswith(root + "/") for root in allowed_roots
@@ -292,6 +392,18 @@ def check_unrelated_directory(
 def should_scan_line_for_policy(line: str) -> bool:
     """Skip passive OpenHands observations; scan agent actions and plain output."""
     stripped = line.strip()
+    if re.match(
+        r'^"(?:text|thought|reasoning_content|llm_message|extended_content|summary|message|'
+        r'old_content|new_content|old_str|new_str|file_text)"\s*:',
+        stripped,
+    ):
+        return False
+    if '"arguments":' in stripped and any(
+        key in stripped for key in ("old_str", "new_str", "old_content", "new_content", "file_text")
+    ):
+        return False
+    if _arguments_fragment_should_be_skipped(stripped):
+        return False
     if not stripped.startswith("{"):
         return True
     try:
@@ -350,6 +462,7 @@ def monitor_process_stream(
     stall_seconds: int = DEFAULT_STALL_SECONDS,
     output_file=None,
     cancel_event: threading.Event | None = None,
+    on_cancel: Callable[[str], None] | None = None,
     actor_role: str = "worker",
 ) -> MonitorResult:
     """Monitor a stream (e.g. stdin piped from docker) for dangerous activity.
@@ -373,10 +486,11 @@ def monitor_process_stream(
     )
 
     _cancel = cancel_event or threading.Event()
+    check_interval = watchdog_check_interval(stall_seconds)
 
     def _watchdog() -> None:
         while not _cancel.is_set():
-            _cancel.wait(STALL_CHECK_INTERVAL)
+            _cancel.wait(check_interval)
             if _cancel.is_set():
                 break
             elapsed = _now() - start_time
@@ -384,6 +498,8 @@ def monitor_process_stream(
                 with lock:
                     watchdog_reason.append("timeout")
                     _record(events, "timeout", f"Watchdog: hard timeout after {timeout_seconds}s")
+                if on_cancel is not None:
+                    on_cancel("timeout")
                 _cancel.set()
                 return
             with lock:
@@ -396,6 +512,8 @@ def monitor_process_stream(
                         "stall",
                         f"Watchdog: no output for {idle:.0f}s (limit {stall_seconds}s)",
                     )
+                if on_cancel is not None:
+                    on_cancel("stall")
                 _cancel.set()
                 return
 
@@ -425,7 +543,11 @@ def monitor_process_stream(
 
             if should_scan_line_for_policy(line):
                 command_scan_text, command_source = command_policy_scan_context(line)
-                dangerous = check_dangerous_command(command_scan_text)
+                dangerous = None
+                if command_source != "plain_output" or _plain_output_looks_like_command(
+                    command_scan_text
+                ):
+                    dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(
                         events,
@@ -435,7 +557,9 @@ def monitor_process_stream(
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(
+                    command_scan_text, actor_role
+                )
                 if manager_only:
                     _record(
                         events,
@@ -444,6 +568,20 @@ def monitor_process_stream(
                         f"{manager_only}; source={command_source}; line={line[:200]}",
                     )
                     stop_reason = "manager_only_git_lifecycle"
+                    break
+
+                redundant_validation = check_reviewer_redundant_validation_command(
+                    command_scan_text, actor_role, run_dir
+                )
+                if redundant_validation:
+                    _record(
+                        events,
+                        "reviewer_redundant_validation",
+                        f"Detected redundant reviewer validation command after passing test "
+                        f"summary: {redundant_validation}; source={command_source}; "
+                        f"line={line[:200]}",
+                    )
+                    stop_reason = "reviewer_redundant_validation"
                     break
 
                 secret = check_secret_access(line, project_path)
@@ -507,6 +645,7 @@ def monitor_process(
     run_dir: Path,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     stall_seconds: int = DEFAULT_STALL_SECONDS,
+    output_file=None,
     actor_role: str = "worker",
 ) -> MonitorResult:
     events: list[MonitorEvent] = []
@@ -516,6 +655,7 @@ def monitor_process(
     watchdog_reason: list[str] = []
     lock = threading.Lock()
     watchdog_stop = threading.Event()
+    check_interval = watchdog_check_interval(stall_seconds)
 
     _record(
         events,
@@ -525,7 +665,7 @@ def monitor_process(
 
     def _watchdog() -> None:
         while process.poll() is None and not watchdog_stop.is_set():
-            if watchdog_stop.wait(STALL_CHECK_INTERVAL):
+            if watchdog_stop.wait(check_interval):
                 break
             if process.poll() is not None:
                 break
@@ -557,6 +697,10 @@ def monitor_process(
         for line in process.stdout:
             line = line.rstrip("\n")
 
+            if output_file:
+                output_file.write(line + "\n")
+                output_file.flush()
+
             with lock:
                 if watchdog_reason:
                     break
@@ -570,7 +714,11 @@ def monitor_process(
 
             if should_scan_line_for_policy(line):
                 command_scan_text, command_source = command_policy_scan_context(line)
-                dangerous = check_dangerous_command(command_scan_text)
+                dangerous = None
+                if command_source != "plain_output" or _plain_output_looks_like_command(
+                    command_scan_text
+                ):
+                    dangerous = check_dangerous_command(command_scan_text)
                 if dangerous:
                     _record(
                         events,
@@ -580,7 +728,9 @@ def monitor_process(
                     stop_reason = "dangerous_command"
                     break
 
-                manager_only = check_manager_only_git_lifecycle_command(command_scan_text, actor_role)
+                manager_only = check_manager_only_git_lifecycle_command(
+                    command_scan_text, actor_role
+                )
                 if manager_only:
                     _record(
                         events,
@@ -589,6 +739,20 @@ def monitor_process(
                         f"{manager_only}; source={command_source}; line={line[:200]}",
                     )
                     stop_reason = "manager_only_git_lifecycle"
+                    break
+
+                redundant_validation = check_reviewer_redundant_validation_command(
+                    command_scan_text, actor_role, run_dir
+                )
+                if redundant_validation:
+                    _record(
+                        events,
+                        "reviewer_redundant_validation",
+                        f"Detected redundant reviewer validation command after passing test "
+                        f"summary: {redundant_validation}; source={command_source}; "
+                        f"line={line[:200]}",
+                    )
+                    stop_reason = "reviewer_redundant_validation"
                     break
 
                 secret = check_secret_access(line, project_path)

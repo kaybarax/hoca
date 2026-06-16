@@ -352,6 +352,7 @@ class HocaAttemptReport(JsonContract):
     known_risks: list[str]
     blocked_reason: str | None
     artifact_paths: dict[str, str]
+    mode: str = "hermes"
 
     _required_fields: ClassVar[tuple[str, ...]] = (
         "run_id",
@@ -386,6 +387,7 @@ class HocaAttemptReport(JsonContract):
             run_id=_single_line_string(_required(data, "run_id"), "run_id"),
             round=round_number,
             role=role,
+            mode=_single_line_string(data.get("mode", "hermes"), "mode"),
             status=status,
             changed_files=_single_line_string_list(data, "changed_files"),
             summary=_single_line_string_list(data, "summary"),

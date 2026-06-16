@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from hoca.contracts import HocaReviewFinding, HocaReviewReport
@@ -166,3 +167,51 @@ def test_collect_review_signals_runs_multiple_fake_review_adapters(
     sources = {signal.source for signal in signals}
     assert sources == {"adapter", "file", "cmd"}
     assert any(signal.verdict == "needs_work" for signal in signals)
+
+
+def test_collect_review_signals_runs_enabled_adapters_in_parallel(
+    monkeypatch, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    adapter_one = tmp_path / "adapter-one.py"
+    adapter_two = tmp_path / "adapter-two.py"
+    for path, source in ((adapter_one, "slow-b"), (adapter_two, "slow-a")):
+        path.write_text(
+            "import json, time\n"
+            "time.sleep(0.4)\n"
+            f"print(json.dumps({{'source': {source!r}, 'verdict': 'pass', 'summary': {source!r}}}))\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setenv("HOCA_REVIEW_FANOUT_ENABLED", "true")
+    monkeypatch.setenv(
+        "HOCA_REVIEW_ADAPTERS",
+        f"slow-b=python3 {adapter_one},slow-a=python3 {adapter_two}",
+    )
+
+    started = time.perf_counter()
+    signals = collect_review_signals(run_dir=run_dir, lane_id="lane-parallel")
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 0.7
+    assert [signal.source for signal in signals] == ["slow-a", "slow-b"]
+
+
+def test_collect_review_signals_respects_fanout_worker_cap(monkeypatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOCA_REVIEW_FANOUT_ENABLED", "true")
+    monkeypatch.setenv("HOCA_REVIEW_FANOUT_MAX_WORKERS", "1")
+    monkeypatch.setenv(
+        "HOCA_REVIEW_ADAPTERS",
+        'a=python3 -c \'import time; time.sleep(0.25); print("{\\"verdict\\":\\"pass\\"}")\','
+        'b=python3 -c \'import time; time.sleep(0.25); print("{\\"verdict\\":\\"pass\\"}")\'',
+    )
+
+    started = time.perf_counter()
+    signals = collect_review_signals(run_dir=run_dir, lane_id="lane-capped")
+    elapsed = time.perf_counter() - started
+
+    assert elapsed >= 0.45
+    assert len(signals) == 2

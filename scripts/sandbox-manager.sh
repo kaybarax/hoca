@@ -73,8 +73,8 @@ sandbox_start() {
     -v "${HOCA_ROOT}/templates:/hoca/templates:ro"
     -v "${sandbox_home}:/home/hoca-sandbox"
     -e "LLM_BASE_URL=${llm_url}"
-    -e "LLM_MODEL=${LLM_MODEL:-ollama/qwen-14b-pro}"
-    -e "LLM_API_KEY=${LLM_API_KEY:-ollama}"
+    -e "LLM_MODEL=${LLM_MODEL:?LLM_MODEL must be resolved from the HOCA role model env before starting a sandbox}"
+    -e "LLM_API_KEY=${LLM_API_KEY:?LLM_API_KEY must be resolved from the HOCA role model env before starting a sandbox}"
     -e "HOME=/home/hoca-sandbox"
     --security-opt=no-new-privileges
     --cap-drop=ALL

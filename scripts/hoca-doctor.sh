@@ -98,7 +98,6 @@ detect_ram_gb() {
 RECOMMENDED_RAM_GB="$(config_value HOCA_RECOMMENDED_RAM_GB)"
 RECOMMENDED_RAM_GB="${RECOMMENDED_RAM_GB:-48}"
 DEFAULT_MODEL="$(config_value OLLAMA_MODEL)"
-DEFAULT_MODEL="${DEFAULT_MODEL:-qwen-14b-pro}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -134,7 +133,7 @@ RAM_GB="$(detect_ram_gb || true)"
 if [ -n "${RAM_GB:-}" ]; then
   ok "Detected RAM: ${RAM_GB} GB"
   if [ "$RAM_GB" -lt "$RECOMMENDED_RAM_GB" ]; then
-    warn "RAM is below ${RECOMMENDED_RAM_GB} GB. Prefer 7B or 14B Ollama models over 32B models."
+    warn "RAM is below ${RECOMMENDED_RAM_GB} GB. Prefer 7B or 14B models over 32B models."
   fi
 else
   warn "Could not determine system RAM."
@@ -200,14 +199,16 @@ if command -v ollama >/dev/null 2>&1; then
     MODEL_COUNT="$(printf '%s\n' "$OLLAMA_LIST" | awk 'NR > 1 && NF > 0 { count++ } END { print count + 0 }')"
     if [ "$MODEL_COUNT" -gt 0 ]; then
       ok "Ollama models available: $MODEL_COUNT"
-      if printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
+      if [ -z "$DEFAULT_MODEL" ]; then
+        ok "No legacy OLLAMA_MODEL configured; using explicit HOCA role model blocks."
+      elif printf '%s\n' "$OLLAMA_LIST" | awk -v model="$DEFAULT_MODEL" 'NR > 1 && ($1 == model || $1 == model ":latest") { found = 1 } END { exit found ? 0 : 1 }'; then
         ok "Default Ollama model found: $DEFAULT_MODEL"
       else
         warn "Default Ollama model not found: $DEFAULT_MODEL"
         warn "Build it with: ollama create $DEFAULT_MODEL -f ./models/Modelfile"
       fi
     else
-      warn "No Ollama models are installed. Run: ollama pull qwen2.5-coder:7b"
+      warn "No Ollama models are installed. Pull the exact model named in your HOCA role model blocks if you plan to use Ollama."
     fi
   else
     warn "Could not list Ollama models."

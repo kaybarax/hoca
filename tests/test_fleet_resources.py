@@ -7,9 +7,14 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from hoca.cli import main
-from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject
+from hoca.fleet_contracts import HocaFleetTask, HocaLane, HocaProject, HocaResourceBudget
 import hoca.fleet_resources as fleet_resources
-from hoca.fleet_resources import collect_resource_sample, summarize_resource_samples
+from hoca.fleet_resources import (
+    collect_process_tree_resource_sample,
+    collect_resource_sample,
+    model_residency_summary,
+    summarize_resource_samples,
+)
 from hoca.fleet_registry import FleetRegistry
 
 
@@ -87,6 +92,26 @@ def test_collect_resource_sample_groups_processes_by_lane(tmp_path: Path, monkey
     assert sample["lanes"]["lane-1"]["process_count"] == 1
 
 
+def test_collect_process_tree_resource_sample_aggregates_descendants(monkeypatch) -> None:
+    monkeypatch.setattr(
+        fleet_resources,
+        "_process_rows",
+        lambda: [
+            {"pid": 10, "ppid": 1, "cpu_pct": 1.0, "rss_kb": 1024, "command": "parent"},
+            {"pid": 11, "ppid": 10, "cpu_pct": 2.0, "rss_kb": 2048, "command": "child"},
+            {"pid": 12, "ppid": 11, "cpu_pct": 3.0, "rss_kb": 3072, "command": "grandchild"},
+            {"pid": 99, "ppid": 1, "cpu_pct": 50.0, "rss_kb": 9999, "command": "other"},
+        ],
+    )
+
+    sample = collect_process_tree_resource_sample(10)
+
+    assert sample["root_pid"] == 10
+    assert sample["aggregate"]["process_count"] == 3
+    assert sample["aggregate"]["cpu_pct"] == 6.0
+    assert sample["aggregate"]["rss_mb"] == 6.0
+
+
 def test_summarize_resource_samples_reports_peak_and_average() -> None:
     summary = summarize_resource_samples(
         [
@@ -101,6 +126,45 @@ def test_summarize_resource_samples_reports_peak_and_average() -> None:
     assert summary["peak_rss_mb"] == 200.0
     assert summary["average_rss_mb"] == 150.0
     assert summary["peak_process_count"] == 3
+
+
+def test_model_residency_summary_explains_binding_limit(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+    lane = registry.get_lane("lane-1")
+    assert lane is not None
+    registry.update_lane(
+        "lane-1",
+        HocaLane(
+            **{
+                **lane.to_dict(),
+                "metadata": {"required_models": ["local-coder"]},
+            }
+        ),
+    )
+    budget = HocaResourceBudget(
+        budget_id="default",
+        max_parallel_projects=1,
+        max_parallel_tasks=2,
+        max_parallel_lanes=2,
+        max_agents=2,
+        memory_limit_mb=12000,
+        cpu_limit_percent=0,
+        metadata={
+            "max_resident_models": 1,
+            "model_residency_mb": 6000,
+            "docker_vm_memory_mb": 4096,
+            "sandbox_memory_mb": 1024,
+        },
+    )
+
+    summary = model_residency_summary(registry, budget=budget)
+
+    assert summary["resident_models"] == ["local-coder"]
+    assert summary["model_residency_mb"] == 6000
+    assert summary["docker_vm_memory_mb"] == 4096
+    assert summary["sandbox_total_mb"] == 1024
+    assert summary["total_estimated_mb"] == 11120
+    assert summary["binding_reason"] == "model residency cap reached (1/1)"
 
 
 def test_fleet_monitor_resources_command_writes_report(tmp_path: Path, monkeypatch) -> None:
@@ -170,6 +234,8 @@ def test_fleet_report_can_include_resource_summary(tmp_path: Path) -> None:
     assert "- Samples: 2" in content
     assert "- Peak CPU %: 20.0" in content
     assert "- Peak RSS MB: 200.0" in content
+    assert "Memory Budget:" in content
+    assert "- Resident models:" in content
 
 
 def test_fleet_report_can_include_validation_summary(tmp_path: Path) -> None:
@@ -179,8 +245,7 @@ def test_fleet_report_can_include_validation_summary(tmp_path: Path) -> None:
     run_dir = Path(lane.run_dir)
     run_dir.mkdir(parents=True)
     (run_dir / "status.json").write_text(
-        json.dumps({"status": "pr_created", "current_round": 2, "pr_url": "https://x/pr/1"})
-        + "\n",
+        json.dumps({"status": "pr_created", "current_round": 2, "pr_url": "https://x/pr/1"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "final-state.json").write_text(

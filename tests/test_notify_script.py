@@ -49,15 +49,29 @@ def run_notify(
     )
 
 
-def test_notify_sends_macos_complete_message_without_telegram(tmp_path: Path) -> None:
+def test_notify_sends_macos_complete_message_when_enabled(tmp_path: Path) -> None:
     fake_bin, osascript_log, curl_log = make_fake_bin(tmp_path)
 
-    result = run_notify(["complete", "Update README"], fake_bin)
+    result = run_notify(
+        ["complete", "Update README"],
+        fake_bin,
+        {"HOCA_NOTIFY_MACOS": "true"},
+    )
 
     assert result.returncode == 0
     assert "HOCA task complete. Task: Update README" in result.stdout
     assert "HOCA task complete. Task: Update README" in osascript_log.read_text(encoding="utf-8")
     assert not curl_log.exists()
+
+
+def test_notify_skips_macos_by_default(tmp_path: Path) -> None:
+    fake_bin, osascript_log, _ = make_fake_bin(tmp_path)
+
+    result = run_notify(["complete", "Update README"], fake_bin)
+
+    assert result.returncode == 0
+    assert "HOCA task complete. Task: Update README" in result.stdout
+    assert not osascript_log.exists()
 
 
 def test_notify_sends_telegram_only_when_enabled(tmp_path: Path) -> None:
@@ -94,7 +108,7 @@ def test_notify_supports_run_directory_status_shape(tmp_path: Path) -> None:
     assert "HOCA task needs review. Task: Review staged files" in result.stdout
     notification_result = (run_dir / "notification-result.txt").read_text(encoding="utf-8")
     assert "type=needs-review" in notification_result
-    assert "macos=sent" in notification_result
+    assert "macos=skipped_disabled" in notification_result
     assert "telegram=not_enabled" in notification_result
 
 

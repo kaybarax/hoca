@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.model_env import DUMMY_ROLE_MODEL_ENV
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "generate-task-spec.sh"
 HOCA_ROOT = SCRIPT.parents[1]
 
@@ -21,6 +23,7 @@ def init_repo(path: Path) -> None:
 
 def run_script(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env.update(DUMMY_ROLE_MODEL_ENV)
     env["PYTHONPATH"] = str(HOCA_ROOT)
     env["HOCA_PYTHON"] = sys.executable
     return subprocess.run(
@@ -88,6 +91,25 @@ def test_script_forwards_issue_id_and_round_cap(tmp_path: Path) -> None:
     assert data["run_id"] == "issue-7"
     assert data["task_branch"] == "fix/issue-7"
     assert data["max_total_rounds"] == 5
+
+
+def test_script_infers_task_file_before_sentence_period(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    test_path = tmp_path / "src" / "app" / "util" / "util.test.ts"
+    test_path.parent.mkdir(parents=True)
+    test_path.write_text("describe('util', () => {});\n", encoding="utf-8")
+    run_dir = tmp_path / ".hoca-runtime" / "runs" / "path-period"
+    run_dir.mkdir(parents=True)
+
+    result = run_script(
+        str(tmp_path),
+        "Add coverage in src/app/util/util.test.ts. Acceptance criteria: yarn test passes.",
+        str(run_dir),
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads((run_dir / "task-spec.json").read_text(encoding="utf-8"))
+    assert data["expected_areas"] == ["src/app/util/util.test.ts"]
 
 
 def test_script_fails_on_invalid_repo(tmp_path: Path) -> None:

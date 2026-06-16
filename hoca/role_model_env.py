@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+from shutil import which
+import subprocess
 from typing import Literal
 
 from hoca.config import HocaConfig, ModelSlot, RoleName, load_config
@@ -77,15 +81,9 @@ def resolve_role_llm(role: RoleName, config: HocaConfig) -> RoleLlmSelection:
             raise ValueError(f"Cannot resolve model for role {role!r}")
         return _selection_from_slot(role, slot)
 
-    fallback_model = config.ollama_model
-    if not fallback_model.startswith("ollama/"):
-        fallback_model = f"ollama/{fallback_model}"
-    return RoleLlmSelection(
-        role=role,
-        slot_name="ollama-fallback",
-        llm_model=fallback_model,
-        base_url=config.ollama_base_url,
-        api_key="ollama",
+    raise ValueError(
+        "No HOCA role model pool is configured. Set HOCA_MANAGER_MODEL_MODEL, "
+        "HOCA_WORKER_MODEL_MODEL, and HOCA_REVIEWER_MODEL_MODEL in the HOCA env file."
     )
 
 
@@ -120,6 +118,17 @@ def _provider_api_key_env_vars(model: str, api_key: str) -> dict[str, str]:
 def hermes_provider_for_model(model: str) -> str:
     provider = model.split("/", 1)[0].lower()
     return HERMES_PROVIDER_BY_MODEL_PREFIX.get(provider, "")
+
+
+def openai_compatible_model_for_selection(selection: RoleLlmSelection) -> str:
+    model = selection.llm_model.strip()
+    if not model:
+        return model
+    if hermes_provider_for_model(model) or model.startswith("ollama/"):
+        return model
+    if selection.base_url.strip():
+        return f"openai/{model}"
+    return model
 
 
 def pool_credential_env_keys(env: dict[str, str]) -> list[str]:
@@ -189,7 +198,13 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
     pool = config.model_pool
 
     if not pool.is_active:
-        lines.append(("ok", "Model pool inactive; using Ollama fallback configuration."))
+        lines.append(
+            (
+                "fail",
+                "Model pool inactive; configure HOCA_MANAGER_MODEL_MODEL, "
+                "HOCA_WORKER_MODEL_MODEL, and HOCA_REVIEWER_MODEL_MODEL.",
+            )
+        )
         return lines
 
     active = pool.active_slots
@@ -222,11 +237,13 @@ def model_pool_doctor_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, 
     ):
         lines.append(
             (
-                "warn",
-                "Worker and reviewer default to the same model slot "
-                f"({worker_slot.name!r}). Consider separate models for coding vs review.",
+                "ok",
+                "Worker and reviewer share one model slot "
+                f"({worker_slot.name!r}); this avoids local model swap churn.",
             )
         )
+
+    lines.extend(_model_residency_lines(config))
 
     for slot in active:
         if slot.model.startswith("ollama/"):
@@ -286,6 +303,146 @@ def _ollama_availability_lines(slot: ModelSlot) -> list[tuple[DoctorLineStatus, 
             )
         )
     return lines
+
+
+def _model_residency_lines(config: HocaConfig) -> list[tuple[DoctorLineStatus, str]]:
+    pool = config.model_pool
+    if not pool.is_active:
+        return []
+
+    resolved_slots = [pool.resolve_role(role) for role in MODEL_ROLES]
+    unique_local_models: dict[tuple[str, str], tuple[ModelSlot, int]] = {}
+    for slot in resolved_slots:
+        if slot is None or not _is_local_model(slot):
+            continue
+        footprint = _model_footprint_gb(slot.model)
+        unique_local_models[(slot.model, slot.base_url)] = (slot, footprint)
+
+    if not unique_local_models:
+        return [("ok", "Model residency check: no local role models require RAM residency.")]
+
+    model_total_gb = sum(footprint for _, footprint in unique_local_models.values())
+    docker_vm_gb = _env_int("HOCA_DOCKER_VM_RAM_GB", 8)
+    sandbox_gb = _sandbox_memory_gb()
+    required_gb = model_total_gb + docker_vm_gb + sandbox_gb
+    ram_gb = _system_ram_gb()
+    model_list = ", ".join(
+        f"{slot.model}~{footprint}GB" for slot, footprint in unique_local_models.values()
+    )
+    lines: list[tuple[DoctorLineStatus, str]] = [
+        (
+            "ok",
+            "Model residency estimate: "
+            f"{model_list}; Docker VM ~{docker_vm_gb}GB; sandbox cap ~{sandbox_gb}GB.",
+        )
+    ]
+
+    if len(unique_local_models) > 1:
+        lines.append(
+            (
+                "warn",
+                "Distinct local role models interleave across manager/worker/reviewer "
+                "rounds; expect model reload or swap churn unless they fit in RAM together.",
+            )
+        )
+
+    if ram_gb is None:
+        lines.append(("warn", "Model residency check could not determine system RAM."))
+        return lines
+
+    if required_gb > ram_gb:
+        status: DoctorLineStatus = (
+            "fail"
+            if os.environ.get("HOCA_STRICT_MODEL_RESIDENCY", "").lower() == "true"
+            else "warn"
+        )
+        lines.append(
+            (
+                status,
+                "Configured local role models may be over-committed: "
+                f"estimated {required_gb}GB needed vs {ram_gb}GB RAM. "
+                "Use one shared model or reduce Docker/sandbox memory.",
+            )
+        )
+    else:
+        lines.append(
+            (
+                "ok",
+                f"Model residency check fits estimated local footprint in {ram_gb}GB RAM.",
+            )
+        )
+    return lines
+
+
+def _is_local_model(slot: ModelSlot) -> bool:
+    model = slot.model.lower()
+    base_url = slot.base_url.lower()
+    return (
+        model.startswith("ollama/")
+        or "127.0.0.1" in base_url
+        or "localhost" in base_url
+        or "host.docker.internal" in base_url
+    )
+
+
+def _model_footprint_gb(model: str) -> int:
+    lowered = model.lower()
+    match = re.search(r"(\d+(?:\.\d+)?)\s*b\b", lowered)
+    if match:
+        params_b = float(match.group(1))
+        if params_b <= 8:
+            return 16
+        if params_b <= 16:
+            return 24
+        if params_b <= 24:
+            return 32
+        return 48
+    if "32" in lowered:
+        return 48
+    if "14" in lowered:
+        return 24
+    if "7" in lowered:
+        return 16
+    return 24
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+def _sandbox_memory_gb() -> int:
+    raw = os.environ.get("HOCA_SANDBOX_MEMORY", "8g").strip().lower()
+    match = re.match(r"(\d+)", raw)
+    if not match:
+        return 8
+    value = int(match.group(1))
+    if raw.endswith("m"):
+        return max(1, value // 1024)
+    return value
+
+
+def _system_ram_gb() -> int | None:
+    override = os.environ.get("HOCA_SYSTEM_RAM_GB")
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            return None
+    if sys.platform == "darwin" and which("sysctl"):
+        completed = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"], check=False, capture_output=True, text=True
+        )
+        if completed.returncode == 0 and completed.stdout.strip().isdigit():
+            return round(int(completed.stdout.strip()) / 1024 / 1024 / 1024)
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        for line in meminfo.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                return round(int(line.split()[1]) / 1024 / 1024)
+    return None
 
 
 def _shell_quote(value: str) -> str:

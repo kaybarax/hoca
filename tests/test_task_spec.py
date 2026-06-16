@@ -19,6 +19,7 @@ from hoca.task_spec import (
     infer_expected_areas,
     infer_test_commands,
 )
+from tests.model_env import set_dummy_role_model_env
 
 
 def init_repo(path: Path) -> None:
@@ -76,6 +77,35 @@ def test_infer_test_commands_for_python_repo(tmp_path: Path) -> None:
     assert "pytest" in infer_test_commands(tmp_path)
 
 
+def test_infer_test_commands_uses_npm_run_for_package_scripts(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"test": "vitest", "lint": "eslint .", "build": "vite build"}}),
+        encoding="utf-8",
+    )
+
+    assert infer_test_commands(tmp_path) == ["npm run test", "npm run lint", "npm run build"]
+
+
+def test_infer_test_commands_keeps_pnpm_script_shortcut(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"lint": "eslint .", "typecheck": "tsc --noEmit"}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "pnpm-lock.yaml").write_text("", encoding="utf-8")
+
+    assert infer_test_commands(tmp_path) == ["pnpm lint", "pnpm typecheck"]
+
+
+def test_infer_test_commands_uses_yarn_lockfile(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"test": "vitest", "lint": "eslint .", "build": "vite build"}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "yarn.lock").write_text("# yarn lockfile\n", encoding="utf-8")
+
+    assert infer_test_commands(tmp_path) == ["yarn test", "yarn lint", "yarn build"]
+
+
 def test_extract_explicit_test_commands_from_validation_section() -> None:
     task = """Implement the thing.
 
@@ -99,7 +129,10 @@ def test_infer_expected_areas_from_task_and_instructions(tmp_path: Path) -> None
     assert "src/app.py" in areas
 
 
-def test_generate_task_spec_writes_contract_artifacts(tmp_path: Path) -> None:
+def test_generate_task_spec_writes_contract_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_dummy_role_model_env(monkeypatch)
     init_repo(tmp_path)
     run_dir = tmp_path / ".hoca-runtime" / "runs" / "run-demo"
     path = generate_task_spec(
@@ -127,7 +160,10 @@ def test_generate_task_spec_writes_contract_artifacts(tmp_path: Path) -> None:
     assert (run_dir / "raw-task.txt").read_text(encoding="utf-8") == "Update src/app.py\n"
 
 
-def test_generate_task_spec_prefers_explicit_validation_commands(tmp_path: Path) -> None:
+def test_generate_task_spec_prefers_explicit_validation_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_dummy_role_model_env(monkeypatch)
     init_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"scripts": {"test": "echo root test"}}\n', encoding="utf-8"
@@ -201,7 +237,10 @@ def test_build_initial_task_spec_records_resolved_role_models(
     assert "secret" not in spec.to_json()
 
 
-def test_build_enriched_task_spec_preserves_models_and_sandbox(tmp_path: Path) -> None:
+def test_build_enriched_task_spec_preserves_models_and_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_dummy_role_model_env(monkeypatch)
     base = build_initial_task_spec(
         run_id="r1",
         repo_root=str(tmp_path),

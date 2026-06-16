@@ -58,6 +58,14 @@ class TestWorkerReviewerAllowlist:
         result = filter_env(env, "reviewer")
         assert result == {"LLM_MODEL": "test"}
 
+    def test_docker_context_is_allowed_without_docker_host(self) -> None:
+        env = {
+            "DOCKER_CONTEXT": "colima",
+            "DOCKER_HOST": "tcp://localhost:2375",
+        }
+        result = filter_env(env, "worker")
+        assert result == {"DOCKER_CONTEXT": "colima"}
+
     def test_openhands_suppress_banner_allowed(self) -> None:
         env = {"OPENHANDS_SUPPRESS_BANNER": "1"}
         result = filter_env(env, "worker")
@@ -78,6 +86,15 @@ class TestWorkerReviewerAllowlist:
     def test_hoca_agent_role_allowed(self) -> None:
         env = {"HOCA_AGENT_ROLE": "worker", "HOCA_SELECTED_MODEL_SLOT": "local-coder"}
         result = filter_env(env, "worker")
+        assert result == env
+
+    def test_sandbox_network_controls_are_allowed(self) -> None:
+        env = {
+            "HOCA_NETWORK_MODE": "offline",
+            "HOCA_WORKER_NETWORK_MODE": "package-install",
+            "HOCA_REVIEWER_NETWORK_MODE": "package-install",
+        }
+        result = filter_env(env, "reviewer")
         assert result == env
 
     def test_worker_and_reviewer_use_same_allowlist(self) -> None:

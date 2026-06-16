@@ -72,64 +72,90 @@ using the resolved manager/worker/reviewer role model settings.
 | Node.js | Test runner support for JS/TS projects |
 | Git | Version control |
 | [GitHub CLI (`gh`)](https://cli.github.com) | PR creation and authentication |
-| LLM backend | Ollama for the default local setup, or another LiteLLM/OpenAI-compatible local runtime such as LM Studio, llama.cpp, MLX, LocalAI, or vLLM; cloud providers are also supported |
+| LLM backend | A user-configured LiteLLM/OpenAI-compatible local runtime such as MLX, LM Studio, llama.cpp, LocalAI, or vLLM; cloud providers are also supported |
 | [OpenHands CLI](https://docs.all-hands.dev) | AI worker agent and code reviewer |
 | [Hermes Agent](https://github.com/anthropics/hermes) | Manager agent |
 
 ## Model Support
 
-HOCA defaults to the local Ollama alias `qwen-14b-pro`, created from
-`qwen2.5-coder:14b` with a custom Modelfile that sets a 16K context window. If
-your machine can comfortably run the 32B model, HOCA also supports it:
+HOCA does not choose a built-in model when the env file is missing role model
+configuration. Configure manager, worker, and reviewer model blocks in `.env`;
+if none are active, HOCA fails closed instead of silently falling back to a
+hard-coded model.
 
-| HOCA Alias | Base Model | RAM Needed | Context | Modelfile |
-|------------|------------|------------|---------|-----------|
-| `qwen-32b-pro` | `qwen2.5-coder:32b` | ~48 GB | 32768 | `models/Modelfile` |
-| `qwen-14b-pro` | `qwen2.5-coder:14b` | ~24 GB | 16384 | `models/Modelfile.14b` |
-| `qwen-7b-pro` | `qwen2.5-coder:7b` | ~16 GB | 8192 | `models/Modelfile.7b` |
-
-The built-in fallback path is Ollama, but the role model blocks below can point
-at any LiteLLM/OpenAI-compatible model backend. For local runtimes such as LM
-Studio, llama.cpp server, MLX server, LocalAI, or vLLM, set the model name,
-local `*_MODEL_BASE_URL`, and whatever API key placeholder that server expects.
-For cloud providers, leave `*_MODEL_BASE_URL` empty unless the provider or
-gateway requires a custom endpoint.
+The role model blocks below are user-owned. Set the exact model name, base URL,
+and API key expected by your local runtime, gateway, or cloud provider. For
+local OpenAI-compatible runtimes such as MLX server, llama.cpp server, LM
+Studio, LocalAI, vLLM, or NVIDIA Spark-style local endpoints, set
+`*_MODEL_BASE_URL` to that server's `/v1` endpoint and use the API key
+placeholder it expects. For cloud providers, leave `*_MODEL_BASE_URL` empty
+unless the provider or gateway requires a custom endpoint.
 
 ### Role Model Pool
 
-HOCA can route manager, worker, and reviewer phases through role-scoped model
-configuration in `.env`:
+HOCA routes manager, worker, and reviewer phases through role-scoped model
+configuration in `.env`. A practical local MLX setup for a 48 GB Apple Silicon
+machine is one resident agentic model for all roles:
 
 ```env
 HOCA_MANAGER_MODEL_NAME=manager
-HOCA_MANAGER_MODEL_MODEL=ollama/qwen-7b-pro
-HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:11434
-HOCA_MANAGER_MODEL_API_KEY=ollama
+HOCA_MANAGER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
+HOCA_MANAGER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
+HOCA_MANAGER_MODEL_API_KEY=local
 
 HOCA_WORKER_MODEL_NAME=worker
-HOCA_WORKER_MODEL_MODEL=ollama/qwen-14b-pro
-HOCA_WORKER_MODEL_BASE_URL=http://127.0.0.1:11434
-HOCA_WORKER_MODEL_API_KEY=ollama
+HOCA_WORKER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
+HOCA_WORKER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
+HOCA_WORKER_MODEL_API_KEY=local
 
 HOCA_REVIEWER_MODEL_NAME=reviewer
-HOCA_REVIEWER_MODEL_MODEL=openai/gpt-oss-20b
-HOCA_REVIEWER_MODEL_BASE_URL=http://localhost:1234/v1
+HOCA_REVIEWER_MODEL_MODEL=mlx-community/Qwen3-14B-4bit
+HOCA_REVIEWER_MODEL_BASE_URL=http://127.0.0.1:8080/v1
 HOCA_REVIEWER_MODEL_API_KEY=local
 ```
 
-The manager can use a balanced planning model, the worker can use a
-coding-specialized model, and the reviewer can use a stronger reasoning model
-when available. Configure all three roles explicitly; use the same values in
-multiple role blocks when they should share one model. If a role is empty while
-another role is active, HOCA uses the first active role model as the fallback.
-Only the selected role model's credentials are forwarded to that phase, and API
-keys are redacted from reports and logs.
+This keeps memory predictable: one model residency plus the Docker VM
+reservation and sandbox cap. A three-model local split can require the sum of
+every resident model. When RAM is short, interleaved manager, worker, and
+reviewer phases force the runtime to evict and reload models, so time
+disappears into swap churn instead of useful agent work.
+
+Multi-model routing remains supported as an explicit opt-in. The manager can
+use a balanced planning model, the worker can use a coding-specialized model,
+and the reviewer can use a stronger reasoning model when the hardware or hosted
+provider can absorb the residency cost. Configure all three roles explicitly;
+HOCA does not invent role models or provider endpoints for you. Only the
+selected role model's credentials are forwarded to that phase, and API keys are
+redacted from reports and logs.
+
+### Backend Keep-Alive
+
+Local backends should keep the selected model resident between HOCA phases.
+Use your backend's own controls for residency, idle unload, cache size, and
+served-model count. For Ollama, that might look like:
+
+```bash
+export OLLAMA_KEEP_ALIVE=30m
+export OLLAMA_MAX_LOADED_MODELS=1
+ollama serve
+```
+
+`OLLAMA_KEEP_ALIVE` prevents an idle unload between manager, worker, reviewer,
+and repair rounds. `OLLAMA_MAX_LOADED_MODELS=1` matches the recommended
+single-model local policy; raise it only when the doctor residency check says
+your RAM can hold every configured role model plus Docker and sandbox memory.
+
+For MLX, llama.cpp, LM Studio, LocalAI, vLLM, and other OpenAI-compatible
+servers, keep the server process running, disable idle model unloading where
+available, and cap prompt/model cache size when needed. If you opt into
+multiple local role models, configure the backend to keep all of them resident
+only when your machine has enough RAM; otherwise expect reloads or swap churn.
 
 ### Local OpenAI-Compatible And Cloud Models
 
 Use the same role blocks for local OpenAI-compatible servers and cloud models.
-Local examples include LM Studio, llama.cpp's OpenAI-compatible server, MLX
-servers, LocalAI, and vLLM:
+Local examples include MLX, llama.cpp's OpenAI-compatible server, LM Studio,
+LocalAI, vLLM, and any other local runtime that exposes the OpenAI protocol:
 
 ```env
 HOCA_REVIEWER_MODEL_NAME=reviewer
@@ -145,12 +171,11 @@ HOCA_WORKER_MODEL_API_KEY=<your-api-key>
 
 For local OpenAI-compatible runtimes, the `openai/` model prefix tells LiteLLM
 to use the OpenAI protocol, while `*_MODEL_BASE_URL` points at your local
-server. For example, llama.cpp commonly serves at
+server. For example, MLX and llama.cpp commonly serve at
 `http://127.0.0.1:8080/v1`; LM Studio often serves at
 `http://localhost:1234/v1`.
 
-**Ollama fallback:** when no role model blocks are active, HOCA uses
-`OLLAMA_MODEL` and `OLLAMA_BASE_URL` as the local fallback.
+When no role model blocks are active, HOCA stops with a configuration error.
 
 Smaller models trade capability for speed and lower memory use. For high-risk
 work, human review is recommended regardless of model size.
@@ -166,15 +191,14 @@ cp .env.example .env
 ```
 
 The install script handles Homebrew packages, a repo-local `.venv` for Python
-dependencies, OpenHands, and the default Ollama model pulls/aliases. If you use
-LM Studio, llama.cpp, MLX, another local OpenAI-compatible server, or a cloud
-provider, configure the role model blocks in `.env` instead of relying on the
-Ollama fallback.
+dependencies, and OpenHands. Configure the role model blocks in `.env` for MLX,
+LM Studio, llama.cpp, another local OpenAI-compatible server, or a cloud
+provider.
 
 After installation:
 
-1. Start your selected model backend: for the default path, `ollama serve`; for
-   LM Studio, llama.cpp, MLX, or another local server, start its
+1. Start your selected model backend: for an Ollama-backed setup, `ollama serve`;
+   for LM Studio, llama.cpp, MLX, or another local server, start its
    OpenAI-compatible `/v1` endpoint.
 2. Start Docker: open Docker Desktop, or run `colima start --cpu 6 --memory 16`
 3. Authenticate GitHub: `gh auth login`
@@ -207,8 +231,8 @@ bin/hoca doctor
 ```
 
 Doctor checks for required commands, Docker availability, GitHub
-authentication, environment configuration, the default Ollama fallback when
-used, and role model configuration for local or cloud providers.
+authentication, environment configuration, and role model configuration for
+local or cloud providers.
 
 ## Usage
 
@@ -241,6 +265,7 @@ Both `run` and `issue` accept optional flags:
 
 - `--auto-merge` — enable guarded auto-merge (disabled by default)
 - `--notify-telegram` — send Telegram notifications on completion
+- `--notify-macos` — send macOS desktop notifications on completion
 - `--dev-branch BRANCH` — manager override for the target repo development branch
 
 ### Fleet Orchestration
@@ -268,6 +293,7 @@ The supporting docs explain the control plane and the adapter contract:
 
 - [Fleet orchestration guide](docs/fleet-orchestration.md)
 - [Agent adapter guide](docs/agent-adapters.md)
+- [Performance guide](docs/performance.md)
 
 ## Default Behavior
 
@@ -303,6 +329,29 @@ environmental or pre-existing, when the review tool itself crashes, or when
 all rounds are exhausted. Configure the round limit with
 `HOCA_MAX_TOTAL_ROUNDS` (default `3`): round 1 is the initial implementation
 plus review, and rounds 2-3 are repair plus review cycles.
+
+### v1.1 Fast Defaults
+
+Fresh `.env.example` setups use direct worker and reviewer modes:
+
+```env
+HOCA_WORKER_MODE=direct
+HOCA_REVIEWER_MODE=direct
+HOCA_WORKER_ENGINE=openhands
+HOCA_REVIEW_WARMUP=true
+```
+
+This removes the extra Hermes profile hop from worker/reviewer execution while
+keeping the same task spec, worktree handling, monitor policy, tests, review,
+safe staging, and PR gates. `HOCA_WORKER_ENGINE=openhands` remains the default
+sandboxed engine. Native `claude-code` and `codex` engines are available as
+host-execution adapters and should be enabled only when that posture is allowed
+for the project.
+
+Run budgets are derived from task risk and expected scope, then written to
+`run-budget-round-N.json`. Install caching skips repeated package installs when
+lockfile state is unchanged. See the performance guide for which knobs affect
+agent loops, containers, installs, model residency, tests, and review.
 
 ### Optional Durable Kanban Mode
 
@@ -467,12 +516,12 @@ Use the `--notify-telegram` flag with `run` or `issue` commands.
 
 | Problem | Solution |
 |---------|----------|
-| `ollama` not found | Install with `brew install ollama` if using the default Ollama fallback, or configure role model blocks for another local/cloud provider |
-| Ollama server not responding | Start it with `ollama serve`, or configure active role model blocks so HOCA does not rely on the Ollama fallback |
+| `ollama` not found | Install with `brew install ollama` only if your configured role model blocks use Ollama |
+| Ollama server not responding | Start it with `ollama serve` only if your configured role model blocks use Ollama |
 | Docker not running | Start Docker Desktop or run `colima start` |
 | `gh` not authenticated | Run `gh auth login` |
 | `openhands` not found | Run `curl -fsSL https://install.openhands.dev/install.sh \| sh` |
-| Model not available | For Ollama, run `ollama pull qwen2.5-coder:14b`, then `ollama create qwen-14b-pro -f ./models/Modelfile.14b` (or use the 7B/32B aliases). For LM Studio, llama.cpp, MLX, or cloud providers, confirm the role model name, base URL, and API key in `.env`. |
+| Model not available | Confirm the role model name, base URL, and API key in `.env`; for Ollama, pull or create the exact model named in your role model block |
 | Working tree dirty | HOCA requires a clean working tree. Commit or stash changes first. |
 | Lock file exists | Another HOCA run may be active. Check the runtime archive or rerun with `HOCA_KEEP_RUNTIME=true` for immediate debugging. |
 | Tests fail | Check the archived run directory under `~/.hoca/runtime-archives/<repo-name>/<run-id>/` for `tests-summary.md` and test logs. |
@@ -517,6 +566,11 @@ also copies the OpenHands and PR templates for you when they are missing.
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 ```
+
+The standard pytest suite includes structural performance budget checks in
+`tests/test_performance_budgets.py`. These tests catch regressions such as extra
+definition-of-ready executions, stale direct-mode Hermes timing labels, disabled
+install-cache skips, and prompt templates growing past the v1.1 budget.
 
 ## Known Limitations
 

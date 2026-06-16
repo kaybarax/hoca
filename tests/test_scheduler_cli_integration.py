@@ -56,6 +56,8 @@ def test_scheduler_tick_cli_smoke_launches_lane(tmp_path: Path) -> None:
     assert "Projects: 1" in status_result.output
     assert "Queued Tasks: 0" in status_result.output
     assert "Running Lanes: 1" in status_result.output
+    assert "Memory Budget:" in status_result.output
+    assert "- Resident models:" in status_result.output
 
     registry = FleetRegistry(control_root=control_root)
     lane = registry.list_lanes(task_id="task-cli")[0]

@@ -436,22 +436,36 @@ main() {
   fi
   log ""
 
-  if ! hermes_installed; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if hermes_installed; then
+      ok "hermes CLI found: $(command -v hermes)"
+      if profile_commands_available; then
+        ok "Hermes profile commands are available."
+      else
+        warn "Hermes profile commands are not available; dry-run will still render planned actions."
+      fi
+    else
+      warn "hermes CLI not found; dry-run will still render planned actions without running Hermes."
+    fi
+  elif ! hermes_installed; then
     fail "hermes CLI not found. Install Hermes Agent and ensure 'hermes' is on PATH."
     fail "See: https://github.com/NousResearch/hermes-agent"
     write_report_file
     exit 1
+  else
+    ok "hermes CLI found: $(command -v hermes)"
   fi
-  ok "hermes CLI found: $(command -v hermes)"
 
-  if ! profile_commands_available; then
+  if [ "$DRY_RUN" -eq 0 ] && ! profile_commands_available; then
     fail "This hermes install does not expose profile subcommands (list/create/show)."
     fail "Upgrade Hermes Agent, then rerun setup."
     fail "Try: hermes profile --help"
     write_report_file
     exit 1
   fi
-  ok "Hermes profile commands are available."
+  if [ "$DRY_RUN" -eq 0 ]; then
+    ok "Hermes profile commands are available."
+  fi
 
   if [ ! -d "$PROFILES_TEMPLATE_DIR" ]; then
     fail "Missing profile templates directory: $PROFILES_TEMPLATE_DIR"

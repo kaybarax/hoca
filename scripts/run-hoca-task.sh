@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
-  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH]"
+  echo "Usage: run-hoca-task.sh /path/to/project \"task\" [--issue-id ID] [--auto-merge] [--notify-telegram] [--dev-branch BRANCH] [--timing] [--express]"
   exit 1
 fi
 
@@ -13,6 +13,8 @@ shift 2
 ISSUE_ID=""
 AUTO_MERGE="false"
 NOTIFY_TELEGRAM="false"
+PRINT_TIMING="false"
+EXPRESS_REQUESTED="false"
 if [ -n "${HOCA_MAX_TOTAL_ROUNDS:-}" ]; then
   MAX_TOTAL_ROUNDS="$HOCA_MAX_TOTAL_ROUNDS"
 else
@@ -47,6 +49,14 @@ while [ "$#" -gt 0 ]; do
       NOTIFY_TELEGRAM="true"
       shift
       ;;
+    --timing)
+      PRINT_TIMING="true"
+      shift
+      ;;
+    --express)
+      EXPRESS_REQUESTED="true"
+      shift
+      ;;
     --dev-branch)
       if [ "$#" -lt 2 ]; then
         echo "Missing value for --dev-branch"
@@ -68,6 +78,20 @@ HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
 export HOCA_DOTENV_PATH="${HOCA_DOTENV_PATH:-$HOCA_ROOT/.env}"
 HOCA_DOCTOR_SCRIPT="${HOCA_DOCTOR_SCRIPT:-$SCRIPT_DIR/hoca-doctor.sh}"
+HOCA_DOCTOR_CACHE_SECONDS="${HOCA_DOCTOR_CACHE_SECONDS:-300}"
+HOCA_DOCTOR_CACHE_DIR="${HOCA_DOCTOR_CACHE_DIR:-${HOME:-/tmp}/.hoca/doctor-cache}"
+WORKER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().worker_mode)')"
+WORKER_ENGINE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().worker_engine)')"
+REVIEWER_MODE="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -c 'from hoca.config import load_config; print(load_config().reviewer_mode)')"
+DOR_ARTIFACT_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hoca-dor.XXXXXX")"
+cleanup_dor_tmp_dir() {
+  rm -rf "$DOR_ARTIFACT_TMP_DIR"
+}
+trap cleanup_dor_tmp_dir EXIT
+
+hoca_time_epoch() {
+  "$PYTHON_BIN" -c 'import time; print(f"{time.time():.6f}")'
+}
 
 run_definition_of_ready_check() {
   local dor_args=(
@@ -85,10 +109,12 @@ run_definition_of_ready_check() {
 }
 
 echo "Checking definition of ready..."
+DOR_START_EPOCH="$(hoca_time_epoch)"
 set +e
-DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID")"
+DOR_OUTPUT="$(run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$DOR_ARTIFACT_TMP_DIR")"
 DOR_EXIT=$?
 set -e
+DOR_END_EPOCH="$(hoca_time_epoch)"
 printf '%s\n' "$DOR_OUTPUT"
 if [ "$DOR_EXIT" -ne 0 ]; then
   if [ "$DOR_EXIT" -eq 2 ]; then
@@ -105,8 +131,255 @@ record_run_artifact() {
   PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_artifacts "$@"
 }
 
+record_timing_phase() {
+  local name="$1"
+  local started_at_epoch="$2"
+  local ended_at_epoch="${3:-}"
+  if [ "$#" -ge 3 ]; then
+    shift 3
+  else
+    shift "$#"
+  fi
+  if [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  local args=(
+    -m hoca.run_timing
+    phase
+    "$RUN_DIR"
+    --name "$name"
+    --started-at-epoch "$started_at_epoch"
+  )
+  if [ -n "$ended_at_epoch" ]; then
+    args+=(--ended-at-epoch "$ended_at_epoch")
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" "${args[@]}" "$@" >/dev/null 2>&1 || true
+}
+
+record_timing_event() {
+  if [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_timing event "$RUN_DIR" "$@" >/dev/null 2>&1 || true
+}
+
+REVIEW_WARMUP_PID=""
+start_reviewer_warmup() {
+  if [ "${HOCA_REVIEW_WARMUP:-true}" != "true" ] || [ -n "${REVIEW_WARMUP_PID:-}" ]; then
+    return 0
+  fi
+  mkdir -p "$RUN_DIR/logs"
+  (
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+    record_timing_event --type "review_warmup" --name "reviewer-warmup" --round "$current_round" --role "reviewer"
+    PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.reviewer_warmup "$RUN_DIR" \
+      > "$RUN_DIR/logs/reviewer-warmup-stdout.txt" \
+      2> "$RUN_DIR/logs/reviewer-warmup-stderr.txt" || true
+  ) &
+  REVIEW_WARMUP_PID="$!"
+  printf '%s\n' "$REVIEW_WARMUP_PID" > "$RUN_DIR/reviewer-warmup.pid"
+}
+
+wait_for_reviewer_warmup() {
+  if [ -z "${REVIEW_WARMUP_PID:-}" ]; then
+    return 0
+  fi
+  wait "$REVIEW_WARMUP_PID" || true
+  REVIEW_WARMUP_PID=""
+}
+
+doctor_cache_key() {
+  "$PYTHON_BIN" - "$HOCA_DOCTOR_SCRIPT" "$HOCA_DOTENV_PATH" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+script = Path(sys.argv[1])
+dotenv = Path(sys.argv[2])
+names = (
+    "HOCA_USE_SANDBOX",
+    "HOCA_SANDBOX_NETWORK",
+    "HOCA_AGENT_ADAPTER",
+    "HOCA_WORKER_MODE",
+    "HOCA_REVIEWER_MODE",
+    "HOCA_MODEL_POOL",
+    "LLM_MODEL",
+    "LLM_BASE_URL",
+    "OLLAMA_MODEL",
+    "OPENHANDS_CONTAINER_IMAGE",
+    "PATH",
+)
+parts = [f"doctor={script.resolve()}"]
+for path in (script, dotenv):
+    try:
+        stat = path.stat()
+    except OSError:
+        parts.append(f"{path}=missing")
+    else:
+        parts.append(f"{path.resolve()}={stat.st_mtime_ns}:{stat.st_size}")
+for name in names:
+    parts.append(f"{name}={os.environ.get(name, '')}")
+print(hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest())
+PY
+}
+
+doctor_cache_valid() {
+  local metadata_file="$1"
+  local ttl_seconds="$2"
+  "$PYTHON_BIN" - "$metadata_file" "$ttl_seconds" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+ttl = int(sys.argv[2])
+if ttl <= 0 or not path.is_file():
+    raise SystemExit(1)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+created = float(payload.get("created_at_epoch", 0))
+exit_code = int(payload.get("exit_code", 1))
+if exit_code == 0 and time.time() - created <= ttl:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+run_doctor_preflight() {
+  local cache_key cache_entry metadata_file cached_stdout cached_stderr
+  cache_key="$(doctor_cache_key)"
+  cache_entry="$HOCA_DOCTOR_CACHE_DIR/$cache_key"
+  metadata_file="$cache_entry/metadata.json"
+  cached_stdout="$cache_entry/doctor-output.log"
+  cached_stderr="$cache_entry/doctor-stderr.log"
+
+  if doctor_cache_valid "$metadata_file" "$HOCA_DOCTOR_CACHE_SECONDS"; then
+    echo "Using cached HOCA doctor preflight."
+    cp "$cached_stdout" "$RUN_DIR/doctor-output.log"
+    cp "$cached_stderr" "$RUN_DIR/doctor-stderr.log"
+    printf '%s\n' "$cache_key" > "$RUN_DIR/doctor-cache-key.txt"
+    return 0
+  fi
+
+  set +e
+  "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"
+  local doctor_exit=$?
+  set -e
+  if [ "$doctor_exit" -eq 0 ] && [ "$HOCA_DOCTOR_CACHE_SECONDS" -gt 0 ]; then
+    mkdir -p "$cache_entry"
+    cp "$RUN_DIR/doctor-output.log" "$cached_stdout"
+    cp "$RUN_DIR/doctor-stderr.log" "$cached_stderr"
+    "$PYTHON_BIN" - "$metadata_file" "$cache_key" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps(
+        {
+            "schema_version": 1,
+            "cache_key": sys.argv[2],
+            "created_at_epoch": time.time(),
+            "exit_code": 0,
+        },
+        indent=2,
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
+  return "$doctor_exit"
+}
+
+print_timing_report_if_requested() {
+  if [ "$PRINT_TIMING" != "true" ] || [ -z "${RUN_DIR:-}" ] || [ ! -d "$RUN_DIR" ]; then
+    return 0
+  fi
+  PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.timing_report "$RUN_DIR" || true
+}
+
 task_spec_path_for_run() {
   printf '%s\n' "$RUN_DIR/task-spec.json"
+}
+
+apply_run_budget() {
+  local round_number="${1:-1}"
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ ! -f "$spec_path" ]; then
+    return 0
+  fi
+  local budget_exports
+  budget_exports="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m hoca.run_budget export-shell "$spec_path" "$RUN_DIR" --round "$round_number")"
+  eval "$budget_exports"
+}
+
+apply_express_mode() {
+  if [ "$EXPRESS_REQUESTED" != "true" ]; then
+    return 0
+  fi
+  local spec_path
+  spec_path="$(task_spec_path_for_run)"
+  if [ ! -f "$spec_path" ]; then
+    return 0
+  fi
+  local decision_json
+  decision_json="$(PYTHONPATH="$HOCA_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - "$spec_path" "$RUN_DIR/express-mode.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from hoca.contracts import HocaTaskSpec
+from hoca.run_state import write_json_atomic
+
+spec = HocaTaskSpec.from_json(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_area_count = len([area for area in spec.expected_areas if area.strip()])
+eligible = spec.risk_level == "low" and expected_area_count <= 1
+reason = "eligible" if eligible else "ineligible: high risk or wide scope"
+payload = {
+    "requested": True,
+    "enabled": eligible,
+    "reason": reason,
+    "risk_level": spec.risk_level,
+    "expected_area_count": expected_area_count,
+    "gates_preserved": [
+        "definition_of_ready",
+        "validation",
+        "review",
+        "arbitration",
+        "safe_staging",
+        "manager_owned_pr",
+    ],
+}
+write_json_atomic(Path(sys.argv[2]), payload)
+print(json.dumps(payload, sort_keys=True))
+PY
+)"
+  if printf '%s' "$decision_json" | grep -q '"enabled": true'; then
+    MAX_TOTAL_ROUNDS=1
+    export HOCA_MAX_TOTAL_ROUNDS=1
+    export HOCA_WORKER_MODE=direct
+    export HOCA_REVIEWER_MODE=direct
+    export HOCA_REVIEW_WARMUP=true
+    WORKER_MODE=direct
+    REVIEWER_MODE=direct
+  fi
 }
 
 read_task_spec_field() {
@@ -157,18 +430,53 @@ worker_git() {
   git -C "${WORKER_PROJECT_PATH:-$PROJECT_PATH}" "$@"
 }
 
+is_validation_side_effect_path() {
+  [ -n "${RUN_DIR:-}" ] || return 1
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
+  [ -s "$side_effects_file" ] || return 1
+  grep -Fxq -- "$1" "$side_effects_file"
+}
+
 git_status_short_for_task() {
   worker_git status --short --untracked-files=all | while IFS= read -r status_line || [ -n "$status_line" ]; do
     local path="${status_line#???}"
     case "$path" in
       .hoca-runtime|.hoca-runtime/*) continue ;;
+      .pnpm-store|.pnpm-store/*) continue ;;
+      node_modules|node_modules/*) continue ;;
+      .npm|.npm/*) continue ;;
+      .yarn/cache|.yarn/cache/*) continue ;;
+      .cache|.cache/*) continue ;;
     esac
+    if is_validation_side_effect_path "$path"; then
+      continue
+    fi
     printf '%s\n' "$status_line"
   done
 }
 
 changed_files_for_task() {
   git_status_short_for_task | sed 's/^...//'
+}
+
+record_validation_side_effects() {
+  local pre_file="$1"
+  local side_effects_file="$RUN_DIR/validation-side-effect-files.txt"
+  local post_file="$RUN_DIR/post-test-changed-files.txt"
+  changed_files_for_task | sort -u > "$post_file"
+  local new_paths
+  new_paths="$(comm -13 "$pre_file" "$post_file")"
+  rm -f "$post_file"
+  if [ -z "$new_paths" ]; then
+    return 0
+  fi
+  {
+    if [ -f "$side_effects_file" ]; then cat "$side_effects_file"; fi
+    printf '%s\n' "$new_paths"
+  } | sort -u > "${side_effects_file}.tmp"
+  mv "${side_effects_file}.tmp" "$side_effects_file"
+  echo "Validation-phase side-effect files excluded from review and staging:"
+  printf '%s\n' "$new_paths"
 }
 
 is_dependency_lockfile_path() {
@@ -298,7 +606,10 @@ mkdir -p "$RUN_DIR"
 printf '%s\n' "$TASK" > "$RUN_DIR/raw-task.txt"
 
 echo "Recording definition-of-ready artifact..."
-run_definition_of_ready_check "$RAW_PROJECT_PATH" "$TASK" "$ISSUE_ID" "$PROJECT_PATH/$RUN_DIR" >/dev/null
+if [ -f "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json" ]; then
+  cp "$DOR_ARTIFACT_TMP_DIR/definition-of-ready.json" "$RUN_DIR/definition-of-ready.json"
+fi
+record_timing_phase "definition_of_ready" "$DOR_START_EPOCH" "$DOR_END_EPOCH"
 
 LOCK_OWNER="${RUN_ID}-$$-$(date -u +%Y%m%dT%H%M%SZ)"
 LOCK_METADATA_FILE="$RUN_DIR/lock-metadata.json"
@@ -370,6 +681,8 @@ archive_and_remove_runtime() {
   if [ ! -d "$PROJECT_PATH/.hoca-runtime" ]; then
     return 0
   fi
+  local archive_started_epoch
+  archive_started_epoch="$(hoca_time_epoch)"
 
   local archive_root="${HOCA_RUNTIME_ARCHIVE_ROOT:-${HOME:-/tmp}/.hoca/runtime-archives}"
   local repo_slug
@@ -378,6 +691,9 @@ archive_and_remove_runtime() {
   archive_run_dir="$archive_root/$repo_slug/$RUN_ID"
 
   if [ -d "$RUN_DIR" ]; then
+    local archive_record_epoch
+    archive_record_epoch="$(hoca_time_epoch)"
+    record_timing_phase "archive_cleanup" "$archive_started_epoch" "$archive_record_epoch"
     rm -rf "$archive_run_dir"
     mkdir -p "$archive_run_dir"
     cp -R "$RUN_DIR/." "$archive_run_dir/"
@@ -402,6 +718,17 @@ cleanup() {
     record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${RUN_ID:-}" ] && command -v docker >/dev/null 2>&1; then
+    if [ -d "$RUN_DIR" ]; then
+      find "$RUN_DIR" -name sandbox-container-name.txt -type f -print0 2>/dev/null |
+        while IFS= read -r -d '' container_file; do
+          container_name="$(cat "$container_file" 2>/dev/null || true)"
+          [ -n "$container_name" ] || continue
+          docker rm -f "$container_name" >/dev/null 2>&1 || true
+        done
+    fi
+    docker rm -f "hoca-worker-${RUN_ID}" >/dev/null 2>&1 || true
   fi
   remove_disposable_worktree 2>/dev/null || true
   restore_dev_branch_after_run
@@ -438,15 +765,11 @@ record_run_artifact "${EARLY_INIT_STATUS_ARGS[@]}" >/dev/null 2>&1 || true
 update_status() {
   local new_status="$1"
   local reason="${2:-}"
-  if command -v jq >/dev/null 2>&1 && [ -f "$RUN_DIR/status.json" ]; then
-    if [ -n "$reason" ]; then
-      jq --arg s "$new_status" --arg r "$reason" '.status = $s | .reason = $r' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
-    else
-      jq --arg s "$new_status" '.status = $s' "$RUN_DIR/status.json" > "$RUN_DIR/status.tmp"
-    fi
-    mv "$RUN_DIR/status.tmp" "$RUN_DIR/status.json"
+  local args=(write-status "$RUN_DIR" --status "$new_status")
+  if [ -n "$reason" ]; then
+    args+=(--reason "$reason")
   fi
-  record_run_artifact sync-status "$RUN_DIR" >/dev/null 2>&1 || true
+  record_run_artifact "${args[@]}" >/dev/null 2>&1 || true
 }
 
 sync_run_status() {
@@ -477,6 +800,7 @@ fail_run() {
   echo "$message" >&2
   write_failure_reason "$reason" "$message"
   update_status "failed" "$reason"
+  print_timing_report_if_requested
   exit 1
 }
 
@@ -486,6 +810,7 @@ block_run() {
   echo "$message" >&2
   write_failure_reason "$reason" "$message"
   update_status "blocked" "$reason"
+  print_timing_report_if_requested
   exit 1
 }
 
@@ -516,11 +841,16 @@ echo "HOCA run started: $RUN_ID"
 } > "$RUN_DIR/workspace-validation.txt"
 
 echo "Running HOCA doctor preflight..."
-if ! "$HOCA_DOCTOR_SCRIPT" > "$RUN_DIR/doctor-output.log" 2> "$RUN_DIR/doctor-stderr.log"; then
+DOCTOR_START_EPOCH="$(hoca_time_epoch)"
+if ! run_doctor_preflight; then
+  DOCTOR_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "doctor" "$DOCTOR_START_EPOCH" "$DOCTOR_END_EPOCH" --status "failed"
   cat "$RUN_DIR/doctor-output.log"
   cat "$RUN_DIR/doctor-stderr.log" >&2
   fail_run "doctor_failed" "HOCA doctor failed. Stop and follow the install guidance above before running this task again."
 fi
+DOCTOR_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "doctor" "$DOCTOR_START_EPOCH" "$DOCTOR_END_EPOCH"
 
 if [ "${HOCA_RUN_INIT_PROJECT:-false}" = "true" ]; then
   "$SCRIPT_DIR/init-project.sh" "$PROJECT_PATH" 2>/dev/null || true
@@ -618,6 +948,7 @@ remove_worktree(Path(sys.argv[1]), sys.argv[2])
   fi
 }
 
+BRANCH_SETUP_START_EPOCH="$(hoca_time_epoch)"
 if worktree_enabled; then
   USE_WORKTREE_SANDBOX="true"
   create_task_branch_from_base "$BRANCH" "$TASK_BASE_REF"
@@ -626,8 +957,15 @@ else
   echo "Creating branch: $BRANCH from $TASK_BASE_REF ($(git rev-parse --short "$TASK_BASE_REF"))"
   git checkout -b "$BRANCH" "$TASK_BASE_REF"
 fi
+BRANCH_SETUP_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "branch_worktree_setup" "$BRANCH_SETUP_START_EPOCH" "$BRANCH_SETUP_END_EPOCH"
 
+TASK_SPEC_START_EPOCH="$(hoca_time_epoch)"
 generate_run_task_spec
+apply_express_mode
+apply_run_budget 1
+TASK_SPEC_END_EPOCH="$(hoca_time_epoch)"
+record_timing_phase "task_spec" "$TASK_SPEC_START_EPOCH" "$TASK_SPEC_END_EPOCH"
 
 INIT_STATUS_ARGS=(
   init-status "$RUN_DIR"
@@ -712,9 +1050,13 @@ run_openhands_phase() {
   local repair_brief_path="${3:-}"
   local openhands_exit=0
 
-  echo "Running worker profile ($phase_label)..."
+  apply_run_budget "$round_number"
+  echo "Running worker profile ($phase_label, engine: $WORKER_ENGINE)..."
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" worker
+  record_timing_event --type "agent_loop" --name "worker-$WORKER_ENGINE" --round "$round_number" --role "worker"
+  local worker_started_epoch
+  worker_started_epoch="$(hoca_time_epoch)"
   set +e
   local worker_cmd=(
     "$SCRIPT_DIR/run-worker-hermes.sh"
@@ -729,6 +1071,13 @@ run_openhands_phase() {
   "${worker_cmd[@]}"
   openhands_exit=$?
   set -e
+  local worker_ended_epoch
+  worker_ended_epoch="$(hoca_time_epoch)"
+  if [ "$openhands_exit" -eq 0 ]; then
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_ENGINE" --model "${HOCA_WORKER_MODEL_NAME:-worker}"
+  else
+    record_timing_phase "worker_attempt" "$worker_started_epoch" "$worker_ended_epoch" --round "$round_number" --role "worker" --mode "$WORKER_ENGINE" --model "${HOCA_WORKER_MODEL_NAME:-worker}" --status "failed"
+  fi
   if [ "$openhands_exit" -ne 0 ]; then
     local failure_status="failed"
     if [ -f "$RUN_DIR/monitor-result.json" ] && command -v jq >/dev/null 2>&1; then
@@ -805,6 +1154,36 @@ latest_worker_reported_changed_files_count() {
   jq -r '(.changed_files // []) | length' "$latest_attempt" 2>/dev/null || printf '0\n'
 }
 
+repair_failed_worker_attempt() {
+  local worker_failure_detail="${1:-}"
+  if [ "$current_round" -ge "$MAX_TOTAL_ROUNDS" ]; then
+    return 1
+  fi
+  local next_round=$((current_round + 1))
+  local repair_path="$RUN_DIR/repair-attempt-${next_round}.md"
+  mkdir -p "$RUN_DIR/decisions"
+  {
+    printf '%s\n\n' "Continue this HOCA task by fixing the current repository changes; do not start over."
+    printf 'Repair reason: worker_failed\n'
+    printf 'Round: %s of %s\n\n' "$next_round" "$MAX_TOTAL_ROUNDS"
+    printf '%s\n' "The previous worker attempt exited without producing repository changes."
+    if [ -n "$worker_failure_detail" ]; then
+      printf 'Worker failure detail: %s\n' "$worker_failure_detail"
+    fi
+    printf '%s\n' "Make the smallest scoped edit required by the task, then verify git diff."
+    printf '%s\n' "If an editing tool rejected a partial call, retry with every required edit argument in one call or use a safe shell edit."
+  } > "$repair_path"
+  cat > "$RUN_DIR/decisions/worker-repair-decision-${current_round}.json" <<EOF
+{"schema_version":1,"round":$current_round,"decision":"repair_required","next_round":$next_round,"repair_brief_path":"$repair_path","reason":"worker_failed"}
+EOF
+  current_round="$next_round"
+  update_status "repairing" "worker_failed_round_${current_round}"
+  run_openhands_phase "worker repair round $current_round of $MAX_TOTAL_ROUNDS" "$current_round" "$repair_path"
+  restore_worker_commits_to_worktree
+  check_openhands_changed_files
+  return 0
+}
+
 stop_if_worker_attempt_blocked() {
   local worker_status
   worker_status="$(latest_worker_attempt_status)"
@@ -819,6 +1198,9 @@ stop_if_worker_attempt_blocked() {
       block_run "worker_blocked" "$blocked_message"
       ;;
     failed)
+      if repair_failed_worker_attempt "$worker_failure_detail"; then
+        return 0
+      fi
       local failed_message="Worker attempt failed; see $RUN_DIR/attempts for details."
       if [ -n "$worker_failure_detail" ]; then
         failed_message="$failed_message Worker failure: $worker_failure_detail"
@@ -840,10 +1222,21 @@ while true; do
   fi
 
   echo "Running tests (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  start_reviewer_warmup
+  PRE_TEST_CHANGED_FILES="$RUN_DIR/pre-test-changed-files.txt"
+  changed_files_for_task | sort -u > "$PRE_TEST_CHANGED_FILES"
+  TEST_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-tests.sh" "$WORKER_PROJECT_PATH" "$RUN_DIR"
   TESTS_EXIT=$?
   set -e
+  TEST_END_EPOCH="$(hoca_time_epoch)"
+  record_validation_side_effects "$PRE_TEST_CHANGED_FILES"
+  if [ "$TESTS_EXIT" -eq 0 ]; then
+    record_timing_phase "test_run" "$TEST_START_EPOCH" "$TEST_END_EPOCH" --round "$current_round"
+  else
+    record_timing_phase "test_run" "$TEST_START_EPOCH" "$TEST_END_EPOCH" --round "$current_round" --status "failed"
+  fi
   record_validation_artifact "$current_round"
   sync_run_status
   if [ "$TESTS_EXIT" -ne 0 ]; then
@@ -875,18 +1268,30 @@ while true; do
   fi
 
   echo "Running review (round $current_round of $MAX_TOTAL_ROUNDS)..."
+  wait_for_reviewer_warmup
   # shellcheck disable=SC1090
   source "$SCRIPT_DIR/resolve-role-model-env.sh" reviewer
+  record_timing_event --type "agent_loop" --name "reviewer-$REVIEWER_MODE" --round "$current_round" --role "reviewer"
+  REVIEW_START_EPOCH="$(hoca_time_epoch)"
   set +e
   "$SCRIPT_DIR/run-reviewer-hermes.sh" "$WORKER_PROJECT_PATH" "$(task_spec_path_for_run)" "$RUN_DIR" "$current_round"
   REVIEW_EXIT=$?
   set -e
+  REVIEW_END_EPOCH="$(hoca_time_epoch)"
+  if [ "$REVIEW_EXIT" -eq 0 ]; then
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "$REVIEWER_MODE" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}"
+  else
+    record_timing_phase "review_pass" "$REVIEW_START_EPOCH" "$REVIEW_END_EPOCH" --round "$current_round" --role "reviewer" --mode "$REVIEWER_MODE" --model "${HOCA_REVIEWER_MODEL_NAME:-reviewer}" --status "failed"
+  fi
   sync_run_status
   ARBITRATION_DECISION_JSON=""
+  ARBITRATION_START_EPOCH="$(hoca_time_epoch)"
   set +e
   ARBITRATION_DECISION_JSON="$(resolve_round_loop after-arbitration "$current_round")"
   ARBITRATION_LOOP_EXIT=$?
   set -e
+  ARBITRATION_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "arbitration" "$ARBITRATION_START_EPOCH" "$ARBITRATION_END_EPOCH" --round "$current_round"
   if [ -z "$ARBITRATION_DECISION_JSON" ]; then
     if [ "$REVIEW_EXIT" -eq 4 ]; then
       block_run "review_blocked" "OpenHands review reported a blocked verdict. Human intervention is needed; see $RUN_DIR/openhands-review.txt."
@@ -936,6 +1341,12 @@ if [ "$USE_WORKTREE_SANDBOX" = "true" ] && [ -n "$WORKTREE_PATH" ] && [ -d "$WOR
   UNTRACKED_WORKTREE_TAR="$RUN_DIR/untracked-worktree-files.tar"
   worker_git ls-files --others --exclude-standard \
     | awk '$0 != ".hoca-runtime" && $0 !~ /^\.hoca-runtime\//' \
+    | while IFS= read -r untracked_path || [ -n "$untracked_path" ]; do
+        if is_validation_side_effect_path "$untracked_path"; then
+          continue
+        fi
+        printf '%s\n' "$untracked_path"
+      done \
     > "$UNTRACKED_WORKTREE_FILES"
   if [ -s "$UNTRACKED_WORKTREE_FILES" ]; then
     tar -C "$WORKTREE_PATH" -cf "$UNTRACKED_WORKTREE_TAR" -T "$UNTRACKED_WORKTREE_FILES"
@@ -970,10 +1381,15 @@ fi
 
 if [ -f "$INTENDED_FILE_LIST" ] || [ -f "$INTENDED_FILE_SOURCE" ]; then
   echo "Safe staging artifacts detected. Attempting automatic safe staging..."
+  STAGING_START_EPOCH="$(hoca_time_epoch)"
   if HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/safe-stage-after-review.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$INTENDED_FILE_LIST"; then
+    STAGING_END_EPOCH="$(hoca_time_epoch)"
+    record_timing_phase "staging" "$STAGING_START_EPOCH" "$STAGING_END_EPOCH"
     update_status "staged" "safe_staging_completed"
   else
     STAGING_EXIT=$?
+    STAGING_END_EPOCH="$(hoca_time_epoch)"
+    record_timing_phase "staging" "$STAGING_START_EPOCH" "$STAGING_END_EPOCH" --status "failed"
     update_status "needs_human_staging" "safe_staging_failed"
     exit "$STAGING_EXIT"
   fi
@@ -989,15 +1405,32 @@ record_run_artifact record-final "$RUN_DIR" >/dev/null 2>&1 || true
 
 if [ -s "$RUN_DIR/staged-files.txt" ]; then
   echo "Creating commit from safely staged files..."
+  COMMIT_START_EPOCH="$(hoca_time_epoch)"
   COMMIT_ARGS=()
   if [ -n "$ISSUE_ID" ]; then
     COMMIT_ARGS=(--issue-id "$ISSUE_ID")
   fi
   COMMIT_ARGS+=(--run-id "$RUN_ID")
   "$SCRIPT_DIR/commit-after-staging.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${COMMIT_ARGS[@]}"
+  COMMIT_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "commit" "$COMMIT_START_EPOCH" "$COMMIT_END_EPOCH"
   update_status "committed" "commit_created"
 
+  if [ "${HOCA_SKIP_PR_CREATION:-false}" = "true" ]; then
+    echo "Skipping pull request creation because HOCA_SKIP_PR_CREATION=true."
+    printf '%s\n' "HOCA_SKIP_PR_CREATION=true" > "$RUN_DIR/pr-creation-skipped.txt"
+    update_status "completed" "commit_created_no_pr"
+    "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
+    "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
+    SHOULD_RESTORE_DEV_BRANCH="true"
+    restore_dev_branch_after_run
+    echo "HOCA run completed through local commit creation."
+    print_timing_report_if_requested
+    exit 0
+  fi
+
   echo "Creating pull request..."
+  PR_START_EPOCH="$(hoca_time_epoch)"
   PR_ARGS=()
   if [ -n "$ISSUE_ID" ]; then
     PR_ARGS+=(--issue-id "$ISSUE_ID")
@@ -1006,13 +1439,17 @@ if [ -s "$RUN_DIR/staged-files.txt" ]; then
     PR_ARGS+=(--base-branch "$TASK_BASE_REF")
   fi
   HOCA_REVIEW_ROUND="$current_round" "$SCRIPT_DIR/create-pr.sh" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "${PR_ARGS[@]}"
+  PR_END_EPOCH="$(hoca_time_epoch)"
+  record_timing_phase "pr_creation" "$PR_START_EPOCH" "$PR_END_EPOCH"
   update_status "pr_created" "pull_request_created"
   "$SCRIPT_DIR/generate-task-report.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null
   "$SCRIPT_DIR/notify.sh" "$PROJECT_PATH" "$RUN_DIR" >/dev/null 2>&1 || true
   SHOULD_RESTORE_DEV_BRANCH="true"
   restore_dev_branch_after_run
   echo "HOCA run completed through pull request creation."
+  print_timing_report_if_requested
 else
   echo "HOCA run completed up to review. Human staging required."
+  print_timing_report_if_requested
 fi
 exit 0

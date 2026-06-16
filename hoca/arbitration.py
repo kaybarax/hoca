@@ -13,7 +13,6 @@ from hoca.downgrade_rules import can_downgrade_finding, downgrade_reasoning
 from hoca.hard_blockers import (
     ValidationStatus,
     collect_validation_hard_blockers,
-    has_absolute_validation_blocker,
     has_repairable_validation_blocker,
     is_finding_hard_blocker,
 )

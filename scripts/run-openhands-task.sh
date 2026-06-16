@@ -34,6 +34,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOCA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${HOCA_PYTHON:-python3}"
 AGENT_ROLE="${HOCA_AGENT_ROLE:-worker}"
+if [ -z "${HOCA_DOTENV_PATH:-}" ] && [ -f "$HOCA_ROOT/.env" ]; then
+  export HOCA_DOTENV_PATH="$HOCA_ROOT/.env"
+fi
+
+export GIT_PAGER="${GIT_PAGER:-cat}"
+export PAGER="${PAGER:-cat}"
+export LESS="${LESS:-FRSX}"
 
 case "$AGENT_ROLE" in
   worker|reviewer)
@@ -82,14 +89,28 @@ case "${LLM_MODEL:-}" in
     API_KEY="${LLM_API_KEY:-ollama}"
     ;;
   *)
-    MODEL="${LLM_MODEL}"
     BASE_URL="${LLM_BASE_URL:-}"
-    API_KEY="${LLM_API_KEY:?LLM_API_KEY is required}"
+    if [ -n "$BASE_URL" ]; then
+      MODEL="openai/${LLM_MODEL}"
+      API_KEY="${LLM_API_KEY:-local}"
+    else
+      MODEL="${LLM_MODEL}"
+      API_KEY="${LLM_API_KEY:?LLM_API_KEY is required}"
+    fi
     ;;
 esac
 
-TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
-STALL="${HOCA_OPENHANDS_STALL:-300}"
+DIRECT_MODE=false
+if { [ "$AGENT_ROLE" = "worker" ] && [ "${HOCA_WORKER_MODE:-hermes}" = "direct" ]; } || { [ "$AGENT_ROLE" = "reviewer" ] && [ "${HOCA_REVIEWER_MODE:-hermes}" = "direct" ]; }; then
+  DIRECT_MODE=true
+fi
+if [ "$DIRECT_MODE" = "true" ]; then
+  TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-${HOCA_DIRECT_OPENHANDS_TIMEOUT:-420}}"
+  STALL="${HOCA_OPENHANDS_STALL:-${HOCA_DIRECT_OPENHANDS_STALL:-120}}"
+else
+  TIMEOUT="${HOCA_OPENHANDS_TIMEOUT:-600}"
+  STALL="${HOCA_OPENHANDS_STALL:-300}"
+fi
 USE_SANDBOX="${HOCA_USE_SANDBOX:-true}"
 
 warn_host_execution() {
@@ -102,6 +123,16 @@ warn_host_execution() {
   } | tee -a "$RUN_DIR/host-execution-warning.txt" >&2
 }
 
+fail_sandbox_execution() {
+  local reason="$1"
+  {
+    echo "[FAIL] HOCA sandbox execution required: $reason"
+    echo "[FAIL] Refusing to fall back to host execution while HOCA_USE_SANDBOX=true."
+    echo "[FAIL] Start Docker or set HOCA_USE_SANDBOX=false explicitly for host-local execution."
+  } | tee "$RUN_DIR/sandbox-required-error.txt" >&2
+  exit 1
+}
+
 echo "Running OpenHands with:"
 echo "  MODEL=$MODEL"
 echo "  BASE_URL=$BASE_URL"
@@ -110,6 +141,7 @@ echo "  TIMEOUT=${TIMEOUT}s"
 echo "  STALL=${STALL}s"
 echo "  SANDBOX=$USE_SANDBOX"
 echo "  ROLE=$AGENT_ROLE"
+echo "  DIRECT_MODE=$DIRECT_MODE"
 if [ "$USE_SANDBOX" = "true" ] && [ -x "$SCRIPT_DIR/run-openhands-sandboxed.sh" ]; then
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     # shellcheck source=scripts/sandbox-docker-env.sh
@@ -138,11 +170,11 @@ if [ "$USE_SANDBOX" = "true" ]; then
     if [ -x "$SANDBOX_SCRIPT" ]; then
       exec "$SANDBOX_SCRIPT" "$PROJECT_PATH" "$TASK" "$RUN_DIR" "$MODEL" "$BASE_URL" "$API_KEY" "$TIMEOUT" "$STALL" "$AGENT_ROLE"
     fi
-    warn_host_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh not found; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but run-openhands-sandboxed.sh was not found or is not executable."
   elif ! command -v docker >/dev/null 2>&1; then
-    warn_host_execution "HOCA_USE_SANDBOX=true but docker is not installed; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but docker is not installed."
   else
-    warn_host_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running; falling back to host execution."
+    fail_sandbox_execution "HOCA_USE_SANDBOX=true but Docker daemon is not running."
   fi
 else
   warn_host_execution "HOCA_USE_SANDBOX is not enabled (explicit host-local opt-in)."
@@ -166,12 +198,33 @@ if [ -n "$OPENHANDS_PYTHON" ] && [ -x "$OPENHANDS_PYTHON" ]; then
   OPENHANDS_PERSISTENCE_DIR="$RUN_DIR/openhands-persistence"
   export OPENHANDS_PERSISTENCE_DIR
   mkdir -p "$OPENHANDS_PERSISTENCE_DIR"
+  cat > "$RUN_DIR/sitecustomize.py" <<'PY'
+try:
+    from openhands_cli.stores.agent_store import AgentStore
+
+    _hoca_original_build_agent_context = AgentStore._build_agent_context
+
+    def _hoca_build_agent_context(self):
+        context = _hoca_original_build_agent_context(self)
+        return context.model_copy(
+            update={
+                "skills": [],
+                "load_user_skills": False,
+                "load_public_skills": False,
+                "marketplace_path": None,
+            }
+        )
+
+    AgentStore._build_agent_context = _hoca_build_agent_context
+except Exception:
+    pass
+PY
   "$OPENHANDS_PYTHON" - "$MODEL" "$BASE_URL" "$API_KEY" "$OPENHANDS_PERSISTENCE_DIR/agent_settings.json" <<'PY'
 import sys
 from pathlib import Path
 
-from openhands.sdk import LLM
-from openhands_cli.utils import get_default_cli_agent
+from openhands.sdk import Agent, LLM
+from openhands.sdk.context.agent_context import AgentContext
 
 model, base_url, api_key, settings_path = sys.argv[1:5]
 llm = LLM(
@@ -184,7 +237,15 @@ llm = LLM(
     extended_thinking_budget=None,
     timeout=600,
 )
-agent = get_default_cli_agent(llm)
+agent = Agent(
+    llm=llm,
+    agent_context=AgentContext(
+        skills=[],
+        load_user_skills=False,
+        load_public_skills=False,
+        marketplace_path=None,
+    ),
+)
 Path(settings_path).write_text(agent.model_dump_json(), encoding="utf-8")
 PY
   echo "Using isolated OpenHands config: $OPENHANDS_PERSISTENCE_DIR"
@@ -202,6 +263,18 @@ fi
 if ! printf '%s\n' "$OH_HELP" | grep -q -- "--task"; then
   echo "OpenHands CLI does not support --task. Cannot proceed." | tee "$RUN_DIR/openhands-error.txt"
   exit 1
+fi
+
+if ! printf '%s\n' "$OH_HELP" | grep -q -- "--override-with-envs"; then
+  case "$AGENT_ROLE" in
+    worker|reviewer)
+      {
+        echo "OpenHands CLI does not support --override-with-envs. Cannot safely enforce HOCA-selected role model."
+        echo "Refusing to run with OpenHands defaults for $AGENT_ROLE; resolved model was: $MODEL"
+      } | tee "$RUN_DIR/openhands-error.txt"
+      exit 1
+      ;;
+  esac
 fi
 
 OH_FLAGS=(--headless --task "$TASK")
@@ -270,6 +343,7 @@ if base_url:
     env_override['LLM_BASE_URL'] = base_url
 env_override['LLM_API_KEY'] = api_key
 env_override['CI'] = 'true'
+env_override['PYTHONPATH'] = str(run_dir) + os.pathsep + env_override.get('PYTHONPATH', '')
 
 with open(output_file, 'w') as out_f:
     proc = subprocess.Popen(

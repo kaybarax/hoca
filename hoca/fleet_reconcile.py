@@ -10,7 +10,9 @@ from hoca.fleet_contracts import HocaFleetTask, HocaLane
 from hoca.fleet_registry import FleetRegistry
 from hoca.run_state import read_optional_json
 
-ACTIVE_LANE_STATUSES = frozenset({"allocated", "starting", "running", "validating", "reviewing", "repairing"})
+ACTIVE_LANE_STATUSES = frozenset(
+    {"allocated", "starting", "running", "validating", "reviewing", "repairing"}
+)
 FINAL_RUN_STATUSES = frozenset({"pr_created", "ready_for_human", "blocked", "failed"})
 ACTIVE_RUN_STATUS_TO_LANE_STATUS = {
     "started": "running",
