@@ -22,14 +22,12 @@ if [ -f "$CAPS_FILE" ]; then
   if grep -q "enable-browsing" "$CAPS_FILE"; then
     BROWSING_AVAILABLE=true
   fi
-fi
-
-if ! command -v openhands >/dev/null 2>&1; then
-  BROWSING_AVAILABLE=false
 elif [ ! -f "$CAPS_FILE" ]; then
-  OH_HELP="$(openhands --help 2>&1 || true)"
-  if printf '%s\n' "$OH_HELP" | grep -q -- "--enable-browsing"; then
-    BROWSING_AVAILABLE=true
+  if command -v openhands >/dev/null 2>&1; then
+    OH_HELP="$(openhands --help 2>&1 || true)"
+    if printf '%s\n' "$OH_HELP" | grep -q -- "--enable-browsing"; then
+      BROWSING_AVAILABLE=true
+    fi
   fi
 fi
 

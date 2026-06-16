@@ -257,6 +257,12 @@ def test_openhands_wrapper_fails_closed_when_sandbox_required_without_docker(
     repo = tmp_path / "repo"
     init_repo(repo)
     run_dir = tmp_path / "run"
+    fake_bin = tmp_path / "fake-bin-no-docker"
+    fake_bin.mkdir()
+    write_executable(
+        fake_bin / "docker",
+        "#!/usr/bin/env bash\nset -euo pipefail\nexit 1\n",
+    )
     env = os.environ.copy()
     env.update(
         {
@@ -265,7 +271,7 @@ def test_openhands_wrapper_fails_closed_when_sandbox_required_without_docker(
             "LLM_MODEL": "ollama/test",
             "LLM_BASE_URL": "http://127.0.0.1:11434",
             "LLM_API_KEY": "ollama",
-            "PATH": "/usr/bin:/bin",
+            "PATH": f"{fake_bin}{os.pathsep}/usr/bin:/bin",
         }
     )
 
